@@ -1,0 +1,226 @@
+{
+  "cache-aside": {
+    "min": 5,
+    "max": 120
+  },
+  "write-through": {
+    "min": 0,
+    "max": 100
+  },
+  "write-behind": {
+    "min": 0,
+    "max": 100
+  },
+  "ttl": {
+    "min": 5,
+    "max": 120
+  },
+  "eviction": {
+    "min": 10,
+    "max": 200
+  },
+  "invalidation": {
+    "min": 10,
+    "max": 500
+  },
+  "stampede": {
+    "min": 1,
+    "max": 100
+  },
+  "cdn-cache": {
+    "min": 10,
+    "max": 95
+  },
+  "load-balancing": {
+    "min": 10,
+    "max": 95
+  },
+  "horizontal-scaling": {
+    "min": 10,
+    "max": 95
+  },
+  "vertical-scaling": {
+    "min": 100,
+    "max": 2000
+  },
+  "autoscaling": {
+    "min": 5,
+    "max": 120
+  },
+  "serverless": {
+    "min": 10,
+    "max": 95
+  },
+  "rate-limiting": {
+    "min": 10,
+    "max": 95
+  },
+  "backpressure": {
+    "min": 10,
+    "max": 95
+  },
+  "connection-pooling": {
+    "min": 5,
+    "max": 100
+  },
+  "sharding": {
+    "min": 10,
+    "max": 95
+  },
+  "replication": {
+    "min": 0,
+    "max": 500
+  },
+  "indexing": {
+    "min": 10,
+    "max": 95
+  },
+  "transactions": {
+    "min": 0,
+    "max": 80
+  },
+  "optimistic-locking": {
+    "min": 0,
+    "max": 80
+  },
+  "denormalization": {
+    "min": 0,
+    "max": 100
+  },
+  "object-storage": {
+    "min": 1,
+    "max": 100
+  },
+  "data-lifecycle": {
+    "min": 1,
+    "max": 365
+  },
+  "queues": {
+    "min": 10,
+    "max": 95
+  },
+  "pubsub": {
+    "min": 10,
+    "max": 95
+  },
+  "event-streams": {
+    "min": 10,
+    "max": 95
+  },
+  "dead-letter": {
+    "min": 0,
+    "max": 80
+  },
+  "idempotency": {
+    "min": 0,
+    "max": 80
+  },
+  "ordering": {
+    "min": 1,
+    "max": 20
+  },
+  "batching": {
+    "min": 1,
+    "max": 10
+  },
+  "event-routing": {
+    "min": 0,
+    "max": 100
+  },
+  "circuit-breaker": {
+    "min": 0,
+    "max": 80
+  },
+  "retries": {
+    "min": 0,
+    "max": 80
+  },
+  "timeouts": {
+    "min": 10,
+    "max": 200
+  },
+  "bulkheads": {
+    "min": 10,
+    "max": 95
+  },
+  "health-checks": {
+    "min": 0,
+    "max": 75
+  },
+  "multi-az": {
+    "min": 0,
+    "max": 75
+  },
+  "disaster-recovery": {
+    "min": 1,
+    "max": 60
+  },
+  "observability": {
+    "min": 1,
+    "max": 100
+  },
+  "authentication": {
+    "min": 0,
+    "max": 80
+  },
+  "authorization": {
+    "min": 0,
+    "max": 80
+  },
+  "encryption": {
+    "min": 0,
+    "max": 80
+  },
+  "secrets": {
+    "min": 1,
+    "max": 120
+  },
+  "network-isolation": {
+    "min": 0,
+    "max": 80
+  },
+  "edge-protection": {
+    "min": 0,
+    "max": 80
+  },
+  "blue-green": {
+    "min": 0,
+    "max": 100
+  },
+  "canary": {
+    "min": 0,
+    "max": 100
+  },
+  "eventual-consistency": {
+    "min": 10,
+    "max": 500
+  },
+  "strong-consistency": {
+    "min": 0,
+    "max": 100
+  },
+  "cap": {
+    "min": 0,
+    "max": 80
+  },
+  "cqrs": {
+    "min": 10,
+    "max": 500
+  },
+  "event-sourcing": {
+    "min": 10,
+    "max": 1000
+  },
+  "sagas": {
+    "min": 0,
+    "max": 80
+  },
+  "distributed-locks": {
+    "min": 1,
+    "max": 60
+  },
+  "consistent-hashing": {
+    "min": 2,
+    "max": 20
+  }
+}

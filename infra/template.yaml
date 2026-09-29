@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: System Lab - authenticated, user-scoped learning progress
+Parameters:
+  AppOrigin:
+    Type: String
+    Default: http://localhost:3000
+    AllowedPattern: '^(https://[a-zA-Z0-9.-]+(:[0-9]+)?|http://localhost:[0-9]+)$'
+    Description: App origin without trailing slash. Use HTTPS outside local development.
+  DomainPrefix:
+    Type: String
+    MinLength: 3
+    MaxLength: 40
+    AllowedPattern: '^[a-z0-9][a-z0-9-]+[a-z0-9]$'
+    Description: Globally unique Cognito hosted UI domain prefix
+Resources:
+  Progress:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+  Users:
+    Type: AWS::Cognito::UserPool
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireUppercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_email
+            Priority: 1
+  Client:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref Users
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs:
+        - !Sub '${AppOrigin}/auth/callback'
+      LogoutURLs:
+        - !Ref AppOrigin
+      AccessTokenValidity: 15
+      IdTokenValidity: 15
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+      EnableTokenRevocation: true
+      PreventUserExistenceErrors: ENABLED
+  Domain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Ref DomainPrefix
+      UserPoolId: !Ref Users
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: '$default'
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+      Auth:
+        DefaultAuthorizer: Cognito
+        Authorizers:
+          Cognito:
+            IdentitySource: '$request.header.Authorization'
+            JwtConfiguration:
+              issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${Users}'
+              audience:
+                - !Ref Client
+  ProgressFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: handler.handler
+      Runtime: nodejs22.x
+      Architectures: [arm64]
+      Timeout: 8
+      MemorySize: 256
+      ReservedConcurrentExecutions: 5
+      Environment:
+        Variables:
+          PROGRESS_TABLE: !Ref Progress
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ['dynamodb:Query', 'dynamodb:PutItem']
+              Resource: !GetAtt Progress.Arn
+      Events:
+        Read:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /progress
+            Method: GET
+            Auth:
+              AuthorizationScopes: [openid]
+        Write:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref Api
+            Path: /progress
+            Method: POST
+            Auth:
+              AuthorizationScopes: [openid]
+  Logs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ProgressFunction}'
+      RetentionInDays: 14
+Outputs:
+  ApiUrl:
+    Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com'
+  CognitoDomain:
+    Value: !Sub 'https://${DomainPrefix}.auth.${AWS::Region}.amazoncognito.com'
+  ClientId:
+    Value: !Ref Client
+  UserPoolId:
+    Value: !Ref Users
+  ProgressTable:
+    Value: !Ref Progress
