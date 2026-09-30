@@ -1,174 +1,126 @@
 # System Lab
 
-An interactive system design learning application for Aman. Built in a separate directory so the existing browser extension is untouched.
+A system-design learning workspace for curious developers. All **56 original lessons** are preserved, with specific controls, inspectable domain state, guided predictions, meaningful pseudocode, and optional AWS explanations.
 
-56 guided concepts, seven learning paths, animated SVG request flows, tunable deterministic simulations, a searchable catalog, an AWS service map, and browser-local progress. The optional cloud backend uses real Cognito authentication and Lambda/DynamoDB progress storage. Footer: **Made with heart by [Aman](https://amankeshri.com)**.
+Made with heart by [Aman](https://amankeshri.com).
 
-## 1. Architecture Overview
+## Run locally
+
+Node.js 22+, npm. No AWS credentials are required.
+
+```bash
+npm ci
+npm --prefix infra ci  # SDK dependencies for the existing cloud boundary tests
+npm run dev
+# http://localhost:3000
+
+npm run typecheck
+npm test
+npm run build
+npm start
+
+# Reproducible browser checks; starts or reuses localhost:3100
+npx playwright install chromium
+npm run test:browser
+```
+
+The current local preview can use `npm run dev -- --port 3100`. This improvement is local only; no commit, push, deployment, or provisioning is part of it. There is no configured lint script; TypeScript, semantic tests, browser tests, and the production build are the available verification gates.
+
+## Learning experience
+
+- Guided Lesson follows problem → prediction → interaction → observation → explanation → trade-off → implementation. Experiment mode puts state first.
+- Cache inventory, instance fleets, message lifecycles, replica versions, atomic records, circuit states, hashing rings, identity/policies, network boundaries, and workflow timelines have distinct renderers.
+- Run, pause, resume, reset, single-event step, speed, seek, fault/recovery injection, same-workload baseline comparison, and validated share URLs all use the same deterministic event snapshots.
+- Build a system introduces caching, balanced applications/read replicas, queues/workers, safe delivery, and resilience through concrete problems. Follow product reads, orders, and notifications independently.
+- Search and category filtering cover all 56 IDs. Optional checks distinguish explored from understood. Legacy completion arrays migrate conservatively. Guest and account records remain separate.
+- Mobile layouts stack state, show controls on demand, and use native inspector sheets. Native controls, visible focus, keyboard search, reduced-motion styling, and 16–18px lesson prose support reading and interaction.
+
+See the [per-lesson checklist](docs/lesson-checklist.md), [model contract](docs/model-contract.md), [implementation decisions](docs/implementation-plan.md), and [verification evidence](docs/verification.md). Screenshots are in [docs/screenshots](docs/screenshots).
+
+## Architecture
 
 ```mermaid
 flowchart LR
-  Browser[Browser: Next.js learning interface] --> Sim[Next.js POST /api/simulate]
-  Sim --> Models[56 deterministic teaching models]
-  Browser --> Local[Local learning progress]
-  Browser -->|Authorization code + PKCE| Cognito[Amazon Cognito]
-  Browser -->|Access token| Proxy[Next.js /api/runs]
-  Proxy --> Gateway[API Gateway: JWT + scopes]
-  Gateway --> Lambda[Lambda: validate + scope by subject]
-  Lambda --> DB[(DynamoDB: progress)]
-  Lambda --> Logs[CloudWatch Logs: 14 days]
+  Browser[Next.js / React learning workspace] --> Engine[Pure deterministic TypeScript engine]
+  Engine --> Snapshots[Domain events + immutable snapshots]
+  Snapshots --> Views[Family views / metrics / trace / comparison]
+  Browser --> Local[Versioned per-identity local progress]
+  API[Optional POST /api/simulate] --> Engine
+  Browser -. optional sign-in .-> Cognito[Cognito authorization code + PKCE]
+  Browser -. explicit progress sync .-> Proxy[Next.js /api/runs]
+  Proxy --> Gateway[API Gateway JWT authorization]
+  Gateway --> Lambda[Lambda scoped progress handler]
+  Lambda --> DB[(DynamoDB)]
 ```
 
-**Chosen stack:** Next.js 16 App Router, React 19, strict TypeScript, plain CSS, native SVG, and Lucide icons. The architecture canvas is small enough that a graph framework would add more machinery than value. Native range inputs provide keyboard interaction. A native dialog handles help focus management. The interface respects reduced-motion settings and adapts down to 390px.
+The stack remains Next.js App Router, React, strict TypeScript, native SVG/HTML controls, plain CSS, and Lucide. Playwright is a development-only addition. There is no mandatory simulation network request. The optional simulation endpoint accepts v2 configuration and returns the same event run as the browser.
 
-**Backend choice:** the application uses short, stateless Lambda work for progress. Lesson recommendations use Lambda for event handlers and bursty APIs, EC2 when long-lived process state or machine control is the teaching objective, and managed services when storage/identity/delivery behavior is the objective. EC2 is a teaching choice, not a requirement for every production implementation of these patterns. Caching clients, for example, can run on either platform.
+Choose Lambda for bounded stateless handlers and progress persistence, EC2 when long-lived application state or instance lifecycle is the teaching objective, and managed services for durable queues, identity, storage, and replication. These are example architectures, not a requirement to operate every listed AWS service. Conceptual view is the default; AWS labels never provision resources.
 
-**Host the web application:** the included standalone Docker image can run on an AWS container host behind HTTPS. It contains the Next.js application and its simulation API. The SAM stack provisions only the authenticated progress backend; it does not provision a frontend host or all services mentioned in lessons. There is no implicit deployment or cloud provisioning when you explore a lesson.
-
-**Managed versus self-hosted:** use managed durable storage, queues, identity, and replication. Operate an EC2 fleet only for lessons where instance lifecycle, application coordination, or a custom ring is the mechanism to learn. ALB health checks are managed; an application circuit breaker is application logic, even when hosted on EC2 and observed through CloudWatch.
-
-**What is implemented:** all 56 concepts have explanations, four-step traces, controls, deterministic calculations, and service mappings. Seven shared visual patterns have concept-specific node labels. These are deliberately simplified teaching models, not distributed-system emulators or AWS load tests. Illustrative metrics are labeled in the UI. The progress backend is executable deployment scaffolding. Live AWS sign-in, provisioning, and DynamoDB writes still require verification in your AWS account before production release.
-
-**Model assumptions:** baseline capacity is 500 requests/s per capacity unit; baseline cache/origin access is 4/110 ms. Traffic is uniform. Cache-aside uses a warm-up and TTL hit-ratio model, not a real Valkey process. Queue depth integrates excess arrivals; retry calculations assume independent failures and at most three attempts. Autoscaling uses five simulated seconds per step; other queue accumulation steps represent one second. Ring movement is the uniform-ring expectation, not a measured distribution. DynamoDB read-capacity examples assume items up to 4 KB. WAF/API Gateway rate limiting is best-effort, not a strict spend cap. DynamoDB global-table eventual-consistency lessons refer to MREC mode; consistency choices depend on the configured global-table mode. No charts contain live AWS telemetry.
-
-## 2. File Tree
+## Source layout
 
 ```text
-system-lab/
-├── .dockerignore
-├── .env.example
-├── .gitignore
-├── Dockerfile
-├── README.md
-├── next-env.d.ts                  # generated by Next.js
-├── next.config.ts
-├── package.json
-├── package-lock.json
-├── tsconfig.json
-├── public/
-├── scripts/
-│   ├── prepare-infra.ts           # generate Lambda validation bounds
-│   └── start.mjs                  # start standalone server with assets
-├── src/
-│   ├── app/
-│   │   ├── api/
-│   │   │   ├── simulate/route.ts  # bounded, validated model execution
-│   │   │   └── runs/route.ts      # authenticated cloud progress proxy
-│   │   ├── auth/callback/page.tsx # OAuth PKCE callback
-│   │   ├── globals.css
-│   │   ├── icon.svg
-│   │   ├── layout.tsx
-│   │   └── page.tsx
-│   ├── components/
-│   │   ├── architecture.tsx       # SVG flow + inspectable components
-│   │   └── lab.tsx                # workspace, catalog, controls, progress
-│   └── lib/
-│       ├── auth.ts                # Cognito authorization code + PKCE
-│       ├── catalog.ts             # 56 lessons, mappings, trade-offs
-│       ├── request.ts             # bounded JSON body reader
-│       └── simulation.ts          # deterministic scenario calculations
-├── infra/
-│   ├── concepts.json              # generated, committed deploy input
-│   ├── handler.mjs                # user-scoped progress API
-│   ├── package.json
-│   ├── package-lock.json
-│   └── template.yaml              # AWS SAM + Cognito + DynamoDB
-└── tests/
-    ├── cloud.test.ts              # auth boundary + record validation
-    └── simulation.test.ts         # model invariants + API regression checks
+src/
+  app/
+    page.tsx, layout.tsx, globals.css, icon.svg
+    api/simulate/route.ts      # optional v2 execution; bounded body validation
+    api/runs/route.ts          # unchanged authenticated progress contract
+    auth/callback/page.tsx
+  components/
+    lab.tsx                   # navigation, identity-scoped progress, library
+    experiment.tsx            # playback, controls, comparison, guided learning
+    architecture.tsx          # family renderers and native inspection dialog
+    journey.tsx               # connected-system interaction
+    cloud-progress.tsx        # explicit sync, errors/retries, local sign-out
+  lib/
+    catalog.ts                # original 56 IDs, mappings, reviewed metadata
+    lessons.ts                # controls, scenarios, content, checks, references
+    engine/
+      model.ts                # validated config, seeded draws, events, metrics
+      traffic.ts              # caches, fleets, message delivery
+      data.ts                 # replicas, records, hashing, policy, boundaries
+      workflows.ts            # breaker, retries, sagas, leases, reconstruction
+      index.ts                # pure model entry point
+    journey.ts                # pure connected-operation trace
+    progress.ts               # migration, validation, namespace-safe persistence
+    auth.ts                   # existing PKCE plus local account/logout helpers
+    simulation.ts             # legacy envelope adapter and cloud bounds
+    request.ts                # bounded request reader
+infra/
+  template.yaml, handler.mjs, concepts.json, package.json, package-lock.json
+scripts/
+  start.mjs, prepare-infra.ts, lesson-checklist.ts
+tests/
+  engine.test.ts, simulation.test.ts, cloud.test.ts
+  browser/workspace.spec.ts
+playwright.config.ts
+docs/
+  implementation-plan.md, lesson-checklist.md, model-contract.md, verification.md
+  screenshots/
 ```
 
-Generated `.next`, `node_modules`, and TypeScript build caches are omitted.
-
-## 3. Core Implementation
-
-### Validated simulation API
-
-`src/app/api/simulate/route.ts` executes the same model the UI previews. The body reader rejects more than 2 KB even when Content-Length is missing; validation checks the known concept and finite, bounded controls.
+## Core contracts
 
 ```ts
-export async function POST(request: Request) {
-  try {
-    return Response.json(simulate(validateInput(await readJson(request))));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Invalid simulation.";
-    return Response.json({ error: message }, {
-      status: message === "Request is too large." ? 413 : 400,
-    });
-  }
-}
+const config = makeConfig("cache-aside");
+config.values.ttl = 2;
+config.seed = 42;
+const run = runExperiment(config); // no I/O
+const frame = run.frames[eventIndex];
+// frame.event, frame.world, and frame.metrics describe the same instant.
 ```
 
-### DynamoDB schema and access patterns
+The queue invariant is `accepted = completed + pending + deadLetter` after every event. Rejections were never accepted. Business effects are separate from delivery acknowledgments. The breaker includes closed → open → half-open → closed/reopened transitions. Hash movement is measured from actual finite key ownership. Canary summaries use the configured candidate share and error probability.
 
-| Attribute | Type | Purpose |
-|---|---|---|
-| `pk` | String, partition key | `USER#<verified Cognito sub>` |
-| `sk` | String, sort key | `CONCEPT#cache-aside` |
-| `conceptId` | String | One of the 56 supported lesson IDs |
-| `traffic` | Number | Offered requests/s: 50–2,000 |
-| `replicas` | Number | Capacity units: integer 1–8 |
-| `parameter` | Number | Concept-specific bounded control |
-| `completed` | Boolean | True for a completed lesson |
-| `updatedAt` | String | Server-generated ISO timestamp |
+Each model declares its limits. These are educational finite workloads, not AWS quotas, service benchmarks, or capacity forecasts. See [model-contract.md](docs/model-contract.md) for time units and family assumptions.
 
-No GSI is needed. Query one user partition to load progress. Put to the same composite key to upsert completion idempotently. At most 56 bounded items per user makes one query sufficient. The last write wins for configuration, while completion remains true.
+Progress v2 stores `{ version: 2, explored: string[], understood: string[] }`. The v1 array is retained and migrated to explored only. Unrecognized or unavailable storage never triggers a destructive overwrite. A decoded token subject is used only as a local storage namespace, never as authorization. API Gateway verifies cloud authorization.
 
-```js
-const sub = event.requestContext?.authorizer?.jwt?.claims?.sub;
-// Handler rejects a missing or malformed subject before any database operation.
-await db.send(new PutCommand({
-  TableName: process.env.PROGRESS_TABLE,
-  Item: {
-    pk: `USER#${sub}`,
-    sk: `CONCEPT#${conceptId}`,
-    conceptId, traffic, replicas, parameter,
-    completed: true,
-    updatedAt: new Date().toISOString(),
-  },
-}));
-```
+The existing DynamoDB schema is retained: `pk=USER#<verified sub>`, `sk=CONCEPT#<lesson>`, `conceptId`, legacy bounded configuration fields, `completed`, and `updatedAt`. It upserts one record per concept. Cloud sync treats these records as explored, using default legacy configuration fields solely for compatibility. It does not claim to synchronize v2 experiment settings or understanding checks.
 
-The caller cannot supply the user key. API Gateway validates issuer, client audience, signature, expiry, and the required OAuth scope. Cognito invites are administrator-controlled. No AWS access keys are shipped to the browser or needed by the Next.js server; Lambda uses a role restricted to Query/PutItem on its own table.
+`POST /api/simulate` still accepts the old input envelope through an adapter, but now returns the v2 event format. Consumers expecting the removed formula `points` response must migrate to `frames`. The application itself uses the engine directly.
 
-The OAuth verifier and access token live in sessionStorage, with a 15-minute token lifetime and no refresh token retained. This keeps the personal scaffold small; a broader public deployment should use a reviewed session/auth library with server-side HttpOnly cookies and a nonce-based CSP. The PKCE state expires after ten minutes. Application code never trusts decoded browser claims.
-
-### Interactive visualization
-
-```tsx
-<Architecture
-  concept={concept}
-  running={running}
-  point={shownPoint}
-  step={step}
-  replicas={replicas}
-  metric={result.metric}
-  unit={result.unit}
-/>
-```
-
-The SVG paths animate only while a simulation runs. Pause/resume preserves the current step; reset stops playback; changing a control cancels an in-flight start and recomputes the preview. Charts and sparklines derive from the model output. Each component opens an explanation. Search filters by title, description, and AWS service. Completion is enabled after a full run and persists locally; cloud loading explicitly merges remote completion with local completion.
-
-### Local setup and verification
-
-Requirements: Node.js 22+, npm. Dependencies are locked. Google Fonts are optional at runtime; system font fallbacks work without them.
-
-```bash
-git clone https://github.com/amankeshri7542/SYS-Design-learning.git
-cd SYS-Design-learning
-npm ci
-npm --prefix infra ci
-cp .env.example .env.local
-npm run dev
-# Open http://localhost:3000
-
-npm test
-npm run typecheck
-npm run build
-npm start
-```
-
-The tests execute model bounds for every concept, check cache/throughput/queue/consistency invariants, test malformed and oversized requests, and reject unverified cloud identities. Browser verification covers search, navigation, parameter effects, a full run, saved completion, reload persistence, and mobile overflow. They do not substitute for a real AWS integration test.
+Google Fonts are optional runtime resources with system fallbacks. Browsing, simulation, and guest progress require no external service.
 
 ### Optional AWS deployment
 
@@ -191,7 +143,7 @@ Choose your AWS region, a unique `DomainPrefix`, and `AppOrigin` exactly matchin
 
 Create your invited Cognito user in the AWS console or with `aws cognito-idp admin-create-user --user-pool-id <UserPoolId> --username <your-email> --user-attributes Name=email,Value=<your-email>`. This sends an invitation email when you execute it. No invitation was sent during scaffolding.
 
-Copy stack outputs into `.env.local`, rebuild/restart the web app, open **AWS architecture**, and choose **Connect AWS identity**. Complete a lesson to save it to the cloud; use **Load cloud progress** to merge progress on another device.
+Copy stack outputs into `.env.local`, rebuild/restart the web app, open **AWS & account**, and choose **Sign in to invited account**. Use **Sync explored lessons** and **Load account progress** explicitly. Guest records are never silently merged into an account. Understanding checks stay local per account because the existing cloud schema stores explored lessons only.
 
 ```dotenv
 # Server only; stack ApiUrl output. No credentials in this value.

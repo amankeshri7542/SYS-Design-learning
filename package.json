@@ -7,20 +7,22 @@
     "build": "next build",
     "start": "node scripts/start.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts",
-    "infra:prepare": "tsx scripts/prepare-infra.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "infra:prepare": "tsx scripts/prepare-infra.ts",
+    "test:browser": "playwright test"
   },
   "dependencies": {
+    "lucide-react": "^0.468.0",
     "next": "^16.2.9",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4",
-    "lucide-react": "^0.468.0"
+    "react-dom": "^19.2.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "typescript": "^5.9.0",
-    "tsx": "^4.20.0"
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
   }
 }

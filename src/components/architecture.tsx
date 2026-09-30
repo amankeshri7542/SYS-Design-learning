@@ -1,103 +1,455 @@
 "use client";
-import { useState } from "react";
-import { Database, Globe2, Server, Zap, Network, Layers3, X, ShieldCheck, Radio, Cloud, MousePointer2 } from "lucide-react";
-import type { Concept } from "@/lib/catalog";
-import type { Point } from "@/lib/simulation";
-const topology = {
-  caching: ["Cache", "ElastiCache", "Database", "Amazon Aurora"],
-  scaling: ["Instance A", "Healthy replica", "Instance B", "Healthy replica"],
-  data: ["Primary", "Write model", "Replica", "Read model"],
-  messaging: ["Event queue", "Amazon SQS", "Consumer", "AWS Lambda"],
-  resilience: ["Primary", "Availability zone A", "Standby", "Availability zone B"],
-  security: ["Identity", "Amazon Cognito", "Resource", "Protected data"],
-  distributed: ["Replica A", "us-east-1", "Replica B", "eu-west-1"],
-};
-const specificTopology: Record<string,string[]> = {
- "sharding":["Partition A","Key range A","Partition B","Key range B"],
- "indexing":["Base table","DynamoDB","Index","Secondary access"],
- "transactions":["Transaction","Aurora PostgreSQL","Commit log","Durable changes"],
- "optimistic-locking":["Version check","Conditional write","Item","DynamoDB"],
- "denormalization":["Source item","DynamoDB","Read view","Duplicated fields"],
- "object-storage":["Metadata","Object reference","Object","Amazon S3"],
- "data-lifecycle":["Hot storage","Amazon S3","Archive","S3 Glacier"],
- "cdn-cache":["Edge cache","CloudFront","Origin","Amazon S3"],
- "invalidation":["Cache","ElastiCache","Source of truth","DynamoDB"],
- "pubsub":["Subscriber A","Queue + worker","Subscriber B","Queue + worker"],
- "event-streams":["Event stream","Kinesis shard","Consumer","Checkpointed reads"],
- "dead-letter":["Work queue","Amazon SQS","Dead-letter queue","Failed messages"],
- "idempotency":["Consumer","AWS Lambda","Dedupe record","DynamoDB"],
- "event-routing":["Event bus","EventBridge rules","Target","Matching events"],
- "circuit-breaker":["Circuit","Application state","Dependency","Protected service"],
- "retries":["Orchestrator","Step Functions","Dependency","Bounded retries"],
- "timeouts":["Deadline","Request budget","Dependency","Bounded waiting"],
- "bulkheads":["Workload A","Reserved capacity","Workload B","Isolated capacity"],
- "disaster-recovery":["Primary data","Live environment","Recovery point","AWS Backup"],
- "observability":["Metrics & logs","CloudWatch","Traces","AWS X-Ray"],
- "authentication":["Identity","Amazon Cognito","Verified user","Token subject"],
- "authorization":["Policy check","IAM + ownership","Resource","Allowed operations"],
- "encryption":["Encryption key","AWS KMS","Object","Encrypted in S3"],
- "secrets":["Credential","Secrets Manager","Application","Cached credential"],
- "network-isolation":["Application","Private subnet","Database","Restricted ingress"],
- "edge-protection":["Edge filter","AWS WAF","Origin","Allowed requests"],
- "blue-green":["Blue fleet","Current version","Green fleet","Candidate version"],
- "canary":["Stable version","Lambda alias","Canary version","Weighted traffic"],
- "strong-consistency":["Committed write","DynamoDB table","Strong read","Latest value"],
- "cqrs":["Write model","DynamoDB table","Read model","Stream projection"],
- "event-sourcing":["Event history","Immutable log","Projection","Rebuilt state"],
- "sagas":["Transaction","Local commit","Compensation","Business undo"],
- "distributed-locks":["Lease","DynamoDB item","Resource","Fencing enforced"],
- "consistent-hashing":["Ring node A","Virtual positions","Ring node B","Key ownership"],
-};
-export function Architecture({concept,running,point,step,replicas,metric,unit}:{concept:Concept;running:boolean;point:Point;step:number;replicas:number;metric:string;unit:string}) {
-  const [selected,setSelected] = useState<string|null>(null);
-  const [zoom,setZoom] = useState(1);
-  const family = specificTopology[concept.id] ?? topology[concept.group];
-  const independent = ["scaling"].includes(concept.group) || ["sharding","pubsub","bulkheads","observability","blue-green","canary","consistent-hashing"].includes(concept.id);
-  const relation = isRelation(concept);
-  const serial = concept.group === "messaging" && concept.id !== "pubsub";
-  const isCache = concept.group === "caching";
-  const nodes = [
-    {id:"clients",title:"Clients",subtitle:"Web & mobile",Icon:Globe2,color:"neutral",description:"Incoming requests originate here. Use the request-rate control to change the offered workload."},
-    {id:"gateway",title:concept.compute === "EC2" ? "Load balancer" : "API gateway",subtitle:concept.compute === "EC2" ? "Application LB" : "Amazon API Gateway",Icon:Network,color:"violet",description:"The entry point routes accepted traffic. Authentication, rate limiting, and health checks belong at the appropriate boundary."},
-    {id:"application",title:concept.compute === "EC2" ? "Application" : "Function",subtitle:concept.compute === "EC2" ? `Amazon EC2 · ×${replicas}` : `AWS Lambda · ×${replicas}`,Icon:concept.compute === "EC2" ? Server : Zap,color:"blue",description:"Application logic coordinates the request. Replica count is a teaching capacity control, not a literal Lambda fleet size."},
-    {id:"fast",title:family[0],subtitle:family[1],Icon:isCache ? Layers3 : concept.group === "security" ? ShieldCheck : concept.group === "messaging" ? Radio : Database,color:"teal",description:isCache ? "A cached value avoids the origin read. Misses and expiration still require fetching a fresh value." : concept.steps[2]},
-    {id:"slow",title:family[2],subtitle:family[3],Icon:Database,color:"amber",description:isCache ? "The database holds the source of truth. The application retrieves a missing value and populates the cache." : concept.steps[3]},
-  ];
-  return <div className={`architecture ${running ? "is-running" : ""}`}>
-    <div className="canvas-meta"><span><span className="status-dot" />{running ? "Simulation running" : "Ready to explore"}</span><span className="model-badge">ILLUSTRATIVE MODEL</span></div>
-    <div className="graph-viewport">
-      <div className="graph-stage" style={{transform:`scale(${zoom})`}}>
-        <div className="cloud-boundary"><span><Cloud size={13}/> AWS CLOUD <i>us-east-1</i></span></div>
-        <svg className="connections" viewBox="0 0 960 380" preserveAspectRatio="none" aria-hidden="true">
-          <defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7" fill="#acb8cb"/></marker><marker id="arrow-green" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7" fill="#48b89f"/></marker></defs>
-          <path className="edge" d="M148 180 H242" markerEnd="url(#arrow)"/>
-          <path className="edge" d="M362 180 H450" markerEnd="url(#arrow)"/>
-          <path className="edge edge-fast" d="M574 166 H620 Q638 166 638 148 V105 Q638 88 656 88 H738" markerEnd="url(#arrow-green)"/>
-          {!serial&&<path className="edge" d="M574 196 H620 Q638 196 638 214 V275 Q638 292 656 292 H738" markerEnd="url(#arrow)"/>}
-          {!independent&&<path className="return-edge" d={isCache && concept.id !== "write-behind" ? "M800 241 V135" : "M800 135 V241"} markerEnd="url(#arrow)"/>}
-          {running && <><circle r="4" fill="#4263ed"><animateMotion dur="1.8s" repeatCount="indefinite" path="M148 180 H574"/></circle><circle r="4" fill="#26a58a"><animateMotion dur="2.3s" repeatCount="indefinite" path="M574 166 H620 Q638 166 638 148 V105 Q638 88 656 88 H738"/></circle><circle r="4" fill="#dba342"><animateMotion dur="3s" repeatCount="indefinite" path={serial?"M800 135 V241":"M574 196 H620 Q638 196 638 214 V275 Q638 292 656 292 H738"}/></circle></>}
-          <text x="182" y="166">HTTPS</text><text x="390" y="166">route</text>
-          <text className="green-text" x="662" y="72">{isCache ? "cache hit" : "primary path"}</text>
-          {!serial&&<text x="662" y="316">{isCache ? "cache miss" : "secondary path"}</text>}
-          {!independent&&<text x="812" y="193">{relation}</text>}
-        </svg>
-        {nodes.map((node,index)=><button key={node.id} className={`diagram-node node-${node.id} ${node.color} ${running && (step===index || step===3 && index===4) ? "node-active" : ""}`} onClick={()=>setSelected(node.id)} aria-label={`Inspect ${node.title}`}>
-          <span className="node-icon"><node.Icon size={25} strokeWidth={1.6}/></span><strong>{node.title}</strong><small>{node.subtitle}</small>
-          {node.id==="fast" && isCache && metric.includes("hit ratio") && <span className="node-stat">{Math.round(point.value)}{unit} hit rate</span>}
-          {node.id==="application" && <span className="node-status"><i/> healthy</span>}
-        </button>)}
-      </div>
-    </div>
-    <div className="canvas-bottom"><span><MousePointer2 size={13}/> Click a component to explore</span><div className="zoom-controls"><button aria-label="Zoom out" onClick={()=>setZoom(z=>Math.max(.8, +(z-.1).toFixed(1)))}>−</button><span>{Math.round(zoom*100)}%</span><button aria-label="Zoom in" onClick={()=>setZoom(z=>Math.min(1.2, +(z+.1).toFixed(1)))}>+</button></div></div>
-    {selected && <div className="node-popover" role="dialog" aria-label="Component details"><button className="icon-button close-popover" onClick={()=>setSelected(null)} aria-label="Close component details"><X size={16}/></button><span className="eyebrow">COMPONENT DETAILS</span><h3>{nodes.find(n=>n.id===selected)?.title}</h3><p>{nodes.find(n=>n.id===selected)?.description}</p><small>Concept service: {concept.service}</small></div>}
-  </div>;
-}
+import { useRef, useState } from "react";
+import {
+  ArrowRight,
+  Box,
+  Database,
+  Server,
+  ShieldCheck,
+  X,
+} from "lucide-react";
+import type { Frame, Entity, Node } from "@/lib/engine";
+import type { Lesson } from "@/lib/lessons";
+import type { RingPoint } from "@/lib/engine/data";
 
-function isRelation(concept:Concept) {
- if(concept.group==="caching")return "refresh";
- if(["eventual-consistency","cap","replication"].includes(concept.id))return "replicate";
- if(["cqrs","indexing","denormalization","event-sourcing"].includes(concept.id))return "project";
- if(concept.id==="data-lifecycle")return "archive";
- if(concept.id==="dead-letter")return "redrive limit";
- return "coordinate";
+export function Architecture({
+  lesson,
+  frame,
+  aws,
+  onInspect,
+}: {
+  lesson: Lesson;
+  frame: Frame;
+  aws: boolean;
+  onInspect: () => void;
+}) {
+  const [selected, setSelected] = useState<Entity | Node | null>(null),
+    dialog = useRef<HTMLDialogElement>(null);
+  const { world: w, event } = frame;
+  const inspect = (value: Entity | Node) => {
+    onInspect();
+    setSelected(value);
+    dialog.current?.showModal();
+  };
+  const component = (n: Node) => (
+    <button
+      key={n.id}
+      className={`component ${event.path.includes(n.id) ? "active" : ""}`}
+      onClick={() => inspect(n)}
+      aria-label={`Inspect ${n.label}`}
+    >
+      <Server size={22} />
+      <strong>{aws ? n.aws : n.label}</strong>
+      {aws && <span>{n.label}</span>}
+      <span
+        className={`state-tag ${["unavailable", "denied", "disconnected", "error"].includes(n.status) ? "bad" : ""}`}
+      >
+        {n.status}
+      </span>
+      <small>{n.detail}</small>
+    </button>
+  );
+  const chip = (e: Entity) => (
+    <button
+      className={`entity-chip ${event.entity === e.id ? "selected" : ""}`}
+      key={e.id}
+      onClick={() => inspect(e)}
+    >
+      <Box size={14} />
+      <span>{e.id}</span>
+      {e.version !== undefined && <small>v{e.version}</small>}
+    </button>
+  );
+  return (
+    <div
+      className={`state-bench family-${lesson.family}`}
+      data-testid="state-bench"
+    >
+      <div className="bench-caption">
+        <span>
+          STATE AT <b>{w.time}s</b>
+        </span>
+        <span>Click a component or item to inspect</span>
+      </div>
+      {lesson.family === "cache" && (
+        <>
+          <div className="cache-source">
+            <span>
+              <Database size={20} />
+              Source v{String(w.fields.sourceVersion)}
+            </span>
+            <span>{w.nodes.find((n) => n.id === "origin")?.status}</span>
+            <span>{String(w.fields.lastRead || "No reads yet")}</span>
+          </div>
+          <div className="cache-slots">
+            {w.entities.length ? (
+              w.entities.map((e) => (
+                <button
+                  key={e.id}
+                  className="cache-entry"
+                  onClick={() => inspect(e)}
+                >
+                  <strong>{e.id}</strong>
+                  <span>
+                    {String(e.value)} · v{e.version}
+                  </span>
+                  <span className="ttl">
+                    {Math.max(0, (e.expires || 0) - w.time)}s until expiry
+                  </span>
+                  <small>
+                    Last used {e.last}s · {e.hits} reads
+                  </small>
+                </button>
+              ))
+            ) : (
+              <div className="state-empty">
+                The cache is empty. The first reusable read must fetch from the
+                source.
+              </div>
+            )}
+          </div>
+          <div className="bench-foot">
+            <span>
+              Hits {w.counters.hits || 0} / misses {w.counters.misses || 0}
+            </span>
+            <span>
+              Evictions {w.counters.evictions || 0} · expirations{" "}
+              {w.counters.expired || 0}
+            </span>
+          </div>
+        </>
+      )}
+      {lesson.family === "queue" && (
+        <div className="queue-lanes">
+          {[
+            ["ready", "Ready"],
+            ["in flight", "In flight"],
+            [
+              lesson.id === "event-streams" ? "consumed" : "completed",
+              lesson.id === "event-streams"
+                ? "Consumed, retained"
+                : "Completed",
+            ],
+            ...(lesson.id === "dead-letter"
+              ? [["dead letter", "Dead letter"]]
+              : []),
+          ].map(([state, label]) => {
+            const list = w.entities.filter((e) => e.state === state);
+            return (
+              <section
+                className={`queue-lane lane-${state.replaceAll(" ", "-")}`}
+                key={state}
+              >
+                <h3>
+                  {label}
+                  <span>{list.length}</span>
+                </h3>
+                <div>
+                  {list.slice(-8).map(chip)}
+                  {list.length > 8 && (
+                    <small>{list.length - 8} more in the item inspector.</small>
+                  )}
+                  {!list.length && (
+                    <span className="lane-empty">No messages</span>
+                  )}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+      {lesson.family === "fleet" && (
+        <>
+          <div className="fleet-boundary">
+            {component(w.nodes[0])}
+            <ArrowRight className="flow-arrow" aria-hidden="true" />
+            <div className="fleet-grid">{w.nodes.slice(1).map(component)}</div>
+          </div>
+          <div className="bench-foot">
+            <span>
+              Capacity: {String(w.fields.capacity || "waiting to run")}
+            </span>
+            <span>Ready: {String(w.fields.ready ?? 0)}</span>
+          </div>
+        </>
+      )}
+      {lesson.family === "replica" && (
+        <div className="replica-ledger">
+          {w.entities.map((e) => (
+            <button
+              key={e.id}
+              className={`replica-card ${e.state === "stale" ? "stale" : ""}`}
+              onClick={() => inspect(e)}
+            >
+              <Database size={24} />
+              <strong>
+                {aws
+                  ? w.nodes.find((n) => n.id === e.location)?.aws
+                  : w.nodes.find((n) => n.id === e.location)?.label}
+              </strong>
+              <b>v{e.version}</b>
+              <span>{String(e.value)}</span>
+              <span className="state-tag">
+                {e.state} · {w.nodes.find((n) => n.id === e.location)?.status}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {lesson.family === "circuit" && (
+        <div className="circuit-bench">
+          <div className="circuit-states">
+            {["closed", "open", "half-open"].map((s) => (
+              <div key={s} className={w.fields.circuit === s ? "current" : ""}>
+                <ShieldCheck size={28} />
+                <strong>{s}</strong>
+                <span>
+                  {s === "closed"
+                    ? "Calls pass through"
+                    : s === "open"
+                      ? "Calls rejected locally"
+                      : "One bounded probe"}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="bench-foot">
+            <span>
+              Consecutive failures: {String(w.fields.consecutiveFailures || 0)}
+            </span>
+            <span>Dependency: {w.failed ? "unavailable" : "available"}</span>
+          </div>
+        </div>
+      )}
+      {lesson.family === "hash" && lesson.id === "consistent-hashing" && (
+        <div className="hash-layout">
+          <svg
+            className="hash-ring"
+            viewBox="0 0 360 360"
+            role="img"
+            aria-label={`Hash ring with ${w.nodes.length} nodes; ${w.counters.moved || 0} keys moved`}
+          >
+            <circle
+              cx="180"
+              cy="180"
+              r="124"
+              fill="none"
+              stroke="var(--line)"
+              strokeWidth="2"
+            />
+            <text x="180" y="170" textAnchor="middle">
+              Clockwise ownership
+            </text>
+            <text x="180" y="196" textAnchor="middle">
+              {w.nodes.length} nodes · 24 keys
+            </text>
+            {(
+              JSON.parse(String(w.fields.positions || "[]")) as RingPoint[]
+            ).map((p, i) => {
+              const a = ((p.position - 90) * Math.PI) / 180;
+              return (
+                <g key={`${p.owner}-${i}`}>
+                  <circle
+                    cx={180 + 124 * Math.cos(a)}
+                    cy={180 + 124 * Math.sin(a)}
+                    r="7"
+                    fill="var(--blue)"
+                  />
+                  <title>
+                    {p.owner} at {p.position} degrees
+                  </title>
+                </g>
+              );
+            })}
+            {w.entities.map((e) => {
+              const a = ((e.position! - 90) * Math.PI) / 180;
+              return (
+                <circle
+                  key={e.id}
+                  cx={180 + 105 * Math.cos(a)}
+                  cy={180 + 105 * Math.sin(a)}
+                  r={e.state === "moved" ? 5 : 3}
+                  fill={e.state === "moved" ? "var(--amber)" : "var(--teal)"}
+                >
+                  <title>
+                    {e.id}: {e.owner}, {e.state}
+                  </title>
+                </circle>
+              );
+            })}
+          </svg>
+          <div className="hash-owners">
+            {w.nodes.map((n) => (
+              <div key={n.id}>
+                <button className="text-button" onClick={() => inspect(n)}>
+                  {n.label} ·{" "}
+                  {w.entities.filter((e) => e.owner === n.id).length} keys
+                </button>
+                <div>
+                  {w.entities
+                    .filter((e) => e.owner === n.id)
+                    .slice(0, 5)
+                    .map(chip)}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="figure-note">
+            Small dots: keys. Large dots: virtual positions. Larger amber keys
+            moved. Inspect every exact owner below.
+          </p>
+        </div>
+      )}
+      {lesson.id === "sharding" && (
+        <div className="partition-buckets">
+          {w.nodes.map((n) => (
+            <section key={n.id}>
+              {component(n)}
+              <div>{w.entities.filter((e) => e.owner === n.id).map(chip)}</div>
+            </section>
+          ))}
+        </div>
+      )}
+      {lesson.family === "network" && (
+        <div className="network-zones">
+          {w.nodes.map((n, i) => (
+            <section
+              key={n.id}
+              className={`network-zone ${i ? "private-zone" : "public-zone"}`}
+            >
+              <span>{i ? "CONTROLLED BOUNDARY" : "PUBLIC SOURCE"}</span>
+              {component(n)}
+              {w.entities.filter((e) => e.location === n.id).map(chip)}
+            </section>
+          ))}
+        </div>
+      )}
+      {lesson.family === "identity" && (
+        <>
+          <div className="policy-title">
+            <ShieldCheck size={24} />
+            <span>{event.title}</span>
+          </div>
+          <div className="identity-records">
+            {w.entities.length ? (
+              w.entities.map((e) => (
+                <button key={e.id} onClick={() => inspect(e)}>
+                  <strong>{e.id}</strong>
+                  <span>{String(e.value)}</span>
+                  <span>
+                    {e.version !== undefined ? `Version ${e.version} · ` : ""}
+                    {e.state}
+                  </span>
+                </button>
+              ))
+            ) : (
+              <p>Run a request to inspect its identity and policy decision.</p>
+            )}
+          </div>
+        </>
+      )}
+      {(lesson.family === "record" || lesson.family === "workflow") && (
+        <>
+          <div className="record-components">{w.nodes.map(component)}</div>
+          <div className="field-grid">
+            {Object.entries(w.fields).map(([key, value]) => (
+              <div key={key}>
+                <span>{key.replace(/([A-Z])/g, " $1")}</span>
+                <strong>{String(value)}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="record-items">
+            {w.entities.slice(-12).map((e) => (
+              <button key={e.id} onClick={() => inspect(e)}>
+                <strong>{e.id}</strong>
+                <span>{String(e.value)}</span>
+                <small>
+                  {e.state}
+                  {e.version !== undefined ? ` · v${e.version}` : ""}
+                </small>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {aws && (
+        <div className="aws-mapping">
+          <strong>Example AWS implementation</strong>
+          {w.nodes.map((n) => (
+            <span key={n.id}>
+              {n.label} → {n.aws}
+            </span>
+          ))}
+        </div>
+      )}
+      <details className="topology-details">
+        <summary>Architecture & item inspector</summary>
+        <p>
+          Edges are explicit for this lesson.{" "}
+          {aws
+            ? "AWS labels are example mappings, not running resources."
+            : "AWS view shows optional service mappings."}
+        </p>
+        <div className="topology-components">{w.nodes.map(component)}</div>
+        <ul className="edge-list">
+          {w.edges.map(([a, b], i) => (
+            <li key={`${a}-${b}-${i}`}>
+              {w.nodes.find((n) => n.id === a)?.label}
+              <ArrowRight size={15} />
+              {w.nodes.find((n) => n.id === b)?.label}
+            </li>
+          ))}
+        </ul>
+        {w.entities.length > 0 && (
+          <label className="item-selector">
+            Inspect any item
+            <select
+              value=""
+              onChange={(e) => {
+                const item = w.entities.find((x) => x.id === e.target.value);
+                if (item) inspect(item);
+              }}
+            >
+              <option value="">Choose from {w.entities.length} items</option>
+              {w.entities.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.id} · {e.state}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </details>
+      <dialog
+        ref={dialog}
+        className="detail-dialog"
+        aria-labelledby="inspect-title"
+      >
+        <div className="dialog-heading">
+          <h2 id="inspect-title">
+            {selected && "label" in selected
+              ? selected.label
+              : selected?.id || "Item details"}
+          </h2>
+          <button
+            className="icon-button"
+            onClick={() => dialog.current?.close()}
+            aria-label="Close inspector"
+          >
+            <X />
+          </button>
+        </div>
+        <dl>
+          {Object.entries(selected || {}).map(([key, value]) => (
+            <div key={key}>
+              <dt>{key}</dt>
+              <dd>{String(value)}</dd>
+            </div>
+          ))}
+        </dl>
+        <p>Snapshot at {w.time}s. Close this inspector to continue.</p>
+      </dialog>
+    </div>
+  );
 }

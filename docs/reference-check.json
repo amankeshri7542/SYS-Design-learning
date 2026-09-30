@@ -1,0 +1,247 @@
+[
+  {
+    "url": "https://docs.aws.amazon.com/whitepapers/latest/database-caching-strategies-using-redis/caching-patterns.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/whitepapers/latest/database-caching-strategies-using-redis/caching-patterns.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/welcome.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/welcome.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Introduction.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Introduction.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/introduction.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/introduction.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/autoscaling/ec2/userguide/what-is-amazon-ec2-auto-scaling.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/autoscaling/ec2/userguide/what-is-amazon-ec2-auto-scaling.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-types.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-types.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-scaling-target-tracking.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-scaling-target-tracking.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/lambda/latest/dg/lambda-concurrency.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/lambda/latest/dg/lambda-concurrency.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-throttling.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-throttling.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/rds-proxy.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/rds-proxy.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-design.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-design.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Aurora.Replication.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Aurora.Replication.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html"
+  },
+  {
+    "url": "https://www.postgresql.org/docs/current/tutorial-transactions.html",
+    "status": 200,
+    "finalUrl": "https://www.postgresql.org/docs/current/tutorial-transactions.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/BestPractices_ImplementingVersionControl.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/BestPractices_ImplementingVersionControl.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/Welcome.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/sns/latest/dg/sns-sqs-as-subscriber.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/sns/latest/dg/sns-sqs-as-subscriber.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/streams/latest/dev/key-concepts.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/streams/latest/dev/key-concepts.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/FIFO-queues-understanding-logic.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/FIFO-queues-understanding-logic.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/lambda/latest/dg/with-sqs.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/lambda/latest/dg/with-sqs.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-event-patterns.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-event-patterns.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/circuit-breaker.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/circuit-breaker.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/retry-backoff.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/retry-backoff.html"
+  },
+  {
+    "url": "https://aws.amazon.com/builders-library/timeouts-retries-and-backoff-with-jitter/",
+    "status": 200,
+    "finalUrl": "https://builder.aws.com/content/3EumjoZascWd1oZiEgL8ORlv3qE/timeouts-retries-and-backoff-with-jitter"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Concepts.AuroraHighAvailability.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Concepts.AuroraHighAvailability.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/xray/latest/devguide/aws-xray.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/xray/latest/devguide/aws-xray.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/cognito/latest/developerguide/amazon-cognito-user-pools-using-the-access-token.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/secretsmanager/latest/userguide/rotating-secrets.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/secretsmanager/latest/userguide/rotating-secrets.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/waf/latest/developerguide/web-acl-rule-actions.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/waf/latest/developerguide/web-acl-rule-actions.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/codedeploy/latest/userguide/deployments-create.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/codedeploy/latest/userguide/deployments-create.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/lambda/latest/dg/configuring-alias-routing.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/lambda/latest/dg/configuring-alias-routing.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GlobalTables.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GlobalTables.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/whitepapers/latest/availability-and-beyond-improving-resilience/",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/whitepapers/latest/availability-and-beyond-improving-resilience/"
+  },
+  {
+    "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs",
+    "status": 200,
+    "finalUrl": "https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs"
+  },
+  {
+    "url": "https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing",
+    "status": 200,
+    "finalUrl": "https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/saga-orchestration.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/prescriptive-guidance/latest/cloud-design-patterns/saga-orchestration.html"
+  },
+  {
+    "url": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.ConditionExpressions.html",
+    "status": 200,
+    "finalUrl": "https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.ConditionExpressions.html"
+  },
+  {
+    "url": "https://www.cs.princeton.edu/courses/archive/fall09/cos518/papers/chash.pdf",
+    "status": 200,
+    "finalUrl": "https://www.cs.princeton.edu/courses/archive/fall09/cos518/papers/chash.pdf"
+  }
+]
