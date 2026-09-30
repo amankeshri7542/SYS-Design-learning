@@ -11,21 +11,89 @@ import {
 import type { Frame, Entity, Node } from "@/lib/engine";
 import type { Lesson } from "@/lib/lessons";
 import type { RingPoint } from "@/lib/engine/data";
+import { OperationMap } from "./operation-map";
+import { describeItem } from "@/lib/inspection";
 
 export function Architecture({
   lesson,
   frame,
+  frames,
   aws,
   onInspect,
+  onSeek,
 }: {
   lesson: Lesson;
   frame: Frame;
+  frames: Frame[];
   aws: boolean;
   onInspect: () => void;
+  onSeek: (event: number) => void;
 }) {
   const [selected, setSelected] = useState<Entity | Node | null>(null),
     dialog = useRef<HTMLDialogElement>(null);
   const { world: w, event } = frame;
+  const description = selected
+    ? describeItem(selected, frame, frames, lesson.id)
+    : null;
+  const points =
+    lesson.id === "consistent-hashing"
+      ? (JSON.parse(String(w.fields.positions || "[]")) as RingPoint[])
+      : [];
+  const selectedKey =
+    w.entities.find(
+      (e) =>
+        e.id ===
+        (selected && "kind" in selected && selected.kind === "hashed key"
+          ? selected.id
+          : event.entity),
+    ) || w.entities[0];
+  const ownerColors = [
+    "#245edb",
+    "#087e70",
+    "#965b12",
+    "#7044a2",
+    "#9b425a",
+    "#446072",
+    "#576811",
+  ];
+  const colorFor = (id: string) =>
+    ownerColors[
+      Math.max(
+        0,
+        w.nodes.findIndex((n) => n.id === id),
+      ) % ownerColors.length
+    ];
+  const ringLabels: {
+    id: string;
+    x: number;
+    y: number;
+    fromX: number;
+    fromY: number;
+  }[] = [];
+  for (const n of w.nodes) {
+    const point = points.find((p) => p.owner === n.id);
+    if (!point) continue;
+    const angle = ((point.position - 90) * Math.PI) / 180;
+    let x = 180 + 153 * Math.cos(angle),
+      y = 180 + 153 * Math.sin(angle);
+    // Seven nodes at most; nudge colliding labels and retain a leader to the true position.
+    for (
+      let step = 1;
+      step <= 30 && ringLabels.some((p) => Math.hypot(p.x - x, p.y - y) < 34);
+      step++
+    ) {
+      const offset = angle + (step * Math.PI) / 15;
+      x = 180 + 153 * Math.cos(offset);
+      y = 180 + 153 * Math.sin(offset);
+    }
+    ringLabels.push({
+      id: n.id,
+      x,
+      y,
+      fromX: 180 + 124 * Math.cos(angle),
+      fromY: 180 + 124 * Math.sin(angle),
+    });
+  }
   const inspect = (value: Entity | Node) => {
     onInspect();
     setSelected(value);
@@ -34,18 +102,14 @@ export function Architecture({
   const component = (n: Node) => (
     <button
       key={n.id}
-      className={`component ${event.path.includes(n.id) ? "active" : ""}`}
+      className={`component health-${n.health} ${event.path.includes(n.id) ? "active" : ""}`}
       onClick={() => inspect(n)}
       aria-label={`Inspect ${n.label}`}
     >
       <Server size={22} />
       <strong>{aws ? n.aws : n.label}</strong>
       {aws && <span>{n.label}</span>}
-      <span
-        className={`state-tag ${["unavailable", "denied", "disconnected", "error"].includes(n.status) ? "bad" : ""}`}
-      >
-        {n.status}
-      </span>
+      <span className={`state-tag health-${n.health}`}>{n.status}</span>
       <small>{n.detail}</small>
     </button>
   );
@@ -71,6 +135,7 @@ export function Architecture({
         </span>
         <span>Click a component or item to inspect</span>
       </div>
+      <OperationMap frame={frame} aws={aws} inspect={inspect} />
       {lesson.family === "cache" && (
         <>
           <div className="cache-source">
@@ -135,6 +200,10 @@ export function Architecture({
               : []),
           ].map(([state, label]) => {
             const list = w.entities.filter((e) => e.state === state);
+            const current = list.find((e) => e.id === event.entity);
+            const preview = list.slice(-8);
+            if (current && !preview.includes(current))
+              preview.splice(0, 1, current);
             return (
               <section
                 className={`queue-lane lane-${state.replaceAll(" ", "-")}`}
@@ -145,7 +214,7 @@ export function Architecture({
                   <span>{list.length}</span>
                 </h3>
                 <div>
-                  {list.slice(-8).map(chip)}
+                  {preview.map(chip)}
                   {list.length > 8 && (
                     <small>{list.length - 8} more in the item inspector.</small>
                   )}
@@ -189,7 +258,9 @@ export function Architecture({
               </strong>
               <b>v{e.version}</b>
               <span>{String(e.value)}</span>
-              <span className="state-tag">
+              <span
+                className={`state-tag health-${e.state === "stale" ? "degraded" : w.nodes.find((n) => n.id === e.location)?.health || "degraded"}`}
+              >
                 {e.state} · {w.nodes.find((n) => n.id === e.location)?.status}
               </span>
             </button>
@@ -229,6 +300,45 @@ export function Architecture({
             role="img"
             aria-label={`Hash ring with ${w.nodes.length} nodes; ${w.counters.moved || 0} keys moved`}
           >
+            {points.map((point, i) => {
+              const start =
+                points[(i + points.length - 1) % points.length].position;
+              const span = (point.position - start + 360) % 360;
+              const a = ((start - 90) * Math.PI) / 180,
+                b = ((point.position - 90) * Math.PI) / 180;
+              return span ? (
+                <path
+                  key={`arc-${i}`}
+                  d={`M ${180 + 124 * Math.cos(a)} ${180 + 124 * Math.sin(a)} A 124 124 0 ${span > 180 ? 1 : 0} 1 ${180 + 124 * Math.cos(b)} ${180 + 124 * Math.sin(b)}`}
+                  fill="none"
+                  stroke={colorFor(point.owner)}
+                  strokeWidth="7"
+                >
+                  <title>{`${point.owner} owns clockwise interval (${start}°, ${point.position}°]`}</title>
+                </path>
+              ) : null;
+            })}
+            {selectedKey &&
+              (() => {
+                const target =
+                  points.find((p) => p.position >= selectedKey.position!) ||
+                  points[0];
+                if (!target) return null;
+                const a = ((selectedKey.position! - 90) * Math.PI) / 180,
+                  b = ((target.position - 90) * Math.PI) / 180;
+                const span =
+                  (target.position - selectedKey.position! + 360) % 360;
+                return (
+                  <path
+                    className="selected-key-arc"
+                    d={`M ${180 + 105 * Math.cos(a)} ${180 + 105 * Math.sin(a)} A 105 105 0 ${span > 180 ? 1 : 0} 1 ${180 + 105 * Math.cos(b)} ${180 + 105 * Math.sin(b)} L ${180 + 124 * Math.cos(b)} ${180 + 124 * Math.sin(b)}`}
+                    fill="none"
+                    stroke="var(--ink)"
+                    strokeWidth="3"
+                    strokeDasharray="5 3"
+                  />
+                );
+              })()}
             <circle
               cx="180"
               cy="180"
@@ -253,14 +363,33 @@ export function Architecture({
                     cx={180 + 124 * Math.cos(a)}
                     cy={180 + 124 * Math.sin(a)}
                     r="7"
-                    fill="var(--blue)"
+                    fill={colorFor(p.owner)}
                   />
-                  <title>
-                    {p.owner} at {p.position} degrees
-                  </title>
+                  <title>{`${p.owner} at ${p.position} degrees`}</title>
                 </g>
               );
             })}
+            {ringLabels.map((p) => (
+              <g key={`label-${p.id}`}>
+                <line
+                  x1={p.fromX}
+                  y1={p.fromY}
+                  x2={p.x}
+                  y2={p.y - 6}
+                  stroke={colorFor(p.id)}
+                  strokeWidth="1"
+                />
+                <text
+                  x={p.x}
+                  y={p.y + 5}
+                  textAnchor="middle"
+                  className="ring-node-label"
+                  fill={colorFor(p.id)}
+                >
+                  {p.id.replace("node-", "N")}
+                </text>
+              </g>
+            ))}
             {w.entities.map((e) => {
               const a = ((e.position! - 90) * Math.PI) / 180;
               return (
@@ -271,14 +400,17 @@ export function Architecture({
                   r={e.state === "moved" ? 5 : 3}
                   fill={e.state === "moved" ? "var(--amber)" : "var(--teal)"}
                 >
-                  <title>
-                    {e.id}: {e.owner}, {e.state}
-                  </title>
+                  <title>{`${e.id}: ${e.owner}, ${e.state}`}</title>
                 </circle>
               );
             })}
           </svg>
           <div className="hash-owners">
+            <p className="selected-key-caption">
+              Selected: <strong>{selectedKey?.id}</strong> at{" "}
+              {selectedKey?.position}° → {selectedKey?.owner}. Follow the dashed
+              clockwise arc.
+            </p>
             {w.nodes.map((n) => (
               <div key={n.id}>
                 <button className="text-button" onClick={() => inspect(n)}>
@@ -295,8 +427,9 @@ export function Architecture({
             ))}
           </div>
           <p className="figure-note">
-            Small dots: keys. Large dots: virtual positions. Larger amber keys
-            moved. Inspect every exact owner below.
+            Colored arcs belong to the labelled owner. Small dots are keys;
+            large dots are virtual positions. Amber keys moved. Choose any key
+            in the inspector.
           </p>
         </div>
       )}
@@ -350,6 +483,46 @@ export function Architecture({
       )}
       {(lesson.family === "record" || lesson.family === "workflow") && (
         <>
+          {lesson.id === "sagas" && (
+            <div className="saga-lanes">
+              {w.nodes.map((n) => (
+                <section key={n.id}>
+                  <h3>{n.label}</h3>
+                  <ol>
+                    {frames
+                      .slice(0, event.id + 1)
+                      .filter(
+                        (f) =>
+                          f.event.path.includes(n.id) &&
+                          [
+                            "reserve",
+                            "authorize",
+                            "fulfilled",
+                            "fulfillment-failed",
+                            "compensate",
+                          ].includes(f.event.type),
+                      )
+                      .map((f) => (
+                        <li
+                          key={f.event.id}
+                          className={
+                            f.event.type === "compensate" ? "compensation" : ""
+                          }
+                        >
+                          <button onClick={() => onSeek(f.event.id)}>
+                            <time>{f.event.time}s</time>
+                            {f.event.title}
+                          </button>
+                        </li>
+                      ))}
+                  </ol>
+                  <span className={`state-tag health-${n.health}`}>
+                    {n.status}
+                  </span>
+                </section>
+              ))}
+            </div>
+          )}
           <div className="record-components">{w.nodes.map(component)}</div>
           <div className="field-grid">
             {Object.entries(w.fields).map(([key, value]) => (
@@ -440,14 +613,40 @@ export function Architecture({
             <X />
           </button>
         </div>
+        <p>{description?.summary}</p>
         <dl>
-          {Object.entries(selected || {}).map(([key, value]) => (
-            <div key={key}>
-              <dt>{key}</dt>
-              <dd>{String(value)}</dd>
+          {description?.fields.map((field) => (
+            <div key={field.label}>
+              <dt>{field.label}</dt>
+              <dd>
+                <strong>{field.value}</strong>
+                <p>{field.meaning}</p>
+              </dd>
             </div>
           ))}
         </dl>
+        {description?.change ? (
+          <div className="inspector-evidence">
+            <h3>Last changed at {description.change.event.time}s</h3>
+            <p>{description.change.event.title}</p>
+            <p>{description.change.event.why}</p>
+            <button
+              className="text-button"
+              onClick={() => {
+                dialog.current?.close();
+                onSeek(description.change!.event.id);
+              }}
+            >
+              Inspect that event →
+            </button>
+          </div>
+        ) : (
+          <p>No change yet; this is the initial state.</p>
+        )}
+        <details>
+          <summary>Advanced · raw state</summary>
+          <pre>{JSON.stringify(selected, null, 2)}</pre>
+        </details>
         <p>Snapshot at {w.time}s. Close this inspector to continue.</p>
       </dialog>
     </div>

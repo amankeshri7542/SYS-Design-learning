@@ -16,7 +16,17 @@ import {
   X,
 } from "lucide-react";
 import { concepts, getConcept, groups } from "@/lib/catalog";
-import { makeConfig, restoreExperiment, type Config } from "@/lib/engine";
+import {
+  emptySession,
+  readSession,
+  restoreSessionRoute,
+  saveSession,
+  sessionQuery,
+  visitSession,
+  type DraftUpdate,
+  type WorkspacePage,
+  type WorkspaceSession,
+} from "@/lib/session";
 import {
   emptyProgress,
   markProgress,
@@ -30,27 +40,72 @@ import { Experiment } from "./experiment";
 import { Journey } from "./journey";
 import { CloudProgress } from "./cloud-progress";
 
-type Page = "lesson" | "library" | "journey" | "progress" | "cloud";
 export function Lab() {
-  const [page, setPage] = useState<Page>("lesson"),
-    [session, setSession] = useState<{ config: Config; key: number }>({
-      config: makeConfig("cache-aside"),
-      key: 0,
-    }),
-    [ready, setReady] = useState(false),
+  const [workspace, setWorkspace] = useState<WorkspaceSession>(emptySession),
     [progress, setProgress] = useState<Progress>(emptyProgress),
     [account, setAccount] = useState("guest"),
-    [query, setQuery] = useState(""),
-    [filter, setFilter] = useState("all"),
     [status, setStatus] = useState(""),
-    [open, setOpen] = useState(false);
+    [open, setOpen] = useState(false),
+    [navCollapsed, setNavCollapsed] = useState(false);
+  const { page, lesson: selectedLesson, query, filter } = workspace;
+  const draft = workspace.drafts[selectedLesson];
   const search = useRef<HTMLInputElement>(null),
     menu = useRef<HTMLDialogElement>(null),
     accountRef = useRef("guest"),
     progressRef = useRef(progress),
     writable = useRef(true),
     initialized = useRef(false),
-    volatile = useRef<Record<string, Progress>>({});
+    volatile = useRef<Record<string, Progress>>({}),
+    workspaceRef = useRef(workspace),
+    sessionWritable = useRef(true),
+    sessionLoaded = useRef(false);
+  const updateWorkspace = useCallback((next: WorkspaceSession) => {
+    workspaceRef.current = next;
+    setWorkspace(next);
+    if (sessionLoaded.current && sessionWritable.current) {
+      try {
+        saveSession(localStorage, next);
+      } catch {
+        sessionWritable.current = false;
+        setStatus(
+          "Draft storage failed. Your controls and replay position are held for this visit; refresh cannot restore these changes.",
+        );
+      }
+    }
+  }, []);
+  const navigate = useCallback(
+    (next: WorkspacePage, lesson?: string) => {
+      const current = workspaceRef.current;
+      const destination = visitSession(current, next, lesson);
+      if (
+        destination.page !== current.page ||
+        destination.lesson !== current.lesson
+      )
+        window.history.pushState(null, "", sessionQuery(destination));
+      updateWorkspace(destination);
+      setOpen(false);
+    },
+    [updateWorkspace],
+  );
+  const updateDraft = useCallback(
+    (update: DraftUpdate) => {
+      const current = workspaceRef.current;
+      const next =
+        typeof update === "function"
+          ? update(current.drafts[selectedLesson])
+          : update;
+      if (next.config.lesson !== selectedLesson) return;
+      updateWorkspace({
+        ...current,
+        drafts: { ...current.drafts, [selectedLesson]: next },
+      });
+    },
+    [selectedLesson, updateWorkspace],
+  );
+  const setQuery = (value: string) =>
+    updateWorkspace({ ...workspaceRef.current, query: value });
+  const setFilter = (value: string) =>
+    updateWorkspace({ ...workspaceRef.current, filter: value });
   const loadAccount = useCallback((next: string) => {
     if (initialized.current)
       volatile.current[accountRef.current] = progressRef.current;
@@ -73,23 +128,36 @@ export function Lab() {
   }, []);
   useEffect(() => {
     loadAccount(getAccount() || "guest");
+    let saved = workspaceRef.current;
+    try {
+      saved = readSession(localStorage);
+    } catch {
+      sessionWritable.current = false;
+      setStatus(
+        "Saved drafts are unavailable or unrecognized. Existing data is untouched; changes last for this visit.",
+      );
+    }
+    workspaceRef.current = saved;
+    sessionLoaded.current = true;
     const restore = () => {
       try {
-        const config = restoreExperiment(window.location.search);
-        if (config) {
-          setSession((s) => ({ config, key: s.key + 1 }));
-          setPage("lesson");
-        }
+        const next = restoreSessionRoute(
+          workspaceRef.current,
+          window.location.search,
+        );
+        updateWorkspace(next);
+        window.history.replaceState(null, "", sessionQuery(next));
       } catch (e) {
         setStatus(e instanceof Error ? e.message : "Invalid experiment link.");
+        updateWorkspace(workspaceRef.current);
       }
+      setOpen(false);
     };
     restore();
-    setReady(true);
     const key = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "k") {
         event.preventDefault();
-        setPage("library");
+        navigate("library");
         requestAnimationFrame(() => search.current?.focus());
       }
     };
@@ -111,7 +179,7 @@ export function Lab() {
       window.removeEventListener("popstate", restore);
       window.removeEventListener("keydown", key);
     };
-  }, [loadAccount]);
+  }, [loadAccount, navigate, updateWorkspace]);
   useEffect(() => {
     if (open) menu.current?.showModal();
     else menu.current?.close();
@@ -141,17 +209,11 @@ export function Lab() {
   );
   const select = (id: string) => {
     if (!getConcept(id)) return;
-    setSession((s) => ({ config: makeConfig(id), key: s.key + 1 }));
-    setPage("lesson");
-    setOpen(false);
+    navigate("lesson", id);
     requestAnimationFrame(() =>
       document.getElementById("main-content")?.focus(),
     );
     window.scrollTo({ top: 0, behavior: "instant" });
-  };
-  const navigate = (next: Page) => {
-    setPage(next);
-    setOpen(false);
   };
   const nav = (
     <>
@@ -199,10 +261,7 @@ export function Lab() {
       <div className="path-heading">LEARNING PATHS</div>
       <nav className="path-nav" aria-label="Learning paths">
         {groups.map((g) => (
-          <details
-            key={g.id}
-            open={g.id === getConcept(session.config.lesson)?.group}
-          >
+          <details key={g.id} open={g.id === getConcept(selectedLesson)?.group}>
             <summary>
               {g.name}
               <small>{concepts.filter((c) => c.group === g.id).length}</small>
@@ -214,7 +273,7 @@ export function Lab() {
                   <button
                     key={c.id}
                     className={
-                      page === "lesson" && c.id === session.config.lesson
+                      page === "lesson" && c.id === selectedLesson
                         ? "active"
                         : ""
                     }
@@ -258,11 +317,13 @@ export function Lab() {
         .includes(query.toLowerCase()),
   );
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${navCollapsed ? "nav-collapsed" : ""}`}>
       <a href="#main-content" className="skip-link">
         Skip to learning workspace
       </a>
-      <aside className="sidebar">{nav}</aside>
+      <aside id="workspace-navigation" className="sidebar">
+        {nav}
+      </aside>
       <dialog
         ref={menu}
         className="mobile-navigation"
@@ -281,6 +342,17 @@ export function Lab() {
       <div className="app-content">
         <header className="topbar">
           <button
+            className="icon-button desktop-nav-toggle"
+            onClick={() => setNavCollapsed((value) => !value)}
+            aria-label={
+              navCollapsed ? "Expand navigation" : "Collapse navigation"
+            }
+            aria-expanded={!navCollapsed}
+            aria-controls="workspace-navigation"
+          >
+            <Menu />
+          </button>
+          <button
             className="icon-button mobile-toggle"
             onClick={() => setOpen(true)}
             aria-label="Open navigation"
@@ -292,7 +364,7 @@ export function Lab() {
             <ChevronRight size={15} />
             <strong>
               {page === "lesson"
-                ? getConcept(session.config.lesson)?.title
+                ? getConcept(selectedLesson)?.title
                 : page === "journey"
                   ? "Build a system"
                   : page === "cloud"
@@ -331,12 +403,11 @@ export function Lab() {
               </button>
             </div>
           )}
-          {!ready ? (
-            <p role="status">Preparing your learning workspace…</p>
-          ) : page === "lesson" ? (
+          {page === "lesson" ? (
             <Experiment
-              key={session.key}
-              initial={session.config}
+              key={selectedLesson}
+              draft={draft}
+              onDraftChange={updateDraft}
               onExplore={explore}
               onUnderstand={understand}
               onSelect={select}
@@ -385,6 +456,7 @@ export function Lab() {
                     ref={search}
                     aria-label="Search concepts"
                     placeholder="Search concepts, patterns, or AWS services"
+                    maxLength={500}
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                   />

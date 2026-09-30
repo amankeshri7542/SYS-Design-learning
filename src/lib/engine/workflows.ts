@@ -1,4 +1,9 @@
 import { Timeline, node, sample } from "./model";
+import {
+  createCircuitState,
+  allowCircuitCall,
+  recordCircuitResult,
+} from "./circuit-policy";
 
 export function circuit(t: Timeline) {
   const w = t.world,
@@ -12,18 +17,17 @@ export function circuit(t: Timeline) {
     ["caller", "breaker"],
     ["breaker", "dependency"],
   ];
-  let state = "closed",
-    failures = 0,
-    openedAt = -1;
-  w.fields = { circuit: state, consecutiveFailures: 0 };
+  const policy = createCircuitState();
+  w.fields = { circuit: policy.phase, consecutiveFailures: 0 };
   t.start();
   for (let time = 1; time <= 24; time++) {
     t.tick(time);
     w.nodes[2].status = w.failed ? "unavailable" : "ready";
-    if (state === "open" && time - openedAt >= c.cooldown) {
-      state = "half-open";
-      w.fields.circuit = state;
-      w.nodes[1].status = state;
+    const previous = policy.phase;
+    const allowed = allowCircuitCall(policy, time, c.cooldown);
+    if (previous === "open" && policy.phase === "half-open") {
+      w.fields.circuit = policy.phase;
+      w.nodes[1].status = policy.phase;
       t.emit(
         time,
         "half-open",
@@ -33,7 +37,7 @@ export function circuit(t: Timeline) {
         ["breaker"],
       );
     }
-    if (state === "open") {
+    if (!allowed) {
       t.count("blocked");
       t.emit(
         time,
@@ -47,19 +51,15 @@ export function circuit(t: Timeline) {
     }
     t.count("attempts");
     if (w.failed) {
-      failures++;
       t.count("errors");
-      const open = state === "half-open" || failures >= c.threshold;
-      if (open) {
-        state = "open";
-        openedAt = time;
-      }
+      recordCircuitResult(policy, time, c.threshold, false);
+      const open = policy.phase === "open";
       w.fields = {
-        circuit: state,
-        consecutiveFailures: failures,
-        probeAfter: openedAt + c.cooldown,
+        circuit: policy.phase,
+        consecutiveFailures: policy.failures,
+        probeAfter: policy.openedAt + c.cooldown,
       };
-      w.nodes[1].status = state;
+      w.nodes[1].status = policy.phase;
       t.emit(
         time,
         open ? "open" : "call-failed",
@@ -71,12 +71,11 @@ export function circuit(t: Timeline) {
         ["caller", "breaker", "dependency"],
       );
     } else {
-      const probed = state === "half-open";
-      state = "closed";
-      failures = 0;
+      const probed = policy.phase === "half-open";
+      recordCircuitResult(policy, time, c.threshold, true);
       t.count("completed");
-      w.fields = { circuit: state, consecutiveFailures: 0 };
-      w.nodes[1].status = state;
+      w.fields = { circuit: policy.phase, consecutiveFailures: 0 };
+      w.nodes[1].status = policy.phase;
       t.emit(
         time,
         probed ? "close" : "call-success",
@@ -170,7 +169,11 @@ export function workflow(t: Timeline) {
     };
   if (id === "distributed-locks")
     w.fields = { holder: "A", leaseExpires: c.lease, fenceA: 1, fenceB: 0 };
-  if (id === "disaster-recovery") w.counters.loss = c.backup;
+  if (id === "disaster-recovery") {
+    w.counters.loss = c.backup;
+    w.counters.planned = c.restore;
+    w.nodes[2].status = "waiting";
+  }
   t.start();
   let attempt = 0,
     nextAttempt = 1,
@@ -270,8 +273,9 @@ export function workflow(t: Timeline) {
         "The two states are deliberately separate.",
       );
     } else if (id === "disaster-recovery") {
-      if (time === 2 || (w.failed && restoreAt === undefined)) {
+      if (restoreAt === undefined && time === 2) {
         restoreAt = time;
+        w.fields.restoreStarted = time;
         w.nodes[0].status = "lost";
         w.nodes[2].status = "restoring";
         t.emit(
@@ -283,28 +287,46 @@ export function workflow(t: Timeline) {
           ["primary", "backup", "restore"],
         );
       }
-      if (restoreAt !== undefined) {
-        w.counters.rto = Math.min(time - restoreAt, c.restore);
+      if (done) {
+        w.nodes[2].status = w.failed ? "unavailable" : "ready";
+        t.emit(
+          time,
+          "recovery-observation",
+          "Recovery result retained",
+          `The first validated recovery took ${w.counters.rto}s; that measurement is frozen.`,
+          w.failed
+            ? "A later fault is a separate outage; it does not rewrite the measured recovery."
+            : "The recovery environment is serving.",
+          ["restore"],
+        );
+      } else if (restoreAt !== undefined) {
+        w.counters.rto = time - restoreAt;
         if (time - restoreAt >= c.restore && !w.failed) {
+          done = true;
+          w.fields.readyAt = time;
           w.nodes[2].status = "ready";
           w.counters.completed = 1;
           t.emit(
             time,
             "restored",
             "Recovery environment ready",
-            "The restore duration elapsed and recovery validation passed.",
+            `The planned ${c.restore}s restore elapsed and validation passed after ${w.counters.rto}s of actual unavailability.`,
             "Measure the loss window separately from recovery time.",
             ["backup", "restore"],
           );
-        } else
+        } else {
+          w.nodes[2].status = w.failed ? "unavailable" : "restoring";
           t.emit(
             time,
             "restoring",
             "Restoration in progress",
-            "Service is still unavailable from the recovery environment.",
+            w.failed
+              ? "Validation is blocked by the active fault. Observed unavailability keeps increasing beyond the planned duration."
+              : "Service is still unavailable from the recovery environment.",
             "Continue until restore and validation finish.",
             ["backup", "restore"],
           );
+        }
       }
     } else if (id === "observability") {
       const traced = sample(seed, `trace:${time}`) * 100 < c.sample;
@@ -373,8 +395,11 @@ export function workflow(t: Timeline) {
     } else if (id === "sagas") {
       if (time === 1) {
         w.fields.inventory = "reserved";
+        w.nodes[0].status = "committed";
         t.count("attempts");
         t.count("completed");
+        t.count("forwardAttempts");
+        t.count("forwardCompleted");
         t.emit(
           time,
           "reserve",
@@ -385,8 +410,11 @@ export function workflow(t: Timeline) {
         );
       } else if (time === 2) {
         w.fields.payment = "authorized";
+        w.nodes[1].status = "committed";
         t.count("attempts");
         t.count("completed");
+        t.count("forwardAttempts");
+        t.count("forwardCompleted");
         t.emit(
           time,
           "authorize",
@@ -397,14 +425,20 @@ export function workflow(t: Timeline) {
         );
       } else if (time === 4) {
         t.count("attempts");
+        t.count("forwardAttempts");
         const fail = c.fail || w.failed;
         w.fields.fulfillment = fail ? "failed" : "fulfilled";
+        w.nodes[2].status = fail ? "failed" : "committed";
         if (fail) {
           t.count("errors");
+          t.count("forwardErrors");
           compensateAt = time + c.compensation;
+          w.nodes[0].status = "compensating";
+          w.nodes[1].status = "compensating";
         } else {
           done = true;
           t.count("completed");
+          t.count("forwardCompleted");
         }
         t.emit(
           time,
@@ -421,7 +455,11 @@ export function workflow(t: Timeline) {
       } else if (compensateAt !== undefined && !done && time >= compensateAt) {
         if (time === compensateAt) {
           w.fields.payment = "refunded";
+          w.nodes[1].status = "committed";
+          t.count("attempts");
           t.count("completed");
+          t.count("compensationAttempts");
+          t.count("compensationCompleted");
           t.emit(
             time,
             "compensate",
@@ -432,8 +470,12 @@ export function workflow(t: Timeline) {
           );
         } else {
           w.fields.inventory = "released";
+          w.nodes[0].status = "committed";
           done = true;
+          t.count("attempts");
           t.count("completed");
+          t.count("compensationAttempts");
+          t.count("compensationCompleted");
           t.emit(
             time,
             "compensate",

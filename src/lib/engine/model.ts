@@ -7,12 +7,20 @@ export type Config = {
   seed: number;
   values: Record<string, number>;
   faults: { at: number; active: boolean }[];
+  actions?: { at: number; type: "redrive" }[];
+};
+export type Health =
+  "healthy" | "waiting" | "degraded" | "failed" | "recovering";
+export type Outcome = {
+  state: "observing" | "pending" | "success" | "failed" | "recovered";
+  detail: string;
 };
 export type Node = {
   id: string;
   label: string;
   aws: string;
   status: string;
+  health: Health;
   detail: string;
 };
 export type Entity = {
@@ -57,12 +65,18 @@ export type World = {
   fields: Record<string, string | number>;
   failed: boolean;
 };
-export type Frame = { event: DomainEvent; world: World; metrics: Metric[] };
+export type Frame = {
+  event: DomainEvent;
+  world: World;
+  metrics: Metric[];
+  outcome: Outcome;
+};
 export type Run = {
   config: Config;
   frames: Frame[];
   summary: string;
   assumptions: string;
+  outcome: Outcome;
 };
 
 export function makeConfig(id: string, contrast = false): Config {
@@ -130,24 +144,51 @@ export function validateConfig(raw: unknown): Config {
       );
     previous = f.at;
   }
+  if (c.actions !== undefined) {
+    if (
+      !Array.isArray(c.actions) ||
+      c.actions.length > 24 ||
+      (l.id !== "dead-letter" && c.actions.length)
+    )
+      throw new Error("Unsupported action schedule.");
+    previous = -1;
+    for (const action of c.actions) {
+      if (
+        !action ||
+        action.type !== "redrive" ||
+        !Number.isInteger(action.at) ||
+        action.at < 0 ||
+        action.at > 32 ||
+        action.at <= previous
+      )
+        throw new Error(
+          "Redrive times must be ordered, unique simulated seconds from 0 to 32.",
+        );
+      previous = action.at;
+    }
+  }
   return {
     version: MODEL_VERSION,
     lesson: l.id,
     seed: c.seed,
     values: Object.fromEntries(l.controls.map((k) => [k.key, c.values[k.key]])),
     faults: c.faults.map((f) => ({ at: f.at, active: f.active })),
+    ...(c.actions === undefined
+      ? {}
+      : {
+          actions: c.actions.map((action) => ({
+            at: action.at,
+            type: action.type,
+          })),
+        }),
   };
 }
 export function experimentQuery(c: Config): string {
   return `?experiment=${encodeURIComponent(JSON.stringify(validateConfig(c)))}`;
 }
 export function comparisonConfig(c: Config): Config {
-  const base = makeConfig(c.lesson);
-  base.seed = c.seed;
-  // Offered load is held constant; compare architecture/strategy against baseline settings.
-  for (const key of ["rate", "arrivals", "duplicates", "history", "size"])
-    if (key in c.values) base.values[key] = c.values[key];
-  return base;
+  // A fork preserves every input. Only the learner's subsequent edits change B.
+  return validateConfig(c);
 }
 export function restoreExperiment(search: string): Config | null {
   if (search.length > 7000) throw new Error("Experiment URL is too large.");
@@ -184,7 +225,42 @@ export const node = (
   label: string,
   aws: string,
   detail = "Ready to participate.",
-): Node => ({ id, label, aws, status: "ready", detail });
+): Node => ({ id, label, aws, status: "ready", health: "healthy", detail });
+
+// Readable labels describe the domain; this exhaustive whitelist alone grants health.
+// Unknown future labels are degraded, never silently green.
+const semanticStates: Record<string, Health> = {
+  ready: "healthy",
+  accessible: "healthy",
+  closed: "healthy",
+  committed: "healthy",
+  waiting: "waiting",
+  booting: "waiting",
+  paused: "waiting",
+  queued: "waiting",
+  unavailable: "failed",
+  disconnected: "failed",
+  lost: "failed",
+  error: "failed",
+  denied: "failed",
+  "fault injected": "failed",
+  failed: "failed",
+  open: "degraded",
+  "failing checks, still routed": "degraded",
+  "poison payload failing": "degraded",
+  "fault applied; detection pending": "degraded",
+  probing: "recovering",
+  promoting: "recovering",
+  restoring: "recovering",
+  recovering: "recovering",
+  "half-open": "recovering",
+  compensating: "recovering",
+};
+export function healthForStatus(status: string): Health {
+  return Object.hasOwn(semanticStates, status)
+    ? semanticStates[status]
+    : "degraded";
+}
 
 export class Timeline {
   frames: Frame[] = [];
@@ -211,6 +287,14 @@ export class Timeline {
     entity?: string,
   ) {
     this.world.time = time;
+    if (
+      this.config.lesson === "disaster-recovery" &&
+      this.world.fields.restoreStarted !== undefined &&
+      !this.world.counters.completed
+    )
+      this.world.counters.rto = time - Number(this.world.fields.restoreStarted);
+    for (const component of this.world.nodes)
+      component.health = healthForStatus(component.status);
     const event = {
       id: this.frames.length,
       time,
@@ -225,21 +309,58 @@ export class Timeline {
       event,
       world: structuredClone(this.world),
       metrics: metrics(this.config.lesson, this.world),
+      outcome: outcome(this.config, this.world),
     });
   }
   tick(time: number) {
     const fault = this.config.faults.find((f) => f.at === time);
     if (fault) {
       this.world.failed = fault.active;
+      const family = getLesson(this.config.lesson).family;
+      const targets: Record<string, string[]> = {
+        cache: [
+          this.config.lesson === "write-through"
+            ? "cache"
+            : this.config.lesson === "invalidation"
+              ? "cache"
+              : "origin",
+        ],
+        fleet: [
+          ["canary", "blue-green", "bulkheads"].includes(this.config.lesson)
+            ? "n1"
+            : "n0",
+        ],
+        queue: ["worker"],
+        replica: this.world.nodes.slice(1).map((n) => n.id),
+        hash: [`node-${this.config.values.nodes + 1}`],
+        record:
+          this.config.lesson === "object-storage" ? ["object"] : ["ledger"],
+        circuit: ["dependency"],
+        workflow:
+          this.config.lesson === "disaster-recovery"
+            ? ["restore"]
+            : this.config.lesson === "sagas"
+              ? ["fulfillment"]
+              : this.config.lesson === "observability"
+                ? ["db"]
+                : this.config.lesson === "event-sourcing"
+                  ? ["projection"]
+                  : ["dependency"],
+      };
+      for (const component of this.world.nodes)
+        if (targets[family]?.includes(component.id))
+          component.status = fault.active
+            ? "fault applied; detection pending"
+            : "recovering";
       this.emit(
         time,
         fault.active ? "failure" : "recovery",
         fault.active
           ? getLesson(this.config.lesson).fault!
-          : "Recovery applied",
+          : "Dependency repaired; observation pending",
         fault.active
-          ? "The fault is now active in the environment. Component health still shows its last observation; the next domain action detects the effect."
-          : "The environment is available again. Component health still shows its last observation; this lesson’s next action or probe observes recovery.",
+          ? "The fault is active. Affected components are marked degraded until the next action observes its effect."
+          : "The environment is available again; the next action or probe must observe recovery. Repair does not redrive a dead-letter queue.",
         "Step to observe the component’s response; health checks may need several probes.",
       );
     }
@@ -386,8 +507,15 @@ const metricSets: Record<string, [string, string, string][]> = {
   ],
   "disaster-recovery": [
     ["loss", "Potential loss window", "min"],
-    ["rto", "Recovery elapsed", "s"],
+    ["rto", "Observed unavailability", "s"],
+    ["planned", "Planned restore duration", "s"],
     ["completed", "Restores complete", ""],
+  ],
+  sagas: [
+    ["forwardAttempts", "Forward attempts", ""],
+    ["forwardCompleted", "Forward commits", ""],
+    ["compensationAttempts", "Compensations attempted", ""],
+    ["compensationCompleted", "Compensations committed", ""],
   ],
   observability: [
     ["requests", "Total requests", ""],
@@ -419,8 +547,146 @@ export function metrics(id: string, w: World): Metric[] {
     value: Math.round((w.counters[key] || 0) * 100) / 100,
   }));
 }
+export function outcome(config: Config, w: World): Outcome {
+  const { lesson: id } = config,
+    family = getLesson(id).family,
+    c = w.counters;
+  const result = (state: Outcome["state"], detail: string): Outcome => ({
+    state,
+    detail,
+  });
+  if (!w.time) return result("pending", "The workload has not started.");
+  if (id === "disaster-recovery")
+    return c.completed
+      ? w.failed
+        ? result(
+            "failed",
+            `A later fault affects the restored environment; the first validated recovery remains ${c.rto}s.`,
+          )
+        : result(
+            "recovered",
+            `Recovery validated after ${c.rto}s of unavailability. The planned restore was ${c.planned}s.`,
+          )
+      : result(
+          "pending",
+          w.fields.restoreStarted === undefined
+            ? "Disaster exercise has not started."
+            : `Recovery is not ready; ${c.rto || 0}s of unavailability observed so far.`,
+        );
+  if (id === "sagas") {
+    if (w.fields.fulfillment === "fulfilled")
+      return result(
+        "success",
+        "All three forward transactions committed; the order is fulfilled.",
+      );
+    if (w.fields.inventory === "released")
+      return result(
+        "recovered",
+        "The order failed. Refund and inventory release compensated its committed effects.",
+      );
+    return result(
+      "pending",
+      w.fields.fulfillment === "failed"
+        ? "The order failed; compensation still has work to do."
+        : "The order still has forward actions to complete.",
+    );
+  }
+  if (family === "queue") {
+    if (c.dead)
+      return result(
+        "failed",
+        `${c.dead} delivery remains quarantined in the DLQ. Repair and explicit redrive are separate actions.`,
+      );
+    if (c.pending || w.time <= Number(w.fields.arrivalsUntil ?? 8))
+      return result(
+        "pending",
+        `${c.pending || 0} accepted deliveries remain pending${w.time <= Number(w.fields.arrivalsUntil ?? 8) ? "; intake is still open" : ""}.`,
+      );
+    return result(
+      c.redriven ? "recovered" : "success",
+      `${c.completed || 0} accepted deliveries completed${c.redriven ? " after explicit redrive" : ""}. ${c.rejected || 0} were rejected before acceptance.`,
+    );
+  }
+  if (id === "retries")
+    return c.completed
+      ? result("recovered", "The operation succeeded after transient failures.")
+      : w.fields.nextAttempt === "budget exhausted"
+        ? result(
+            "failed",
+            "The retry budget was exhausted; the operation did not succeed.",
+          )
+        : result(
+            "pending",
+            "The operation is waiting for another bounded retry.",
+          );
+  if (id === "timeouts")
+    return c.completed
+      ? result(
+          "success",
+          c.timedout
+            ? "The remote effect committed after the caller timed out; reconcile by operation ID."
+            : "The remote effect committed within the caller budget.",
+        )
+      : result(
+          "pending",
+          c.timedout
+            ? "The caller timed out; the remote outcome remains unresolved."
+            : "The remote operation is still pending.",
+        );
+  if (id === "event-sourcing")
+    return Number(w.fields.position) >= config.values.history
+      ? result(
+          "success",
+          "The projection has folded the complete retained history.",
+        )
+      : result(
+          "pending",
+          "Retained events remain to be folded into the projection.",
+        );
+  if (id === "object-storage")
+    return c.writes
+      ? result(
+          "success",
+          "The upload completed and its metadata pointer is ready.",
+        )
+      : result(
+          "pending",
+          `${c.remaining ?? config.values.size} MB remain to transfer.`,
+        );
+  if (family === "replica" && w.entities.some((e) => e.state === "stale"))
+    return result(
+      "pending",
+      "At least one replica still holds an older committed version.",
+    );
+  if (w.failed || w.nodes.some((n) => n.health === "failed"))
+    return result(
+      "failed",
+      "An active fault or denied operation remains visible. Playback ending does not repair it.",
+    );
+  if (w.nodes.some((n) => n.health === "recovering"))
+    return result("pending", "Recovery or validation is still in progress.");
+  if (id === "circuit-breaker" && w.fields.circuit !== "closed")
+    return result(
+      "pending",
+      "The breaker is still holding back calls until a successful recovery probe.",
+    );
+  if (id === "circuit-breaker" && w.fields.circuit === "closed" && c.errors)
+    return result(
+      "recovered",
+      "The dependency is responding and the breaker is closed. Earlier dependency errors remain in the totals.",
+    );
+  return result(
+    "observing",
+    "This is an observation of ongoing traffic or policy decisions. Inspect the event outcomes; playback ending is not a success signal.",
+  );
+}
 export function finish(t: Timeline): Run {
   const last = t.frames.at(-1)!;
+  if (last.outcome.state === "pending")
+    last.outcome = {
+      ...last.outcome,
+      detail: `${last.outcome.detail} Work remains at the simulation horizon.`,
+    };
   const c = t.config.values;
   let summary =
     last.metrics
@@ -436,5 +702,6 @@ export function finish(t: Timeline): Run {
     frames: t.frames,
     summary,
     assumptions: getLesson(t.config.lesson).assumptions,
+    outcome: last.outcome,
   };
 }

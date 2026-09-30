@@ -1,3 +1,11 @@
+import { makeConfig, Timeline, sample, type Frame } from "./engine/model";
+import { cache, queue } from "./engine/traffic";
+import {
+  allowCircuitCall,
+  createCircuitState,
+  recordCircuitResult,
+} from "./engine/circuit-policy";
+
 export const journeyStages = [
   {
     title: "Start with one app",
@@ -48,14 +56,29 @@ export const journeyStages = [
     title: "Contain an outage",
     problem: "A failing provider attracts repeated calls and ties up workers.",
     benefit:
-      "A circuit breaker rejects calls locally, then probes before recovery.",
+      "A circuit breaker limits repeated failures, waits, then permits one recovery probe.",
     limit:
       "A breaker does not fix the provider; accepted work can remain pending.",
-    failure: "A failed half-open probe must reopen the circuit.",
+    failure:
+      "A failed half-open probe reopens the circuit; repairing the provider does not redrive isolated work.",
     lessons: ["circuit-breaker", "bulkheads", "timeouts"],
   },
 ] as const;
 export type Operation = "read" | "order" | "notification";
+export type JourneyOptions = {
+  cache: "cold" | "warm" | "expired";
+  source: "healthy" | "unavailable";
+  worker: "healthy" | "stopped" | "recover";
+  processing: "healthy" | "failing" | "repair";
+  redriveAt: number | null;
+};
+export const defaultJourneyOptions: JourneyOptions = {
+  cache: "cold",
+  source: "healthy",
+  worker: "healthy",
+  processing: "healthy",
+  redriveAt: null,
+};
 export type JourneyFrame = {
   time: number;
   title: string;
@@ -63,245 +86,443 @@ export type JourneyFrame = {
   path: string[];
   accepted: number;
   completed: number;
+  pending: number;
+  dead: number;
   state: string;
+  health: "healthy" | "waiting" | "degraded" | "failed" | "recovering";
+  evidence?: { lesson: string; event: number; type: string; entity?: string };
+  detail?: string;
+  circuit?: string;
 };
+
+/** A one-operation projection of the same cache and queue mechanisms as lessons. */
 export function journeyTrace(
   stage: number,
   operation: Operation,
-  failure: boolean,
+  input: JourneyOptions | boolean = defaultJourneyOptions,
 ): JourneyFrame[] {
   if (!Number.isInteger(stage) || stage < 0 || stage > 5)
     throw new Error("Unknown journey stage.");
+  if (!["read", "order", "notification"].includes(operation))
+    throw new Error("Unknown journey operation.");
+  // Legacy callers can still request the old demonstration preset. The UI uses explicit inputs.
+  const options: JourneyOptions =
+    typeof input === "boolean"
+      ? {
+          ...defaultJourneyOptions,
+          source: input ? "unavailable" : "healthy",
+          processing: input ? (stage === 5 ? "repair" : "failing") : "healthy",
+          redriveAt: input && stage === 5 ? 20 : null,
+        }
+      : { ...input };
+  if (
+    !["cold", "warm", "expired"].includes(options.cache) ||
+    !["healthy", "unavailable"].includes(options.source) ||
+    !["healthy", "stopped", "recover"].includes(options.worker) ||
+    !["healthy", "failing", "repair"].includes(options.processing) ||
+    (options.redriveAt !== null &&
+      (!Number.isInteger(options.redriveAt) ||
+        options.redriveAt < 1 ||
+        options.redriveAt > 32))
+  )
+    throw new Error("Unsupported journey inputs.");
   const frames: JourneyFrame[] = [];
-  let accepted = 0,
-    completed = 0;
-  const emit = (title: string, why: string, path: string[], state: string) =>
+  const app = stage >= 2 ? "app-a" : "app";
+  const entry = stage >= 2 ? ["browser", "lb", app] : ["browser", app];
+  const emit = (
+    value: Partial<JourneyFrame> & Pick<JourneyFrame, "title" | "why" | "path">,
+  ) => {
+    const previous = frames.at(-1);
     frames.push({
-      time: frames.length,
+      time: previous?.time || 0,
+      accepted: previous?.accepted || 0,
+      completed: previous?.completed || 0,
+      pending: previous?.pending || 0,
+      dead: previous?.dead || 0,
+      state: "Ready",
+      health: "waiting",
+      ...value,
+    });
+  };
+  const evidence = (frame: Frame, lesson: string) => ({
+    lesson,
+    event: frame.event.id,
+    type: frame.event.type,
+    entity: frame.event.entity,
+  });
+  emit({
+    title: "Operation ready",
+    why:
+      operation === "read"
+        ? "Follow one product read. Cache contents and source availability are independent choices."
+        : "Follow operation-42 from acceptance to its notification outcome.",
+    path: operation === "notification" ? ["db"] : entry,
+  });
+
+  if (operation === "read") {
+    emit({
+      title: "GET /products/42",
+      why:
+        stage >= 2
+          ? "The balancer routes this request to application A. This bounded operation assumes both apps are healthy."
+          : "The application receives one product request.",
+      path: entry,
+      state: "Reading",
+    });
+    const source = stage >= 2 ? "replica" : "db";
+    if (stage === 0) {
+      emit({
+        time: 1,
+        title:
+          options.source === "healthy" ? "Product returned" : "Read failed",
+        why:
+          options.source === "healthy"
+            ? "The writer supplies product v1. This stage has no cache, so every read reaches the source."
+            : "The database is unavailable. No cached value exists to satisfy the read.",
+        path: [app, source, app, "browser"],
+        accepted: options.source === "healthy" ? 1 : 0,
+        completed: options.source === "healthy" ? 1 : 0,
+        state: options.source === "healthy" ? "Completed" : "Failed",
+        health: options.source === "healthy" ? "healthy" : "failed",
+      });
+      return frames;
+    }
+    const config = makeConfig("cache-aside");
+    config.faults =
+      options.source === "unavailable" ? [{ at: 0, active: true }] : [];
+    const timeline = new Timeline(config);
+    const key = `product-${1 + Math.floor(sample(config.seed, "key:1") * 6)}`;
+    if (options.cache !== "cold")
+      timeline.world.entities.push({
+        id: key,
+        kind: "cache entry",
+        location: "cache",
+        state: "valid",
+        value: "price 21",
+        version: 1,
+        expires: options.cache === "warm" ? 20 : 1,
+        last: 0,
+        hits: 0,
+      });
+    cache(timeline);
+    for (const frame of timeline.frames.filter((f) => f.event.time === 1)) {
+      const type = frame.event.type;
+      const entry = frame.world.entities.find((e) => e.id === key);
+      const done = type === "hit" || type === "fill";
+      emit({
+        time: frame.event.time,
+        title: frame.event.title,
+        why: frame.event.why,
+        path: frame.event.path.map((id) =>
+          id === "origin" ? source : id === "app" ? app : id,
+        ),
+        state: type === "error" ? "Failed" : done ? "Value ready" : "Reading",
+        health: type === "error" ? "failed" : done ? "healthy" : "waiting",
+        evidence: evidence(frame, "cache-aside"),
+        detail: entry
+          ? `${key}: v${entry.version}, expires at ${entry.expires}s; ${Math.max(0, (entry.expires || 0) - frame.event.time)}s remaining.`
+          : "No reusable product entry is present.",
+      });
+      if (done) {
+        emit({
+          time: 1,
+          title: "Product returned",
+          why:
+            type === "hit"
+              ? "The valid cache entry supplied v1. No source read occurred, even if the source is unavailable."
+              : "The source supplied v1 and the cache stored it for the next read.",
+          path:
+            type === "hit"
+              ? ["cache", app, "browser"]
+              : [source, app, "browser"],
+          accepted: 1,
+          completed: 1,
+          state: "Completed",
+          health: "healthy",
+          evidence: evidence(frame, "cache-aside"),
+          detail: entry
+            ? `Returned v${entry.version}; entry expires at ${entry.expires}s.`
+            : "Returned v1.",
+        });
+        break;
+      }
+      if (type === "error") break;
+    }
+    return frames;
+  }
+
+  if (operation === "order") {
+    emit({
+      title: "POST /orders · operation-42",
+      why: "The application validates the order before writing.",
+      path: entry,
+      state: "Validating",
+    });
+    if (options.source === "unavailable") {
+      emit({
+        title: "Order was not accepted",
+        why: "The writer is unavailable, so neither the order nor its outbox row commits. No notification is queued.",
+        path: [app, "db", app, "browser"],
+        state: "Failed",
+        health: "failed",
+      });
+      return frames;
+    }
+    emit({
+      title: "Order committed",
+      why:
+        stage >= 3
+          ? "The order and outbox row commit together. The publisher can retry enqueueing without losing the notification intent."
+          : "The order is durable, but notification still runs inside the request. A notification failure does not roll back this order.",
+      path: stage >= 4 ? [app, "dedupe", "db"] : [app, "db"],
+      state: "Order durable",
+    });
+  } else {
+    emit({
+      title: "Committed order event",
+      why: "Begin from an outbox event already read by the publisher. Writer availability now does not undo that committed work.",
+      path: ["db"],
+      state: "Notification due",
+    });
+  }
+  if (stage < 3) {
+    const success = options.processing === "healthy";
+    emit({
+      time: 1,
+      title: success
+        ? "Notification delivered"
+        : "Synchronous notification failed",
+      why: success
+        ? "The provider accepts the notification and the caller receives the result."
+        : "The provider failed during this single attempt. No queue exists to retain or retry notification work; a committed order remains durable.",
+      path: [app, "provider", app, "browser"],
+      accepted: success ? 1 : 0,
+      completed: success ? 1 : 0,
+      state: success ? "Completed" : "Failed",
+      health: success ? "healthy" : "failed",
+    });
+    return frames;
+  }
+
+  const lesson = stage >= 4 ? "dead-letter" : "queues";
+  const config = makeConfig(lesson);
+  config.values.arrivals = 1;
+  if ("workers" in config.values) config.values.workers = 1;
+  config.faults =
+    options.processing === "healthy"
+      ? []
+      : [
+          { at: 0, active: true },
+          ...(options.processing === "repair"
+            ? [{ at: 16, active: false }]
+            : []),
+        ];
+  config.actions =
+    stage >= 4 && options.redriveAt !== null
+      ? [{ at: options.redriveAt, type: "redrive" }]
+      : [];
+  const timeline = new Timeline(config);
+  const breaker = createCircuitState();
+  const recordBreaker = (
+    time: number,
+    type: string,
+    title: string,
+    why: string,
+  ) => {
+    timeline.world.fields.journeyCircuit = breaker.phase;
+    timeline.emit(
+      time,
+      type,
       title,
       why,
+      "Observe the next receive or probe.",
+      ["worker"],
+    );
+  };
+  queue(timeline, {
+    arrivalsUntil: 1,
+    workerUnavailable: (time) =>
+      options.worker === "stopped" ||
+      (options.worker === "recover" && time < 10),
+    beforeReceive:
+      stage < 5
+        ? undefined
+        : (time) => {
+            const phase = breaker.phase;
+            const allowed = allowCircuitCall(breaker, time, 4);
+            if (!allowed)
+              recordBreaker(
+                time,
+                "breaker-blocked",
+                "Circuit open · work stays queued",
+                "No message is received and no provider call occurs while the cooldown is active.",
+              );
+            else if (phase !== breaker.phase)
+              recordBreaker(
+                time,
+                "breaker-half-open",
+                "Half-open · allow one probe",
+                "The 4s cooldown elapsed. One worker reserves at most one probe.",
+              );
+            return allowed;
+          },
+    afterAttempt:
+      stage < 5
+        ? undefined
+        : (time, _message, success) => {
+            const phase = breaker.phase;
+            recordCircuitResult(breaker, time, 2, success);
+            timeline.world.fields.journeyCircuit = breaker.phase;
+            if (!success)
+              recordBreaker(
+                time,
+                breaker.phase === "open"
+                  ? "breaker-open"
+                  : "breaker-call-failed",
+                breaker.phase === "open"
+                  ? "Provider failed · circuit opened"
+                  : "Provider call failed",
+                breaker.phase === "open"
+                  ? "The failure threshold or a half-open probe failed. Stop receiving until the cooldown permits another probe."
+                  : "One provider failure is recorded. The two-failure threshold has not yet been reached.",
+              );
+            else if (phase === "half-open")
+              recordBreaker(
+                time,
+                "breaker-closed",
+                "Probe succeeded · circuit closed",
+                "A real successful processing outcome permits normal receives again.",
+              );
+          },
+  });
+  let previous = "";
+  for (const frame of timeline.frames) {
+    const message = frame.world.entities.find((entity) => entity.id === "m-1");
+    const type = frame.event.type;
+    const changed =
+      message &&
+      `${message.state}:${message.attempts}:${message.available}` !== previous;
+    const noteworthy =
+      [
+        "failure",
+        "recovery",
+        "redrive",
+        "ack",
+        "dead-letter",
+        "visibility-expired",
+      ].includes(type) || type.startsWith("breaker-");
+    if (!changed && !noteworthy) continue;
+    if (message)
+      previous = `${message.state}:${message.attempts}:${message.available}`;
+    const completed = message?.state === "completed" ? 1 : 0;
+    const dead = message?.state === "dead letter" ? 1 : 0;
+    const accepted = message ? 1 : 0;
+    const pending = accepted - completed - dead;
+    const path = frame.event.path.map((id) =>
+      id === "producer" ? "db" : id === "queue0" ? "queue" : id,
+    );
+    if (type.startsWith("breaker-"))
+      path.splice(
+        0,
+        path.length,
+        "worker",
+        "breaker",
+        ...(type === "breaker-blocked" || type === "breaker-half-open"
+          ? []
+          : ["provider"]),
+      );
+    if (["ack", "dead-letter", "visibility-expired"].includes(type))
+      path.splice(
+        0,
+        path.length,
+        "worker",
+        ...(stage >= 5 ? ["breaker"] : []),
+        "provider",
+        "worker",
+        type === "dead-letter" ? "dlq" : "queue",
+      );
+    emit({
+      time: frame.event.time,
+      title:
+        type === "enqueue"
+          ? operation === "order"
+            ? "202 · order accepted, notification pending"
+            : "Notification accepted, delivery pending"
+          : type === "receive"
+            ? "Worker received notification m-1"
+            : frame.event.title,
+      why:
+        type === "enqueue"
+          ? "The durable queue accepted notification m-1. No provider effect has completed yet."
+          : frame.event.why,
       path,
       accepted,
       completed,
-      state,
+      pending,
+      dead,
+      state: completed
+        ? "Completed"
+        : dead
+          ? "In DLQ"
+          : message?.state === "in flight"
+            ? "Processing"
+            : accepted
+              ? "Pending"
+              : "Not yet accepted",
+      health: completed
+        ? "healthy"
+        : dead
+          ? "failed"
+          : ["recovery", "redrive", "breaker-half-open"].includes(type)
+            ? "recovering"
+            : type === "failure" || type.startsWith("breaker-")
+              ? "degraded"
+              : "waiting",
+      evidence: evidence(frame, lesson),
+      circuit: String(frame.world.fields.journeyCircuit || "closed"),
+      detail: message
+        ? `m-1 · ${message.state} · ${message.attempts || 0} receives${message.available ? ` · next boundary ${message.available}s` : ""}.`
+        : "No message has been accepted yet.",
     });
-  const app = stage >= 2 ? "app-a" : "app";
-  const entry = stage >= 2 ? ["browser", "lb", app] : ["browser", app];
-  emit(
-    "Operation ready",
-    `Follow one ${operation} operation with stable ID operation-42.`,
-    [],
-    "ready",
-  );
-  if (operation === "read") {
-    emit(
-      "GET /products/42",
-      stage >= 2
-        ? "The balancer selects a healthy application instance."
-        : "The browser requests a product.",
-      entry,
-      "in progress",
-    );
-    if (stage >= 1 && !failure) {
-      emit(
-        "Warm cache hit: product v1",
-        "This example begins with a valid product already cached. The database is not contacted.",
-        [app, "cache"],
-        "cached",
-      );
-      accepted = 1;
-      completed = 1;
-      emit(
-        "Product returned",
-        "This read completed; background components are unrelated.",
-        ["cache", app, "browser"],
-        "completed",
-      );
-    } else {
-      if (stage >= 1)
-        emit(
-          "Cache miss",
-          "The failure scenario starts with an expired entry. A refresh is required.",
-          [app, "cache"],
-          "miss",
-        );
-      const db = stage >= 2 ? "replica" : "db";
-      emit(
-        "Read source",
-        stage >= 2
-          ? "A replica serves this read; it may lag the writer."
-          : "The database handles the product lookup.",
-        [app, db],
-        failure ? "source unavailable" : "reading",
-      );
-      if (failure) {
-        emit(
-          "Read failed",
-          "The source is unavailable and there is no usable cache entry. This is not a successful completion.",
-          [db, app, "browser"],
-          "failed",
-        );
-      } else {
-        accepted = 1;
-        completed = 1;
-        emit(
-          "Product returned",
-          "The source read completed.",
-          [db, app, "browser"],
-          "completed",
-        );
-      }
-    }
-  } else {
-    if (operation === "order") {
-      emit(
-        "POST /orders · operation-42",
-        "The application validates the order.",
-        entry,
-        "validating",
-      );
-      if (stage >= 4)
-        emit(
-          "Claim operation ID",
-          "The idempotency result and order effect are committed in one local transaction.",
-          [app, "dedupe", "db"],
-          "claimed",
-        );
-      emit(
-        "Order committed",
-        stage >= 3
-          ? "An order and an outbox row commit together. The outbox publisher will enqueue notification work."
-          : "The writer commits the order. A notification is still part of this synchronous request.",
-        [app, "db"],
-        "order durable",
-      );
-    } else
-      emit(
-        "Order outbox event",
-        "Start from an already committed order. This path only follows its notification.",
-        stage >= 3 ? ["db", "queue"] : ["db", app],
-        "notification due",
-      );
-    if (stage >= 3) {
-      emit(
-        "Notification queued",
-        "The outbox publisher sends a durable message. Duplicate delivery remains possible.",
-        ["db", "queue"],
-        "queued",
-      );
-      accepted = 1;
-      emit(
-        "202 · accepted",
-        operation === "order"
-          ? "The order is durable; the response does not claim notification completion."
-          : "Notification work is accepted but no email has been sent.",
-        operation === "order" ? [app, "browser"] : ["queue"],
-        "accepted, pending",
-      );
-      emit(
-        "Worker receives message",
-        "The delivery becomes invisible while one worker processes it.",
-        ["queue", "worker"],
-        "in flight",
-      );
-    }
-    const worker = stage >= 3 ? "worker" : app;
-    if (stage >= 5 && failure) {
-      emit(
-        "Provider fails; circuit opens",
-        "The worker records failed calls and opens the application breaker.",
-        [worker, "breaker", "provider"],
-        "open",
-      );
-      emit(
-        "Calls rejected locally",
-        "No new provider call crosses the open breaker.",
-        [worker, "breaker"],
-        "pending",
-      );
-      emit(
-        "Half-open probe after recovery",
-        "This trace repairs the provider before a bounded recovery probe.",
-        [worker, "breaker", "provider"],
-        "half-open",
-      );
-    } else if (failure) {
-      if (stage >= 4) {
-        for (let i = 1; i <= 3; i++)
-          emit(
-            `Receive ${i} fails`,
-            "Visibility timeout and bounded backoff precede another safe attempt.",
-            [worker, "provider", "queue"],
-            "retry waiting",
-          );
-        emit(
-          "Poison delivery moved to DLQ",
-          "No successful side effect occurred. Accepted work is isolated for repair.",
-          ["queue", "dlq"],
-          "dead letter",
-        );
-        return frames;
-      }
-      emit(
-        "Provider unavailable",
-        stage >= 3
-          ? "Accepted work stays pending for a future worker."
-          : "The synchronous request fails while waiting for notification.",
-        [worker, "provider"],
-        "pending or failed",
-      );
-      return frames;
-    }
-    emit(
-      "Notification delivered",
-      "The provider accepts the notification under a stable operation ID.",
-      stage >= 5 ? [worker, "breaker", "provider"] : [worker, "provider"],
-      "effect completed",
-    );
-    accepted = 1;
-    completed = 1;
-    emit(
-      stage >= 3 ? "Message acknowledged" : "Request completed",
-      "Only after the effect succeeds does completion advance.",
-      stage >= 3 ? ["worker", "queue"] : [app, "browser"],
-      "completed",
-    );
-    if (stage >= 4)
-      emit(
-        "Duplicate redelivery suppressed",
-        "The recorded operation result prevents a second effect; completion stays one.",
-        ["queue", "worker", "dedupe"],
-        "one unique effect",
-      );
   }
+  const last = frames.at(-1)!;
+  emit({
+    time: 32,
+    title: "Playback ended · operation observed through 32s",
+    why: last.completed
+      ? "The notification was acknowledged after its effect completed."
+      : last.dead
+        ? "Notification m-1 remains in the DLQ. Repair alone does not replay it; explicitly redrive after repair."
+        : "Notification m-1 remains pending. The simulation horizon is not a success or a recovery event.",
+    path: last.dead ? ["dlq"] : last.completed ? ["provider"] : ["queue"],
+    state: last.completed
+      ? "Completed"
+      : last.dead
+        ? "In DLQ"
+        : "Pending at horizon",
+    health: last.completed ? "healthy" : last.dead ? "failed" : "waiting",
+    detail: last.detail,
+    circuit: last.circuit,
+  });
   return frames;
 }
+
 export function journeyNodes(stage: number) {
   return [
     ["browser", "Browser", "Web client", 0],
     ["app", "Application", "EC2 application", 0],
-    ["db", "Writer / outbox", "Aurora PostgreSQL", 0],
-    ["cache", "Product cache", "ElastiCache for Valkey", 1],
+    ["db", "Writer / outbox", "Aurora writer", 0],
+    ["cache", "Product cache", "ElastiCache", 1],
     ["lb", "Load balancer", "ALB", 2],
     ["app-a", "Application A", "EC2", 2],
     ["app-b", "Application B", "EC2", 2],
     ["replica", "Read replica", "Aurora reader", 2],
     ["queue", "Notification queue", "SQS", 3],
-    ["worker", "Notification worker", "Lambda", 3],
+    ["worker", "Worker", "Lambda", 3],
     ["provider", "Email provider", "External provider", 0],
-    [
-      "dedupe",
-      "Operation results",
-      "Aurora transaction / provider idempotency",
-      4,
-    ],
+    ["dedupe", "Operation results", "Aurora transaction", 4],
     ["dlq", "Dead-letter queue", "SQS DLQ", 4],
-    [
-      "breaker",
-      "Circuit breaker",
-      "Application policy + shared durable state",
-      5,
-    ],
+    ["breaker", "Breaker policy", "Application policy", 5],
   ]
     .filter(
       ([id, , , level]) =>
@@ -312,4 +533,53 @@ export function journeyNodes(stage: number) {
       label: String(label),
       aws: String(aws),
     }));
+}
+
+export function journeyEdges(stage: number): [string, string][] {
+  const app = stage >= 2 ? "app-a" : "app";
+  const edges: [string, string][] =
+    stage >= 2
+      ? [
+          ["browser", "lb"],
+          ["lb", "app-a"],
+          ["lb", "app-b"],
+          ["app-b", "db"],
+        ]
+      : [["browser", "app"]];
+  edges.push([app, "db"]);
+  if (stage >= 1) edges.push([app, "cache"]);
+  if (stage >= 2) edges.push(["db", "replica"], [app, "replica"]);
+  if (stage >= 3) edges.push(["db", "queue"], ["queue", "worker"]);
+  if (stage >= 4)
+    edges.push([app, "dedupe"], ["queue", "dlq"], ["dlq", "queue"]);
+  if (stage >= 5) edges.push(["worker", "breaker"], ["breaker", "provider"]);
+  else edges.push([stage >= 3 ? "worker" : app, "provider"]);
+  return edges;
+}
+
+/** Stable focused route; event paths highlight the active subset without layout jumps. */
+export function journeyRoute(stage: number, operation: Operation): string[] {
+  const app = stage >= 2 ? "app-a" : "app";
+  if (operation === "read")
+    return [
+      "browser",
+      ...(stage >= 2 ? ["lb"] : []),
+      app,
+      ...(stage >= 1 ? ["cache"] : []),
+      stage >= 2 ? "replica" : "db",
+    ];
+  return [
+    ...(operation === "order"
+      ? ["browser", ...(stage >= 2 ? ["lb"] : []), app]
+      : []),
+    "db",
+    ...(stage >= 3
+      ? ["queue", "worker"]
+      : operation === "notification"
+        ? [app]
+        : []),
+    ...(stage >= 5 ? ["breaker"] : []),
+    "provider",
+    ...(stage >= 4 ? ["dlq"] : []),
+  ];
 }

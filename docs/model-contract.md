@@ -4,13 +4,17 @@ The browser calls `runExperiment(config)` directly. There is no required simulat
 
 ## Time and replay
 
-Model version 2 uses a seed, lesson-specific bounded integer controls, and up to 24 ordered fault transitions. Each domain event owns an immutable world snapshot and its derived metrics. Events at the same simulated second have distinct ordered IDs. Step advances one event, not one second. The first failure in the DLQ baseline occurs at time zero. Seeking selects an existing snapshot. Pause stops the playback timer; speed scales wall time without changing the model.
+Model version 2 uses a seed, lesson-specific bounded integer controls, up to 24 ordered fault transitions, and an optional bounded DLQ redrive schedule. Each domain event owns an immutable world snapshot, its derived metrics, and an explicit outcome. Node health is typed; unfamiliar status labels default to degraded. Events at the same simulated second have distinct ordered IDs. Step advances one event, not one second. The first failure in the DLQ baseline occurs at time zero. Seeking selects an existing snapshot. Pause stops the playback timer; speed scales wall time without changing the model.
 
-Fault/recovery events change the environment. Component health at that event remains the last observation until the next domain action or health probe detects the change. The event explanation calls out this distinction; health-check removal and recovery may require several probes.
+Fault/recovery events change the environment. Affected components are marked degraded on fault application and recovering on repair; the next domain action or health probe observes the effect. The event explanation calls out this distinction; health-check removal and recovery may require several probes.
 
 Control and scenario changes restart. Live injection takes effect at the next simulated second and replaces future fault transitions, preserving the already-observed prefix. Reset rewinds the existing configuration; choose Baseline to remove custom settings. Shared URLs include the complete configuration and model version. Invalid versions, unknown IDs, malformed JSON, unknown controls, invalid bounds, and oversized URLs are rejected with a visible recovery message.
 
-Baseline comparison completes both models explicitly. Seed and offered load (rate, arrivals, duplicate deliveries, object size, event history) are shared. Strategy controls differ. Changes to offered load alone may therefore produce no difference; the comparison isolates strategy rather than silently changing the workload. Fault schedules are part of the compared strategies.
+A is an exact validated copy of the current configuration. B can fork from A without changing workload, seed, controls, faults, or actions. Every deliberate difference is listed. Both columns show complete finite runs, and multiple changes are never described as an isolated cause. Baseline A computes only while its comparison is open.
+
+Per-lesson browser drafts preserve configuration, pinned A, mode, replay cursor, predictions, and display choices through navigation, refresh, and Back/Forward. Shared v2 links still import their inputs before becoming a resumable local route. Playing is ephemeral; restored drafts pause. Invalid stored drafts stay untouched.
+
+`Frame.outcome` distinguishes observations, pending work, success, failure, and recovery. Reaching the timeline horizon only ends playback. DLQ repair never moves messages: explicit redrive does. Saga forward attempts/commits and compensation attempts/commits are accounted separately. Disaster recovery reports actual unavailability until validated readiness, freezes that measurement, and shows planned restore duration separately.
 
 ## Families and ceilings
 
@@ -41,4 +45,4 @@ The existing cloud schema stores explored lessons only. Understanding checks rem
 
 ## Connected-system example
 
-The journey follows one operation from a three-component start. A warm cache can short-circuit product reads; orders always commit at the writer. A transactional outbox closes the database/queue dual-write gap. Queue acceptance and notification completion are distinct. The provider honors a stable idempotency key; a local dedupe record alone could not make an external email atomic. The resilience trace repairs the provider before its half-open probe. These assumptions are displayed in the product.
+The journey follows one operation from a three-component start. A warm cache can short-circuit product reads; orders always commit at the writer. A transactional outbox closes the database/queue dual-write gap. Queue acceptance and notification completion are distinct. The provider honors a stable idempotency key; a local dedupe record alone could not make an external email atomic. Cold/warm/expired cache, source availability, worker availability, provider recovery, and explicit redrive are independent inputs. Cache and queue traces reuse the lesson engine; standalone and journey breakers share the same small transition policy. A failed half-open probe can reopen the circuit, and repair never automatically redrives the DLQ. These assumptions are displayed in the product.

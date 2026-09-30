@@ -243,12 +243,12 @@ export const lessons: Lesson[] = [
     "Far-away visitors repeatedly fetch the same public assets.",
     "Keep copies at neighborhood branches, closer to readers.",
     "Personalized responses must not share an unsafe public cache key.",
-    "if request.isPublic:\n  return edge.getOrFetch(cacheKey, origin, ttl)\nreturn origin.fetch(privateRequest)",
+    "viewer.request(cloudfront)\nif cacheable and edge.hasFresh(key): return edge.reply(viewer)\nobject = edge.fetch(s3_origin)\nif cacheable: edge.store(key, object, ttl)\nreturn edge.reply(viewer, object)",
     ["cache-aside"],
     "Should this example cache private requests in the shared edge cache?",
     ["Yes", "No"],
     1,
-    "Private requests bypass the public cache to avoid mixing users’ data.",
+    "Uncacheable requests still pass through CloudFront to S3, but their responses are not stored in the shared cache.",
     doc("AmazonCloudFront/latest/DeveloperGuide/Introduction.html"),
     "Origin unavailable",
   ),
@@ -637,7 +637,7 @@ export const lessons: Lesson[] = [
     "What must happen before safely redriving poison work?",
     ["Repair the cause", "Only increase worker count"],
     0,
-    "Redrive without fixing the poison payload repeats the same failure. Recovery here repairs it before redrive.",
+    "Repair makes the payload processable. It stays in the DLQ until you explicitly redrive it; redrive before repair repeats the failure.",
     doc(
       "AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html",
     ),
@@ -857,7 +857,7 @@ export const lessons: Lesson[] = [
     "workflow",
     [
       k("backup", "Last backup age", 1, 10, 3, "min"),
-      k("restore", "Restore duration", 1, 10, 5, "s"),
+      k("restore", "Planned restore duration", 1, 10, 5, "s"),
     ],
     { backup: 9, restore: 9 },
     "Old backup, slow restore",
@@ -873,7 +873,7 @@ export const lessons: Lesson[] = [
     doc(
       "whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html",
     ),
-    "Primary lost",
+    "Recovery validation blocked",
   ),
   lesson(
     "observability",

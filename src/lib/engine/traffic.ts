@@ -20,11 +20,16 @@ export function cache(t: Timeline) {
       id === "cdn-cache" ? "S3" : id === "invalidation" ? "DynamoDB" : "Aurora",
     ),
   ];
-  w.edges = [
-    ["app", "cache"],
-    ["app", "origin"],
-    ["origin", "cache"],
-  ];
+  w.edges =
+    id === "cdn-cache"
+      ? [
+          ["app", "cache"],
+          ["cache", "origin"],
+        ]
+      : [
+          ["app", "cache"],
+          ["app", "origin"],
+        ];
   w.fields = { sourceVersion: 1, policy: c.policy === 1 ? "LFU" : "LRU" };
   t.start();
   const capacity = c.capacity || 6,
@@ -58,9 +63,9 @@ export function cache(t: Timeline) {
         time,
         "invalidate",
         "Cached copies invalidated",
-        "The change consumer removed old values.",
+        "The application’s change consumer removed old values.",
         "The next read will fetch v2.",
-        ["origin", "cache"],
+        ["origin", "app", "cache"],
       );
     }
     for (const entry of [...w.entities])
@@ -94,7 +99,7 @@ export function cache(t: Timeline) {
           "Database committed; cache write failed",
           "The two stores do not share a transaction. This model evicts a possibly stale copy.",
           "Retry the cache update or fill on a later read.",
-          ["app", "origin", "cache"],
+          ["app", "origin", "app", "cache"],
         );
       } else {
         put(key, time, version);
@@ -104,7 +109,7 @@ export function cache(t: Timeline) {
           `${key} committed and cached v${version}`,
           "Acknowledgment follows both writes.",
           "A subsequent hit sees the new version.",
-          ["app", "origin", "cache"],
+          ["app", "origin", "app", "cache"],
           key,
         );
       }
@@ -127,7 +132,7 @@ export function cache(t: Timeline) {
         `${burst} read${burst > 1 ? "s" : ""} served from ${id === "cdn-cache" ? "edge" : "cache"}`,
         `The entry is valid until ${hit.expires}s; its value is v${hit.version}.`,
         "Inspect its remaining TTL, or continue to the next request.",
-        ["app", "cache"],
+        ["app", "cache", "app"],
         key,
       );
     } else {
@@ -135,10 +140,27 @@ export function cache(t: Timeline) {
       t.emit(
         time,
         "miss",
-        `${key}: ${publicRequest ? "cache miss" : "private request bypasses edge"}`,
+        `${key}: ${publicRequest ? "cache miss" : "uncacheable request"}`,
         "No reusable valid entry exists for this request.",
-        "The application must read the source.",
+        id === "cdn-cache"
+          ? "CloudFront must forward the request to its S3 origin."
+          : "The application must read the source.",
         ["app", "cache"],
+        key,
+      );
+      const reads = id === "stampede" && c.coalesce === 0 ? burst : 1;
+      t.count("origin", reads);
+      t.emit(
+        time,
+        "fetch",
+        id === "cdn-cache"
+          ? "CloudFront requests the S3 object"
+          : "Application requests the source value",
+        id === "cdn-cache"
+          ? "The viewer stays connected to CloudFront. The edge forwards the miss to the origin."
+          : "Only the application coordinates this cache-aside source read.",
+        "Wait for the origin response; the cache has not been filled yet.",
+        id === "cdn-cache" ? ["cache", "origin"] : ["app", "origin"],
         key,
       );
       if (w.failed && id !== "write-through" && id !== "invalidation") {
@@ -149,12 +171,10 @@ export function cache(t: Timeline) {
           "Origin read failed",
           "A miss cannot be served while the origin is unavailable.",
           "Recover the origin; valid cached entries can still serve hits.",
-          ["app", "origin"],
+          id === "cdn-cache" ? ["origin", "cache", "app"] : ["origin", "app"],
           key,
         );
       } else {
-        const reads = id === "stampede" && c.coalesce === 0 ? burst : 1;
-        t.count("origin", reads);
         t.count("coalesced", burst - reads);
         w.fields.lastRead = `${key}: v${w.fields.sourceVersion}`;
         if (publicRequest) put(key, time, Number(w.fields.sourceVersion));
@@ -164,11 +184,27 @@ export function cache(t: Timeline) {
           `${reads} origin read${reads > 1 ? "s" : ""}; ${publicRequest ? "value cached" : "private response returned"}`,
           id === "stampede"
             ? `${burst - reads} readers reused the leader’s refresh. All readers in this burst requested the same key.`
-            : "The source returns its committed value.",
-          "The following read can reuse the entry until expiry or eviction.",
-          ["app", "origin", ...(publicRequest ? ["cache"] : [])],
+            : id === "cdn-cache"
+              ? "S3 returns the object to CloudFront, which stores it only when the response is cacheable."
+              : "The source returns its committed value to the application, which fills its cache.",
+          publicRequest
+            ? "The following read can reuse the entry until expiry or eviction."
+            : "This response is not stored for reuse.",
+          id === "cdn-cache"
+            ? ["origin", "cache"]
+            : ["origin", "app", ...(publicRequest ? ["cache"] : [])],
           key,
         );
+        if (id === "cdn-cache")
+          t.emit(
+            time,
+            "response",
+            "CloudFront returns the object to the viewer",
+            "The response passes through CloudFront even when it is not cached.",
+            "The next viewer request may reuse a valid cached object without contacting S3.",
+            ["cache", "app"],
+            key,
+          );
       }
     }
   }
@@ -320,7 +356,14 @@ export function fleet(t: Timeline) {
     if (id === "rate-limiting") tokens = Math.min(c.burst, tokens + c.tokens);
     w.entities = [];
     for (let r = 0; r < demand; r++) {
-      const request: Entity = { id: `request-${time}-${r+1}`, kind: 'request', location: 'entry', state: 'rejected', value: `batch ${time}`, operation: `r-${time}-${r+1}` };
+      const request: Entity = {
+        id: `request-${time}-${r + 1}`,
+        kind: "request",
+        location: "entry",
+        state: "rejected",
+        value: `batch ${time}`,
+        operation: `r-${time}-${r + 1}`,
+      };
       w.entities.push(request);
       let target: (typeof w.nodes)[number] | undefined;
       if (id === "canary" || id === "blue-green") {
@@ -338,8 +381,12 @@ export function fleet(t: Timeline) {
         ) {
           errors++;
           t.count("errors");
-          request.state = 'failed';
-        } else { completed++; request.state = 'completed'; loads[target.id] = (loads[target.id] || 0) + 1; }
+          request.state = "failed";
+        } else {
+          completed++;
+          request.state = "completed";
+          loads[target.id] = (loads[target.id] || 0) + 1;
+        }
       } else {
         if (id === "bulkheads") target = w.nodes[r < 2 ? 1 : 2];
         else
@@ -361,7 +408,7 @@ export function fleet(t: Timeline) {
         if (id === "rate-limiting" && tokens < 1) continue;
         if (target && target.status === "failing checks, still routed") {
           request.location = target.id;
-          request.state = 'failed';
+          request.state = "failed";
           accepted++;
           errors++;
           t.count("errors");
@@ -375,7 +422,7 @@ export function fleet(t: Timeline) {
           if (id === "rate-limiting") tokens--;
           loads[target.id] = (loads[target.id] || 0) + 1;
           request.location = target.id;
-          request.state = 'completed';
+          request.state = "completed";
           accepted++;
           completed++;
         }
@@ -427,7 +474,15 @@ export function fleet(t: Timeline) {
   }
 }
 
-export function queue(t: Timeline) {
+export function queue(
+  t: Timeline,
+  options: {
+    arrivalsUntil?: number;
+    workerUnavailable?: (time: number) => boolean;
+    beforeReceive?: (time: number, message: Entity) => boolean;
+    afterAttempt?: (time: number, message: Entity, success: boolean) => void;
+  } = {},
+) {
   const { lesson: id, values: c, seed } = t.config,
     w = t.world;
   const subscribers = id === "pubsub" ? c.subscribers : 1;
@@ -469,9 +524,10 @@ export function queue(t: Timeline) {
     ...(id === "dead-letter" ? [["queue0", "dlq"] as [string, string]] : []),
   ];
   const effects = new Set<string>();
-  let serial = 0,
-    wasFailed = false;
-  w.fields.intake = "Arrivals at t=1..8; then drain through t=32.";
+  let serial = 0;
+  const arrivalsUntil = Math.max(0, Math.min(8, options.arrivalsUntil ?? 8));
+  w.fields.arrivalsUntil = arrivalsUntil;
+  w.fields.intake = `Arrivals at t=1..${arrivalsUntil}; then drain through t=32.`;
   t.start();
   const pending = () =>
     w.entities.filter((e) => e.state === "ready" || e.state === "in flight")
@@ -481,35 +537,65 @@ export function queue(t: Timeline) {
     w.counters.dead = w.entities.filter(
       (e) => e.state === "dead letter",
     ).length;
+    const dlq = w.nodes.find((n) => n.id === "dlq");
+    if (dlq) dlq.status = w.counters.dead ? "waiting" : "ready";
   };
+  const redrive = (time: number) => {
+    if (!t.config.actions?.some((action) => action.at === time)) return;
+    // ponytail: atomic redrive retains learning IDs; model transport IDs/rate only for a dedicated SQS transport lab.
+    const messages = w.entities.filter((e) => e.state === "dead letter");
+    for (const m of messages) {
+      m.state = "ready";
+      m.location = "queue0";
+      m.attempts = 0;
+      m.available = time;
+    }
+    t.count("redriven", messages.length);
+    account();
+    t.emit(
+      time,
+      "redrive",
+      `Explicit redrive moved ${messages.length} DLQ message${messages.length === 1 ? "" : "s"}`,
+      messages.length
+        ? "A separate operator action returned quarantined work to the source queue. Repair alone never moves it."
+        : "The DLQ was empty, so the requested action moved no work.",
+      w.failed
+        ? "The cause is still active; redriven work can fail again."
+        : "Workers may retry these messages with a fresh receive budget.",
+      ["dlq", "queue0"],
+    );
+  };
+  redrive(0);
   for (let time = 1; time <= 32; time++) {
     t.tick(time);
-    w.nodes.find((n) => n.id === "worker")!.status = w.failed
-      ? "fault injected"
-      : "ready";
-    if (id === "dead-letter" && wasFailed && !w.failed) {
-      for (const m of w.entities.filter((e) => e.state === "dead letter")) {
-        m.state = "ready";
-        m.location = "queue0";
-        m.attempts = 0;
-        m.available = time;
-      }
-      account();
-      t.emit(
-        time,
-        "redrive",
-        "Poison cause repaired; DLQ redriven",
-        "Recovery makes the previously poison payload processable.",
-        "Workers receive these messages again with a fresh receive budget.",
-        ["dlq", "queue0"],
-      );
-    }
-    wasFailed = w.failed;
+    const workerUnavailable = options.workerUnavailable?.(time) ?? false;
+    w.nodes.find((n) => n.id === "worker")!.status = workerUnavailable
+      ? "unavailable"
+      : w.failed
+        ? id === "dead-letter"
+          ? "poison payload failing"
+          : "fault injected"
+        : "ready";
+    redrive(time);
     for (const m of w.entities.filter(
       (e) => e.state === "in flight" && (e.available || 0) <= time,
     )) {
       const poison = id === "dead-letter" && m.operation === "op-1" && w.failed;
-      if (poison) {
+      if (workerUnavailable) {
+        m.state = "ready";
+        m.location = `queue${id === "pubsub" ? m.group : 0}`;
+        m.available = time + 2;
+        account();
+        t.emit(
+          time,
+          "retry-visible",
+          `${m.id}: worker interrupted`,
+          "The worker stopped before acknowledgment. No provider result was observed.",
+          "Recover the worker; visibility delays the next attempt by 2s.",
+          ["worker", m.location],
+          m.id,
+        );
+      } else if (poison) {
         if ((m.attempts || 0) >= c.attempts) {
           m.state = "dead letter";
           m.location = "dlq";
@@ -519,13 +605,16 @@ export function queue(t: Timeline) {
           m.available = time + 2;
         }
         account();
+        options.afterAttempt?.(time, m, false);
         t.emit(
           time,
           m.state === "dead letter" ? "dead-letter" : "visibility-expired",
           `${m.id}: ${m.state}`,
           `Receive ${m.attempts} failed. ${m.state === "dead letter" ? "The retry budget is exhausted." : "Visibility delays the next attempt by 2s."}`,
           "Healthy messages can continue. Repair the cause before redrive.",
-          ["worker", m.location],
+          m.state === "dead letter"
+            ? ["worker", "queue0", "dlq"]
+            : ["worker", m.location],
           m.id,
         );
       } else if (
@@ -558,6 +647,7 @@ export function queue(t: Timeline) {
           t.count("effects");
         }
         account();
+        options.afterAttempt?.(time, m, true);
         t.emit(
           time,
           "ack",
@@ -571,7 +661,7 @@ export function queue(t: Timeline) {
         );
       }
     }
-    if (time <= 8) {
+    if (time <= arrivalsUntil) {
       const n = c.arrivals || 1;
       for (let a = 0; a < n; a++) {
         t.count("offered");
@@ -638,6 +728,7 @@ export function queue(t: Timeline) {
     if (id === "event-streams" && time % (c.slow || 1) !== 0) slots = 0;
     if (w.failed && !["dead-letter", "pubsub", "ordering"].includes(id))
       slots = 0;
+    if (workerUnavailable) slots = 0;
     let received = 0;
     for (const m of w.entities.filter(
       (e) => e.state === "ready" && (e.available || 0) <= time,
@@ -666,6 +757,7 @@ export function queue(t: Timeline) {
         time - (m.available || 0) < c.window
       )
         continue;
+      if (options.beforeReceive && !options.beforeReceive(time, m)) break;
       m.state = "in flight";
       m.location = "worker";
       m.attempts = (m.attempts || 0) + 1;
@@ -697,7 +789,7 @@ export function queue(t: Timeline) {
       );
     }
     account();
-    if (!received && time > 8)
+    if (!received && time > arrivalsUntil)
       t.emit(
         time,
         "clock",

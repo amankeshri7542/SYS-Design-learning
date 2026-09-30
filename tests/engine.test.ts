@@ -8,6 +8,10 @@ import {
   validateConfig,
   experimentQuery,
   restoreExperiment,
+  comparisonConfig,
+  healthForStatus,
+  Timeline,
+  node,
 } from "../src/lib/engine";
 import { ring, owner } from "../src/lib/engine/data";
 import {
@@ -111,6 +115,25 @@ test("cache TTL boundary, actual eviction, and single-flight behavior", () => {
     protectedRun.frames.at(-1)!.world.counters.origin <
       unprotected.frames.at(-1)!.world.counters.origin,
   );
+  assert.deepEqual(
+    runExperiment(makeConfig("write-through")).frames.find(
+      (f) => f.event.type === "write-through",
+    )!.event.path,
+    ["app", "origin", "app", "cache"],
+  );
+  assert.deepEqual(
+    runExperiment({
+      ...makeConfig("write-through"),
+      faults: [{ at: 0, active: true }],
+    }).frames.find((f) => f.event.type === "partial-write")!.event.path,
+    ["app", "origin", "app", "cache"],
+  );
+  assert.deepEqual(
+    runExperiment(makeConfig("invalidation")).frames.find(
+      (f) => f.event.type === "invalidate",
+    )!.event.path,
+    ["origin", "app", "cache"],
+  );
 });
 test("queue capacity uses the same accounting as accepted and completed counts", () => {
   const run = runExperiment(makeConfig("backpressure", true));
@@ -119,18 +142,250 @@ test("queue capacity uses the same accounting as accepted and completed counts",
   const at = run.frames.find((f) => f.event.type === "enqueue")!;
   assert.ok(at.world.counters.accepted > (at.world.counters.completed || 0));
 });
-test("DLQ requires failed receives, isolates poison, and redrives only after repair", () => {
-  const run = runExperiment(makeConfig("dead-letter"));
+test("DLQ repair preserves quarantine until a separate redrive action", () => {
+  const config = makeConfig("dead-letter");
+  const run = runExperiment(config);
   const dead = run.frames.find((f) => f.event.type === "dead-letter")!;
   assert.ok(dead);
+  assert.deepEqual(dead.event.path, ["worker", "queue0", "dlq"]);
   assert.equal(
     dead.world.entities.find((e) => e.state === "dead letter")!.attempts,
     3,
   );
-  assert.ok(run.frames.some((f) => f.event.type === "redrive"));
-  const last = run.frames.at(-1)!.world.counters;
-  assert.equal(last.dead, 0);
-  assert.equal(last.accepted, last.completed);
+  assert.equal(
+    run.frames.some((f) => f.event.type === "redrive"),
+    false,
+  );
+  assert.equal(run.frames.at(-1)!.world.counters.dead, 1);
+  assert.equal(run.frames.at(-1)!.world.counters.completed, 15);
+  assert.equal(run.outcome.state, "failed");
+  const redriven = runExperiment({
+    ...config,
+    actions: [{ at: 17, type: "redrive" }],
+  });
+  const moved = redriven.frames.find((f) => f.event.type === "redrive")!;
+  assert.equal(moved.event.time, 17);
+  assert.equal(moved.world.entities.find((e) => e.id === "m-1")!.attempts, 0);
+  assert.equal(redriven.frames.at(-1)!.world.counters.dead, 0);
+  assert.equal(redriven.frames.at(-1)!.world.counters.completed, 16);
+  assert.equal(redriven.outcome.state, "recovered");
+  const unrepaired = runExperiment({
+    ...config,
+    faults: [{ at: 0, active: true }],
+    actions: [{ at: 12, type: "redrive" }],
+  });
+  assert.equal(
+    unrepaired.frames.filter((f) => f.event.type === "dead-letter").length,
+    2,
+  );
+  assert.equal(unrepaired.frames.at(-1)!.world.counters.dead, 1);
+});
+
+test("saga forward actions and compensation each have matched attempts and commits", () => {
+  const success = runExperiment(makeConfig("sagas"));
+  const failure = runExperiment(makeConfig("sagas", true));
+  const count = failure.frames.at(-1)!.world.counters;
+  assert.equal(count.attempts, 5);
+  assert.equal(count.completed, 4);
+  assert.equal(count.errors, 1);
+  assert.equal(count.forwardAttempts, 3);
+  assert.equal(count.forwardCompleted, 2);
+  assert.equal(count.forwardErrors, 1);
+  assert.equal(count.compensationAttempts, 2);
+  assert.equal(count.compensationCompleted, 2);
+  assert.deepEqual(
+    failure.frames
+      .filter((f) => f.event.type === "compensate")
+      .map((f) => [
+        f.event.path[0],
+        f.world.counters.attempts,
+        f.world.counters.completed,
+      ]),
+    [
+      ["payment", 4, 3],
+      ["inventory", 5, 4],
+    ],
+  );
+  for (const { world } of failure.frames) {
+    const c = world.counters;
+    assert.equal(c.attempts || 0, (c.completed || 0) + (c.errors || 0));
+    assert.equal(
+      c.forwardAttempts || 0,
+      (c.forwardCompleted || 0) + (c.forwardErrors || 0),
+    );
+    assert.equal(c.compensationAttempts || 0, c.compensationCompleted || 0);
+  }
+  assert.equal(failure.outcome.state, "recovered");
+  assert.equal(success.frames.at(-1)!.world.counters.attempts, 3);
+  assert.equal(success.frames.at(-1)!.world.counters.completed, 3);
+  assert.equal(
+    success.frames.at(-1)!.world.counters.compensationAttempts || 0,
+    0,
+  );
+  assert.equal(success.outcome.state, "success");
+});
+
+test("recovery measures actual unavailability through blocked validation and freezes readiness", () => {
+  const config = makeConfig("disaster-recovery");
+  config.values.restore = 5;
+  config.faults = [
+    { at: 4, active: true },
+    { at: 20, active: false },
+  ];
+  const run = runExperiment(config);
+  const restored = run.frames.filter((f) => f.event.type === "restored");
+  assert.equal(restored.length, 1);
+  assert.equal(restored[0].event.time, 20);
+  assert.equal(restored[0].world.counters.rto, 18);
+  assert.equal(restored[0].world.counters.planned, 5);
+  for (const frame of run.frames.filter(
+    (f) => f.world.fields.restoreStarted !== undefined,
+  )) {
+    assert.equal(frame.world.counters.rto, Math.min(frame.event.time - 2, 18));
+    if (frame.event.time < 20)
+      assert.notEqual(frame.outcome.state, "recovered");
+  }
+  assert.equal(run.frames.at(-1)!.world.counters.rto, 18);
+  assert.equal(run.outcome.state, "recovered");
+  const blocked = runExperiment({
+    ...config,
+    faults: [{ at: 4, active: true }],
+  });
+  assert.equal(blocked.frames.at(-1)!.world.counters.rto, 30);
+  assert.equal(blocked.frames.at(-1)!.world.counters.completed || 0, 0);
+  assert.equal(blocked.outcome.state, "pending");
+  const blockedFromStart = runExperiment({
+    ...config,
+    faults: [{ at: 0, active: true }],
+  });
+  assert.equal(
+    blockedFromStart.frames.find((f) => f.event.type === "disaster")!.event
+      .time,
+    2,
+  );
+  assert.equal(blockedFromStart.frames.at(-1)!.world.counters.rto, 30);
+  const normal = runExperiment({ ...config, faults: [] });
+  assert.equal(normal.frames.at(-1)!.world.counters.rto, 5);
+  const laterOutage = runExperiment({
+    ...config,
+    faults: [{ at: 10, active: true }],
+  });
+  assert.equal(laterOutage.frames.at(-1)!.world.counters.rto, 5);
+  assert.equal(laterOutage.outcome.state, "failed");
+});
+
+test("CloudFront requests S3 on a miss and returns hits without origin contact", () => {
+  const config = makeConfig("cdn-cache");
+  config.values.cacheable = 100;
+  config.values.ttl = 20;
+  const run = runExperiment(config);
+  assert.deepEqual(run.frames[0].world.edges, [
+    ["app", "cache"],
+    ["cache", "origin"],
+  ]);
+  assert.deepEqual(
+    run.frames.slice(1, 5).map((f) => [f.event.type, f.event.path]),
+    [
+      ["miss", ["app", "cache"]],
+      ["fetch", ["cache", "origin"]],
+      ["fill", ["origin", "cache"]],
+      ["response", ["cache", "app"]],
+    ],
+  );
+  const hits = run.frames.filter((f) => f.event.type === "hit");
+  assert.ok(hits.length > 0);
+  for (const hit of hits) {
+    assert.deepEqual(hit.event.path, ["app", "cache", "app"]);
+    assert.equal(
+      hit.world.counters.origin,
+      run.frames[hit.event.id - 1].world.counters.origin,
+    );
+    assert.equal(
+      run.frames.some(
+        (f) =>
+          f.event.time === hit.event.time && f.event.path.includes("origin"),
+      ),
+      false,
+    );
+  }
+  const uncacheable = runExperiment({
+    ...config,
+    values: { ...config.values, cacheable: 0 },
+  });
+  assert.equal(uncacheable.frames.at(-1)!.world.counters.origin, 24);
+  assert.equal(uncacheable.frames.at(-1)!.world.counters.hits || 0, 0);
+  assert.equal(uncacheable.frames.at(-1)!.world.entities.length, 0);
+  assert.ok(
+    uncacheable.frames
+      .filter((f) => f.event.type === "response")
+      .every((f) => f.event.path.join(",") === "cache,app"),
+  );
+});
+
+test("semantic health is normalized in every frame with a safe unknown fallback", () => {
+  assert.equal(healthForStatus("lost"), "failed");
+  assert.equal(healthForStatus("open"), "degraded");
+  assert.equal(healthForStatus("half-open"), "recovering");
+  assert.equal(healthForStatus("booting"), "waiting");
+  assert.equal(healthForStatus("unrecognized adverse state"), "degraded");
+  assert.equal(healthForStatus("toString"), "degraded");
+  const timeline = new Timeline(makeConfig("cache-aside"));
+  timeline.world.nodes = [node("unknown", "Unknown", "Application")];
+  timeline.world.nodes[0].status = "unexpected failure";
+  timeline.emit(1, "observation", "Unknown", "New state", "Inspect");
+  assert.equal(timeline.frames[0].world.nodes[0].health, "degraded");
+  for (const lesson of lessons)
+    for (const frame of runExperiment(makeConfig(lesson.id, true)).frames) {
+      for (const n of frame.world.nodes)
+        assert.equal(n.health, healthForStatus(n.status));
+      assert.ok(
+        ["observing", "pending", "success", "failed", "recovered"].includes(
+          frame.outcome.state,
+        ),
+      );
+    }
+  const pending = runExperiment({
+    ...makeConfig("queues"),
+    faults: [{ at: 0, active: true }],
+  });
+  assert.equal(pending.frames.at(-1)!.event.time, 32);
+  assert.equal(pending.outcome.state, "pending");
+  assert.equal(
+    runExperiment(makeConfig("consistent-hashing")).outcome.state,
+    "observing",
+  );
+});
+
+test("comparison forks preserve every input and redrive URLs remain model-v2 compatible", () => {
+  const config = makeConfig("dead-letter", true);
+  config.seed = 937;
+  config.values.arrivals = 4;
+  config.actions = [{ at: 21, type: "redrive" }];
+  const fork = comparisonConfig(config);
+  assert.deepEqual(fork, config);
+  fork.values.workers = 4;
+  assert.equal(config.values.workers, 2);
+  assert.deepEqual(restoreExperiment(experimentQuery(config)), config);
+  assert.deepEqual(
+    restoreExperiment(experimentQuery(makeConfig("cache-aside"))),
+    makeConfig("cache-aside"),
+  );
+  for (const actions of [
+    [{ at: 33, type: "redrive" }],
+    [{ at: 2, type: "repair" }],
+    [
+      { at: 2, type: "redrive" },
+      { at: 2, type: "redrive" },
+    ],
+    [{ at: -1, type: "redrive" }],
+  ])
+    assert.throws(() => validateConfig({ ...config, actions }));
+  assert.throws(() =>
+    validateConfig({
+      ...makeConfig("cache-aside"),
+      actions: [{ at: 1, type: "redrive" }],
+    }),
+  );
 });
 test("idempotency, FIFO groups, and retained stream records are distinct", () => {
   const idempotent = runExperiment(makeConfig("idempotency")).frames.at(-1)!
@@ -159,6 +414,27 @@ test("circuit breaker transitions through half-open on both failed and successfu
   const next = run.frames[open.event.id + 1];
   assert.equal(next.world.counters.attempts, open.world.counters.attempts);
   assert.equal(run.frames.at(-1)!.world.fields.circuit, "closed");
+});
+test("a below-threshold failure recovers without claiming a breaker probe", () => {
+  const config = makeConfig("circuit-breaker");
+  config.values.threshold = 5;
+  config.faults = [
+    { at: 4, active: true },
+    { at: 5, active: false },
+  ];
+  const run = runExperiment(config);
+  assert.deepEqual(
+    run.frames.filter((frame) =>
+      ["open", "half-open", "close"].includes(frame.event.type),
+    ),
+    [],
+  );
+  assert.equal(run.frames.at(-1)!.world.counters.errors, 1);
+  assert.equal(run.outcome.state, "recovered");
+  assert.equal(
+    run.outcome.detail,
+    "The dependency is responding and the breaker is closed. Earlier dependency errors remain in the totals.",
+  );
 });
 test("finite ring moves only keys owned by the added node and recovers without fabricated remapping", () => {
   const points = ring(3, 3, 42);
@@ -393,8 +669,16 @@ test("journey covers each stage, follows only existing components and distinguis
           assert.ok(f.path.every((id) => nodes.some((n) => n.id === id)));
           assert.ok(f.completed <= f.accepted);
         }
-        if (stage >= 3 && operation !== "read")
+        if (
+          stage >= 3 &&
+          operation !== "read" &&
+          !(failure && operation === "order")
+        )
           assert.ok(trace.some((f) => f.accepted === 1 && f.completed === 0));
+        if (failure && operation === "order") {
+          assert.equal(trace.at(-1)!.accepted, 0);
+          assert.equal(trace.at(-1)!.completed, 0);
+        }
       }
   assert.equal(journeyTrace(4, "notification", true).at(-1)!.completed, 0);
   assert.equal(journeyTrace(5, "notification", true).at(-1)!.completed, 1);

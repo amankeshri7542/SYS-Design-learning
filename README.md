@@ -24,18 +24,18 @@ npx playwright install chromium
 npm run test:browser
 ```
 
-The current local preview can use `npm run dev -- --port 3100`. This improvement is local only; no commit, push, deployment, or provisioning is part of it. There is no configured lint script; TypeScript, semantic tests, browser tests, and the production build are the available verification gates.
+The current local preview can use `npm run dev -- --port 3100`. This quality pass is committed and pushed on the existing branch at the owner's request. Deployment and AWS provisioning remain outside this pass. There is no configured lint script; TypeScript, semantic tests, browser tests, and the production build are the available verification gates.
 
 ## Learning experience
 
-- Guided Lesson follows problem → prediction → interaction → observation → explanation → trade-off → implementation. Experiment mode puts state first.
+- Guided Lesson keeps one decision, optional prediction, playback, and evidence together. Experiment mode exposes all inputs, exact pinned A / forked B comparison, and every changed input.
 - Cache inventory, instance fleets, message lifecycles, replica versions, atomic records, circuit states, hashing rings, identity/policies, network boundaries, and workflow timelines have distinct renderers.
-- Run, pause, resume, reset, single-event step, speed, seek, fault/recovery injection, same-workload baseline comparison, and validated share URLs all use the same deterministic event snapshots.
+- Run, pause, resume, reset, single-event step, speed, seek, fault/recovery injection, explicit DLQ redrive, and validated share URLs all use the same deterministic event snapshots. Per-lesson drafts restore across navigation, refresh, and browser history.
 - Build a system introduces caching, balanced applications/read replicas, queues/workers, safe delivery, and resilience through concrete problems. Follow product reads, orders, and notifications independently.
 - Search and category filtering cover all 56 IDs. Optional checks distinguish explored from understood. Legacy completion arrays migrate conservatively. Guest and account records remain separate.
 - Mobile layouts stack state, show controls on demand, and use native inspector sheets. Native controls, visible focus, keyboard search, reduced-motion styling, and 16–18px lesson prose support reading and interaction.
 
-See the [per-lesson checklist](docs/lesson-checklist.md), [model contract](docs/model-contract.md), [implementation decisions](docs/implementation-plan.md), and [verification evidence](docs/verification.md). Screenshots are in [docs/screenshots](docs/screenshots).
+See the current [quality verification](docs/quality-verification.md), [audit and design direction](docs/quality-plan.md), and [recomputation measurements](docs/performance.md). Earlier implementation documentation: [per-lesson checklist](docs/lesson-checklist.md), [model contract](docs/model-contract.md), [implementation decisions](docs/implementation-plan.md), and [verification evidence](docs/verification.md). Screenshots are in [docs/screenshots](docs/screenshots).
 
 ## Architecture
 
@@ -70,6 +70,8 @@ src/
     lab.tsx                   # navigation, identity-scoped progress, library
     experiment.tsx            # playback, controls, comparison, guided learning
     architecture.tsx          # family renderers and native inspection dialog
+    operation-map.tsx          # connected operation and focused phone views
+    model-control.tsx          # semantic native controls
     journey.tsx               # connected-system interaction
     cloud-progress.tsx        # explicit sync, errors/retries, local sign-out
   lib/
@@ -80,8 +82,11 @@ src/
       traffic.ts              # caches, fleets, message delivery
       data.ts                 # replicas, records, hashing, policy, boundaries
       workflows.ts            # breaker, retries, sagas, leases, reconstruction
+      circuit-policy.ts       # shared bounded breaker transition policy
       index.ts                # pure model entry point
     journey.ts                # pure connected-operation trace
+    session.ts                # validated per-lesson drafts and history restoration
+    controls.ts, inspection.ts # typed control labels and readable evidence
     progress.ts               # migration, validation, namespace-safe persistence
     auth.ts                   # existing PKCE plus local account/logout helpers
     simulation.ts             # legacy envelope adapter and cloud bounds
@@ -91,12 +96,14 @@ infra/
 scripts/
   start.mjs, prepare-infra.ts, lesson-checklist.ts
 tests/
-  engine.test.ts, simulation.test.ts, cloud.test.ts
-  browser/workspace.spec.ts
+  engine.test.ts, journey.test.ts, session.test.ts
+  simulation.test.ts, cloud.test.ts
+  browser/{workspace,quality,visual}.spec.ts
 playwright.config.ts
 docs/
   implementation-plan.md, lesson-checklist.md, model-contract.md, verification.md
-  screenshots/
+  quality-plan.md, quality-verification.md, engine-audit.md, journey-audit.md
+  quality/, quality-before/, screenshots/
 ```
 
 ## Core contracts
@@ -107,12 +114,14 @@ config.values.ttl = 2;
 config.seed = 42;
 const run = runExperiment(config); // no I/O
 const frame = run.frames[eventIndex];
-// frame.event, frame.world, and frame.metrics describe the same instant.
+// frame.event, frame.world, frame.metrics, and frame.outcome describe one instant.
 ```
 
 The queue invariant is `accepted = completed + pending + deadLetter` after every event. Rejections were never accepted. Business effects are separate from delivery acknowledgments. The breaker includes closed → open → half-open → closed/reopened transitions. Hash movement is measured from actual finite key ownership. Canary summaries use the configured candidate share and error probability.
 
 Each model declares its limits. These are educational finite workloads, not AWS quotas, service benchmarks, or capacity forecasts. See [model-contract.md](docs/model-contract.md) for time units and family assumptions.
+
+Workspace session v1 stores bounded, validated per-lesson configurations, fault/redrive schedules, mode, replay cursor, prediction state, and pinned comparisons. Shared v2 URLs still import; subsequent refresh resumes the local draft. Playback always restores paused. Invalid stored data stays untouched. Workspace drafts remain on this browser and are separate from account progress.
 
 Progress v2 stores `{ version: 2, explored: string[], understood: string[] }`. The v1 array is retained and migrated to explored only. Unrecognized or unavailable storage never triggers a destructive overwrite. A decoded token subject is used only as a local storage namespace, never as authorization. API Gateway verifies cloud authorization.
 

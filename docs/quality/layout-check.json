@@ -1,0 +1,98 @@
+{
+  "serverRenderedLesson": true,
+  "production": true,
+  "errors": [],
+  "layouts": [
+    {
+      "width": 1366,
+      "height": 768,
+      "run": {
+        "x": 315,
+        "y": 424.25,
+        "width": 82.59375,
+        "height": 44
+      },
+      "diagram": {
+        "x": 315,
+        "y": 572.421875,
+        "width": 702,
+        "height": 185
+      },
+      "overflow": false
+    },
+    {
+      "width": 1440,
+      "height": 900,
+      "run": {
+        "x": 315,
+        "y": 425.65625,
+        "width": 82.59375,
+        "height": 44
+      },
+      "diagram": {
+        "x": 315,
+        "y": 573.828125,
+        "width": 776,
+        "height": 185
+      },
+      "overflow": false
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "run": {
+        "x": 31,
+        "y": 459.9375,
+        "width": 72.59375,
+        "height": 44
+      },
+      "diagram": {
+        "x": 31,
+        "y": 671.3125,
+        "width": 328,
+        "height": 274.6875
+      },
+      "overflow": false
+    },
+    {
+      "width": 320,
+      "height": 844,
+      "run": {
+        "x": 25,
+        "y": 484.6875,
+        "width": 72.59375,
+        "height": 44
+      },
+      "diagram": {
+        "x": 25,
+        "y": 705.65625,
+        "width": 270,
+        "height": 226.125
+      },
+      "overflow": false
+    }
+  ],
+  "inputToTwoAnimationFrames": [
+    {
+      "lesson": "cache-aside",
+      "control": "ttl",
+      "samples": 8,
+      "medianMs": 30.5,
+      "maxMs": 31.6
+    },
+    {
+      "lesson": "dead-letter",
+      "control": "arrivals",
+      "samples": 8,
+      "medianMs": 30.3,
+      "maxMs": 31
+    },
+    {
+      "lesson": "consistent-hashing",
+      "control": "nodes",
+      "samples": 8,
+      "medianMs": 30.6,
+      "maxMs": 30.9
+    }
+  ]
+}

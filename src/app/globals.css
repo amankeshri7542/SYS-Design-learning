@@ -2713,4 +2713,1046 @@ caption {
 }
 
 /* Hide the skip link without placing off-screen content in full-page captures. */
-.skip-link{top:0;transform:none;clip-path:inset(50%);width:1px;height:1px;overflow:hidden;padding:0}.skip-link:focus{top:10px;clip-path:none;width:auto;height:auto;padding:15px;overflow:visible}
+.skip-link {
+  top: 0;
+  transform: none;
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+}
+.skip-link:focus {
+  top: 10px;
+  clip-path: none;
+  width: auto;
+  height: auto;
+  padding: 15px;
+  overflow: visible;
+}
+
+/* The learning workbench: controls, connected paths and evidence share one surface. */
+.nav-collapsed .sidebar {
+  display: none;
+}
+.nav-collapsed .app-content {
+  margin-left: 0;
+}
+.desktop-nav-toggle {
+  flex-shrink: 0;
+}
+@media (max-width: 760px) {
+  .desktop-nav-toggle {
+    display: none;
+  }
+}
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --motion-fast: 140ms;
+  --state-healthy: #087e70;
+  --state-waiting: #52657b;
+  --state-degraded: #965b12;
+  --state-failed: #ab3442;
+  --state-recovering: #7044a2;
+}
+.lesson-workbench .lesson-heading {
+  margin-bottom: 20px;
+  gap: 20px;
+}
+.lesson-workbench .lesson-heading h1 {
+  font-size: clamp(28px, 2.7vw, 38px);
+}
+.lesson-workbench .lesson-heading p {
+  max-width: 64ch;
+  font-size: 17px;
+  margin-top: 8px;
+}
+.lesson-workbench .eyebrow {
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.guided-question {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 0 0 18px;
+  max-width: 78ch;
+  font-size: 17px;
+}
+.guided-question span {
+  color: var(--muted);
+  font-size: 15px;
+}
+.lesson-workbench .experiment-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 270px;
+  gap: 24px;
+  align-items: start;
+}
+.lesson-workbench .canvas-card {
+  box-shadow: none;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.lesson-workbench .canvas-heading {
+  padding: 12px 18px;
+  min-height: 60px;
+}
+.lesson-workbench .canvas-heading h2 {
+  font-size: 18px;
+}
+.lesson-workbench .primary-playback {
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--white);
+}
+.lesson-workbench .playback-buttons {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.lesson-workbench .play-state {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.lesson-workbench .speed-control {
+  margin-left: auto;
+}
+.lesson-workbench .state-bench {
+  min-height: 0;
+  padding: 16px 18px;
+  background: var(--white);
+}
+.lesson-workbench .bench-caption {
+  padding: 0;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+.lesson-workbench .operation-map {
+  margin-bottom: 18px;
+}
+.map-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.map-caption button {
+  font-size: 12px;
+  min-height: 32px;
+}
+.map-focus-toggle {
+  display: none;
+}
+.connected-diagram {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.connected-diagram > path {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 2;
+  color: var(--muted);
+}
+.connected-diagram > path.active-edge {
+  stroke: var(--blue);
+  stroke-width: 3;
+  color: var(--blue);
+}
+.diagram-node {
+  cursor: pointer;
+}
+.diagram-node rect {
+  fill: var(--paper);
+  stroke: var(--line);
+  stroke-width: 1.5;
+  transition:
+    fill var(--motion-fast),
+    stroke var(--motion-fast);
+}
+.diagram-node.on-path rect {
+  fill: var(--soft-blue);
+  stroke: var(--blue);
+  stroke-width: 2;
+}
+.diagram-node text {
+  fill: var(--ink);
+  font: 600 14px var(--body);
+}
+.diagram-node text.node-status {
+  fill: var(--muted);
+  font: 12px var(--body);
+}
+.diagram-node.health-failed rect {
+  stroke: var(--state-failed);
+}
+.diagram-node.health-degraded rect {
+  stroke: var(--state-degraded);
+}
+.diagram-node.health-recovering rect {
+  stroke: var(--state-recovering);
+}
+.diagram-node:focus-visible {
+  outline: none;
+}
+.diagram-node:focus-visible rect {
+  stroke: var(--blue);
+  stroke-width: 4;
+}
+.mobile-operation {
+  display: none;
+}
+.map-aws-labels {
+  font-size: 13px;
+  color: var(--muted);
+  padding-top: 8px;
+}
+.lesson-workbench .cache-source {
+  font-size: 13px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+.lesson-workbench .cache-slots {
+  min-height: 110px;
+  gap: 8px;
+}
+.lesson-workbench .cache-entry {
+  padding: 10px;
+  font-size: 14px;
+  min-height: 105px;
+}
+.lesson-workbench .state-empty {
+  min-height: 110px;
+  font-size: 15px;
+}
+.lesson-workbench .bench-foot {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.lesson-workbench .queue-lanes {
+  gap: 10px;
+  min-height: 170px;
+}
+.lesson-workbench .queue-lane {
+  padding: 9px;
+}
+.lesson-workbench .queue-lane > div {
+  height: 170px;
+  overflow-y: auto;
+}
+.lesson-workbench .queue-lane h3 {
+  font-size: 14px;
+}
+.lesson-workbench .entity-chip {
+  font-size: 13px;
+  min-height: 40px;
+}
+.lesson-workbench .queue-lane .entity-chip.selected {
+  border-color: var(--blue);
+  background: var(--soft-blue);
+  box-shadow: inset 3px 0 var(--blue);
+}
+.lesson-workbench .topology-details {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.lesson-workbench .topology-details summary {
+  min-height: 36px;
+}
+.lesson-workbench .evidence-strip {
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-left: 3px solid var(--blue);
+  border-radius: 0;
+  margin: 0;
+  padding: 16px 18px;
+  min-height: 172px;
+  gap: 16px;
+}
+.lesson-workbench .evidence-strip h2 {
+  font-size: 18px;
+}
+.lesson-workbench .evidence-strip p {
+  font-size: 16px;
+  margin-top: 6px;
+}
+.lesson-workbench .evidence-strip .next-event {
+  font-size: 14px;
+}
+.lesson-workbench .timeline-control {
+  padding: 10px 18px;
+  border-top: 1px solid var(--line);
+  margin: 0;
+}
+.lesson-workbench .metrics {
+  display: flex;
+  gap: 0;
+  margin: 14px 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+.lesson-workbench .metrics > div {
+  flex: 1;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  min-width: 0;
+}
+.lesson-workbench .metrics > div + div {
+  border-left: 1px solid var(--line);
+}
+.lesson-workbench .metrics strong {
+  font-size: 25px;
+}
+.lesson-workbench .metrics span {
+  font-size: 13px;
+}
+.operation-outcome {
+  font-size: 14px;
+  color: var(--muted);
+  border-left: 3px solid var(--state-waiting);
+  padding-left: 12px;
+}
+.outcome-failed {
+  border-color: var(--state-failed);
+}
+.outcome-recovered,
+.outcome-success {
+  border-color: var(--state-healthy);
+}
+.lesson-workbench .experiment-controls {
+  position: static;
+  border: 0;
+  padding: 0;
+  background: none;
+  border-radius: 0;
+}
+.lesson-workbench .control-heading {
+  margin: 0 0 16px;
+}
+.lesson-workbench .control-heading h2 {
+  font-size: 18px;
+}
+.lesson-workbench .field {
+  margin-bottom: 16px;
+  font-size: 15px;
+}
+.model-control {
+  margin: 0 0 20px;
+}
+.model-control > label {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.model-control label span {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.quantity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.quantity-row input[type="number"] {
+  width: 72px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: var(--white);
+  border-radius: 6px;
+  padding: 6px 9px;
+}
+.quantity-row input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+.quantity-row .stepper {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--white);
+  width: 44px;
+  font-size: 22px;
+}
+.model-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  margin: 16px 0;
+}
+.model-switch span {
+  flex: 1;
+}
+.model-switch small {
+  font-size: 13px;
+  color: var(--muted);
+}
+.model-switch input {
+  accent-color: var(--blue);
+}
+.prediction-panel {
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.prediction-panel fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.prediction-panel legend {
+  font-weight: 600;
+  font-size: 16px;
+}
+.prediction-panel .prediction {
+  font-size: 15px;
+  min-height: 44px;
+  margin: 4px 0;
+  gap: 8px;
+}
+.prediction-panel .button-row {
+  margin: 10px 0;
+}
+.prediction-panel .button {
+  font-size: 13px;
+  padding: 8px 12px;
+}
+.prediction-panel small {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+.prediction-panel p {
+  font-size: 15px;
+}
+.all-controls,
+.advanced-settings {
+  margin: 18px 0;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.all-controls summary,
+.advanced-settings summary {
+  font-weight: 600;
+  min-height: 36px;
+}
+.all-controls[open] > summary,
+.advanced-settings[open] > summary {
+  margin-bottom: 16px;
+}
+.advanced-settings p {
+  font-size: 14px;
+}
+.all-controls .prediction-panel {
+  display: none;
+}
+.lesson-workbench .fault-controls {
+  padding: 16px 0;
+  margin: 16px 0;
+}
+.lesson-workbench .fault-controls .button {
+  margin: 8px 0;
+}
+.lesson-workbench .fault-controls p,
+.lesson-workbench .fault-controls small {
+  font-size: 14px;
+}
+.lesson-workbench .tune-button {
+  display: none;
+}
+.lesson-workbench .comparison {
+  margin: 32px 0 0;
+  padding: 24px 0;
+  border-top: 1px solid var(--line);
+}
+.lesson-workbench .comparison h2 {
+  font-size: 22px;
+}
+.comparison-evidence {
+  margin-top: 20px;
+}
+.comparison-evidence p {
+  font-size: 16px;
+  margin: 12px 0;
+}
+.input-differences {
+  width: 100%;
+  table-layout: fixed;
+  margin-bottom: 24px;
+}
+.input-differences td {
+  overflow-wrap: anywhere;
+}
+.lesson-workbench .learning-notes {
+  margin-top: 32px;
+  padding-top: 26px;
+  gap: 40px;
+}
+.lesson-workbench .learning-notes h3 {
+  margin-top: 24px;
+}
+.lesson-workbench .learning-notes p {
+  font-size: 17px;
+}
+.evidence-links {
+  padding: 0;
+  margin: 16px 0;
+  list-style: none;
+}
+.evidence-links button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  color: var(--blue);
+  font-size: 15px;
+}
+.evidence-links time {
+  font: 12px var(--mono);
+  color: var(--muted);
+}
+.lesson-workbench .hash-layout {
+  grid-template-columns: minmax(210px, 1fr) minmax(170px, 1fr);
+  gap: 14px;
+}
+.lesson-workbench .hash-ring {
+  max-height: 290px;
+}
+.hash-ring .ring-node-label {
+  font: 700 14px var(--body);
+}
+.selected-key-caption {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.lesson-workbench .hash-owners .entity-chip {
+  min-height: 36px;
+}
+.lesson-workbench .hash-owners > div > div {
+  display: none;
+}
+.lesson-workbench .hash-owners > div:has(.selected) > div {
+  display: flex;
+}
+.saga-lanes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.saga-lanes section {
+  border-left: 2px solid var(--line);
+  padding: 10px;
+}
+.saga-lanes h3 {
+  font-size: 15px;
+}
+.saga-lanes ol {
+  list-style: none;
+  padding: 0;
+  min-height: 70px;
+}
+.saga-lanes button {
+  text-align: left;
+  font-size: 13px;
+  padding: 8px 0;
+}
+.saga-lanes time {
+  display: block;
+  font: 12px var(--mono);
+}
+.saga-lanes .compensation {
+  color: var(--state-recovering);
+}
+.health-healthy {
+  --health-color: var(--state-healthy);
+}
+.health-waiting {
+  --health-color: var(--state-waiting);
+}
+.health-degraded {
+  --health-color: var(--state-degraded);
+}
+.health-failed {
+  --health-color: var(--state-failed);
+}
+.health-recovering {
+  --health-color: var(--state-recovering);
+}
+.state-tag[class*="health-"] {
+  color: var(--health-color);
+  background: transparent;
+  border-left: 3px solid var(--health-color);
+  padding-left: 8px;
+}
+.detail-dialog {
+  max-width: 580px;
+}
+.detail-dialog dd p {
+  font-size: 14px;
+  margin: 5px 0 0;
+}
+.inspector-evidence {
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.detail-dialog details {
+  margin-top: 16px;
+}
+.detail-dialog pre {
+  max-height: 240px;
+  overflow: auto;
+  font-size: 12px;
+}
+.journey-workload {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  padding: 16px 20px;
+}
+.journey-workload label {
+  font-size: 14px;
+}
+.journey-workload select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--white);
+}
+.journey-redrive,
+.journey-diagram-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 20px;
+  font-size: 14px;
+}
+.journey-topology {
+  display: block;
+  width: 100%;
+  max-height: 450px;
+}
+.journey-topology > line,
+.journey-topology > path {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 2;
+}
+.journey-topology .active-edge {
+  stroke: var(--blue);
+  stroke-width: 3;
+}
+.journey-topology g rect {
+  fill: var(--white);
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+.journey-topology g.on-path rect {
+  fill: var(--soft-blue);
+  stroke: var(--blue);
+  stroke-width: 2;
+}
+.journey-topology text {
+  font: 600 15px var(--body);
+  fill: var(--ink);
+}
+.journey-topology .journey-node-caption {
+  font: 12px var(--body);
+  fill: var(--muted);
+}
+.journey-topology g:focus-visible {
+  outline: none;
+}
+.journey-topology g:focus-visible rect {
+  stroke: var(--blue);
+  stroke-width: 4;
+}
+.journey-mobile-path {
+  display: none;
+}
+.journey-outcomes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.journey-outcomes strong {
+  font-size: 22px;
+}
+.journey-evidence {
+  min-height: 150px;
+  padding: 16px 20px;
+}
+.journey-problem {
+  margin: 20px 0;
+}
+.journey-problem > summary {
+  min-height: 44px;
+  font-weight: 600;
+}
+@media (max-width: 1150px) {
+  .lesson-workbench .experiment-layout {
+    grid-template-columns: minmax(0, 1fr) 245px;
+    gap: 18px;
+  }
+  .lesson-workbench .segmented button {
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+}
+@media (max-width: 900px) {
+  .lesson-workbench .experiment-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lesson-workbench .experiment-controls {
+    display: none;
+  }
+  .lesson-workbench .experiment-controls.controls-open {
+    display: block;
+    grid-row: 1;
+    padding: 16px;
+    background: var(--white);
+    border: 1px solid var(--line);
+  }
+  .lesson-workbench .tune-button {
+    display: inline-flex;
+  }
+  .lesson-workbench .mode-guided .prediction-panel {
+    display: block;
+  }
+  .lesson-workbench .learning-notes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .lesson-workbench .lesson-heading {
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .lesson-workbench .lesson-heading p {
+    font-size: 16px;
+  }
+  .guided-question {
+    font-size: 16px;
+    padding-bottom: 14px;
+  }
+  .guided-question span {
+    display: none;
+  }
+  .lesson-workbench .canvas-heading {
+    padding: 10px 12px;
+  }
+  .lesson-workbench .canvas-heading h2 {
+    font-size: 15px;
+  }
+  .lesson-workbench .primary-playback {
+    padding: 10px 12px;
+  }
+  .lesson-workbench .playback-buttons {
+    gap: 6px;
+  }
+  .lesson-workbench .playback-buttons .button {
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+  .lesson-workbench .speed-control {
+    margin-left: 0;
+  }
+  .lesson-workbench .tune-button {
+    margin-left: auto;
+  }
+  .lesson-workbench .state-bench {
+    padding: 12px;
+  }
+  .lesson-workbench .bench-caption > span:last-child {
+    display: none;
+  }
+  .connected-diagram {
+    display: none;
+  }
+  .mobile-operation {
+    display: flex;
+    flex-direction: column;
+    list-style: none;
+    gap: 8px;
+    padding: 0;
+    margin: 8px 0;
+  }
+  .map-focus-toggle {
+    display: inline-flex;
+  }
+  .mobile-operation li {
+    padding-left: 12px;
+    border-left: 2px solid var(--line);
+  }
+  .mobile-operation li button {
+    width: 100%;
+    text-align: left;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 8px 12px;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--health-color);
+    border-radius: 6px;
+    background: var(--paper);
+    font-size: 15px;
+  }
+  .mobile-operation li span {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .lesson-workbench .queue-lanes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .lesson-workbench .queue-lane {
+    min-height: 100px;
+    padding: 8px;
+  }
+  .lesson-workbench .queue-lane .entity-chip:not(.selected) {
+    display: none;
+  }
+  .lesson-workbench .queue-lane h3 {
+    font-size: 14px;
+  }
+  .lesson-workbench .queue-lane > div {
+    height: 64px;
+  }
+  .lesson-workbench .cache-slots {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .lesson-workbench .cache-entry {
+    min-height: 105px;
+  }
+  .lesson-workbench .evidence-strip {
+    padding: 14px 12px;
+    min-height: 230px;
+    gap: 10px;
+  }
+  .lesson-workbench .evidence-strip h2 {
+    font-size: 17px;
+  }
+  .lesson-workbench .evidence-strip p {
+    font-size: 16px;
+  }
+  .lesson-workbench .event-time {
+    min-width: 30px;
+  }
+  .lesson-workbench .metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .lesson-workbench .metrics > div {
+    padding: 8px;
+  }
+  .lesson-workbench .metrics > div + div {
+    border: 0;
+  }
+  .lesson-workbench .hash-layout {
+    grid-template-columns: 1fr;
+  }
+  .lesson-workbench .hash-ring {
+    max-height: 280px;
+  }
+  .lesson-workbench .hash-owners {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+  .selected-key-caption {
+    grid-column: 1/-1;
+  }
+  .lesson-workbench .hash-owners .text-button {
+    font-size: 14px;
+  }
+  .lesson-workbench .replica-ledger {
+    gap: 8px;
+  }
+  .lesson-workbench .replica-card {
+    min-height: 130px;
+    padding: 12px;
+  }
+  .saga-lanes {
+    grid-template-columns: 1fr;
+  }
+  .saga-lanes ol {
+    min-height: 0;
+  }
+  .lesson-workbench .field-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .comparison .section-heading {
+    align-items: flex-start;
+  }
+  .comparison .button-row {
+    flex-wrap: wrap;
+  }
+  .comparison table {
+    font-size: 13px;
+  }
+  .comparison th,
+  .comparison td {
+    padding: 10px 7px;
+  }
+  .journey-workload {
+    grid-template-columns: 1fr 1fr;
+    padding: 12px;
+    gap: 10px;
+  }
+  .journey-workload label:first-child {
+    grid-column: 1/-1;
+  }
+  .journey-topology:not(.journey-mobile-path) {
+    display: none;
+  }
+  .journey-mobile-path {
+    display: block;
+    max-height: none;
+  }
+  .journey-outcomes {
+    gap: 12px;
+  }
+  .journey-evidence {
+    min-height: 210px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .diagram-node rect {
+    transition: none;
+  }
+}
+.connected-diagram {
+  max-height: 185px;
+}
+.diagram-node text {
+  font-size: 16px;
+}
+.diagram-node text.node-status {
+  font-size: 13px;
+}
+.journey-topology {
+  max-height: none;
+}
+.journey-topology > svg {
+  display: block;
+  width: 100%;
+}
+.journey-topology > svg > line,
+.journey-topology > svg > path {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 2;
+}
+.journey-topology > svg > .active-edge {
+  stroke: var(--blue);
+  stroke-width: 3;
+}
+@media (max-width: 640px) {
+  svg.mobile-operation {
+    display: block;
+    width: 100%;
+    max-height: 310px;
+    padding: 0;
+  }
+  .mobile-operation > path {
+    fill: none;
+    stroke: var(--line);
+    stroke-width: 2;
+    color: var(--muted);
+  }
+  .mobile-operation > path.active-edge {
+    stroke: var(--blue);
+    stroke-width: 3;
+    color: var(--blue);
+  }
+  .journey-workload {
+    grid-template-columns: 1fr;
+  }
+  .journey-topology.journey-mobile-path {
+    display: block;
+  }
+}
+
+/* Keep journey choices readable while the operation remains the focal point. */
+.journey-settings > summary {
+  padding: 12px 20px;
+  min-height: 44px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.journey-settings > summary span {
+  margin-left: 8px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.journey-canvas .canvas-heading > div {
+  display: block;
+}
+.journey-canvas .canvas-heading h2 {
+  margin-top: 6px;
+  font-size: 18px;
+  line-height: 1.45;
+}
+.journey-topology {
+  padding: 12px 0;
+}
+.journey-canvas > .timeline-control {
+  padding: 12px 20px;
+}
+@media (max-width: 640px) {
+  .journey-stages {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 8px;
+    scroll-snap-type: x proximity;
+  }
+  .journey-stages button {
+    flex: 0 0 180px;
+    scroll-snap-align: start;
+  }
+  .journey-workload {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .journey-workload label:first-child {
+    grid-column: auto;
+  }
+  .journey-settings > summary {
+    padding: 12px;
+  }
+  .journey-settings > summary span {
+    display: block;
+    margin: 6px 0 0;
+    font-size: 14px;
+  }
+  .journey-canvas .canvas-heading h2 {
+    font-size: 17px;
+  }
+  .journey-canvas > .timeline-control {
+    padding: 12px;
+  }
+}

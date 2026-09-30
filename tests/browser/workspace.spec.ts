@@ -74,7 +74,7 @@ async function finish(page: Page) {
   });
   await slider.focus();
   await slider.press("End");
-  await expect(page.locator(".play-state")).toContainText("Complete");
+  await expect(page.locator(".play-state")).toContainText("Playback ended");
 }
 async function noOverflow(page: Page) {
   expect(
@@ -108,7 +108,7 @@ for (const c of concepts)
     await page.getByLabel("Scenario", { exact: true }).selectOption("contrast");
     await expect(page.getByTestId("clock")).toHaveText("0s");
     await finish(page);
-    await page.getByRole("button", { name: "Compare with baseline" }).click();
+    await page.getByRole("button", { name: "Pin current as A" }).click();
     await expect(
       page.getByRole("columnheader", { name: "Difference" }),
     ).toBeVisible();
@@ -199,8 +199,7 @@ test("native inspector keyboard focus, prediction, migration, and search", async
   );
   await page.goto("/?concept=cache-aside");
   await expect(page.locator(".nav-progress")).toContainText("2 / 56 explored");
-  await page.getByRole("button", { name: "Step event", exact: true }).click();
-  await page.getByRole("button", { name: "Step event", exact: true }).click();
+  await seekEvent(page, "cache-aside", "fill");
   const entry = page.locator(".cache-entry").first();
   await entry.focus();
   await page.keyboard.press("Enter");
@@ -285,13 +284,14 @@ test("corrupt guest storage survives account switching and further interaction",
   ).toBe("{bad");
 });
 
-test("all journey stages and operations, acceptance, compensation, recovery and screenshot", async ({
+test("all journey stages and operations expose completed work and independent failures", async ({
   page,
 }) => {
   await page.goto("/");
   await page
     .getByRole("button", { name: "Build a system", exact: true })
     .click();
+  await page.locator(".journey-settings > summary").click();
   for (let stage = 0; stage < 6; stage++) {
     await page
       .getByRole("navigation", { name: "Build stages" })
@@ -302,29 +302,56 @@ test("all journey stages and operations, acceptance, compensation, recovery and 
       await page
         .getByLabel("Operation", { exact: true })
         .selectOption(operation);
-      const timeline = page.getByRole("slider", { name: "Operation timeline" });
-      await timeline.focus();
-      await timeline.press("End");
-      await expect(page.locator(".event-explanation")).toContainText(
-        stage >= 4 && operation !== "read"
-          ? "Duplicate redelivery suppressed"
-          : operation === "read"
-            ? "Product returned"
-            : stage >= 3
-              ? "Message acknowledged"
-              : "Request completed",
+      await page
+        .getByRole("slider", { name: "Operation timeline" })
+        .press("End");
+      await expect(page.locator(".journey-outcomes > b")).toHaveText(
+        "Completed",
       );
+      await expect(
+        page
+          .locator(".journey-outcomes")
+          .getByText("Pending", { exact: false })
+          .locator("strong"),
+      ).toHaveText("0");
       await noOverflow(page);
     }
   }
   await page
-    .getByRole("checkbox", { name: "Introduce a dependency failure" })
+    .getByRole("navigation", { name: "Build stages" })
+    .getByRole("button")
+    .nth(1)
+    .click();
+  await page.getByLabel("Operation", { exact: true }).selectOption("read");
+  await page.getByLabel("Product cache", { exact: true }).selectOption("warm");
+  await page
+    .getByLabel("Source availability", { exact: true })
+    .selectOption("unavailable");
+  await page.getByRole("slider", { name: "Operation timeline" }).press("End");
+  await expect(page.locator(".journey-outcomes > b")).toHaveText("Completed");
+  await page
+    .getByLabel("Product cache", { exact: true })
+    .selectOption("expired");
+  await page.getByRole("slider", { name: "Operation timeline" }).press("End");
+  await expect(page.locator(".journey-outcomes > b")).toHaveText("Failed");
+  await page
+    .getByRole("navigation", { name: "Build stages" })
+    .getByRole("button")
+    .nth(4)
+    .click();
+  await page
+    .getByLabel("Operation", { exact: true })
+    .selectOption("notification");
+  await page
+    .getByLabel("Notification processing", { exact: true })
+    .selectOption("repair");
+  await page.getByRole("slider", { name: "Operation timeline" }).press("End");
+  await expect(page.locator(".journey-outcomes > b")).toHaveText("In DLQ");
+  await page
+    .getByRole("checkbox", { name: "Schedule an explicit DLQ redrive" })
     .check();
-  await page.getByRole("slider", { name: "Operation timeline" }).focus();
-  await page.keyboard.press("End");
-  await expect(page.locator(".journey-metrics")).toContainText(
-    "Completed effects1",
-  );
+  await page.getByRole("slider", { name: "Operation timeline" }).press("End");
+  await expect(page.locator(".journey-outcomes > b")).toHaveText("Completed");
   mkdirSync("docs/screenshots", { recursive: true });
   await page.evaluate(() => {
     if (document.activeElement instanceof HTMLElement)
@@ -360,13 +387,17 @@ for (const width of [320, 390, 768])
       await finish(page);
       await noOverflow(page);
       if (id === "cache-aside" && width < 760) {
-        await page.getByRole("button", { name: "Tune this experiment" }).click();
-        await expect(page.getByLabel("Scenario", { exact: true })).toBeVisible();
+        await page.getByRole("button", { name: "Tune model" }).click();
+        await expect(
+          page.getByLabel("Scenario", { exact: true }),
+        ).toBeVisible();
         await noOverflow(page);
-        await page.getByRole("button", { name: "Hide experiment controls" }).click();
-        const topology = page.locator(".topology-details");
-        await topology.locator("summary").click();
-        const component = topology.getByRole("button").first();
+        await page.getByRole("button", { name: "Hide controls" }).click();
+        const topology = page.locator(".operation-map");
+        const component = topology
+          .locator(".mobile-operation")
+          .getByRole("button")
+          .first();
         await component.click();
         const sheet = page.locator(".detail-dialog[open]");
         await expect(sheet).toBeVisible();
@@ -374,7 +405,6 @@ for (const width of [320, 390, 768])
         expect(bounds!.y + bounds!.height).toBeCloseTo(900, 0);
         await page.getByRole("button", { name: "Close inspector" }).click();
         await expect(component).toBeFocused();
-        await topology.locator("summary").click();
       }
       expect(
         await page
