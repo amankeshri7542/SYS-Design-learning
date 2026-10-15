@@ -122,3 +122,56 @@ Fault buttons ("Crash server 2", "Cut the network") and looping scripted events 
 - `npm run typecheck && npm test && npm run build` and `npm run test:browser` are green.
 - Screenshots at 1440 and 390 px have been checked by eye.
 - The work is pushed to `main`, and Vercel serves the new version at sys-design-learning.vercel.app.
+
+---
+
+## v2: one-screen lesson player
+
+**Feedback.** The user had to scroll to see the simulation, then scroll again to read the text, and the phone was worse. Stacking two figures plus takeaways vertically was the cause.
+
+**References.**
+- PhET: a fixed logical stage scaled to fit, with controls inside it.
+- Algorithm Visualizer: a full-height app with panes, where the page never scrolls.
+- Secret Lives of Data and Nicky Case's *Trust*: one stage, short text, and objects that carry over and tween between steps.
+- Duolingo and Brilliant: one forward action, plus visible progress.
+- The Pudding: keep every step reachable.
+- web.dev: use `svh` units, not `100vh`.
+- NN/g: no long reading in bottom sheets.
+
+**Decisions.**
+
+- **One app shell per lesson, and the document never scrolls.**
+
+  ```
+  desktop / tablet landscape                      phone (portrait)
+  ┌────────────────────────────────────────────┐  ┌──────────────────┐
+  │ ◉ F ·F1 F2 F3 F4·  F3 Load balancing  ‹ ›  │  │ ◉  F3 Load bal… ›│ bar
+  ├──────────────────────────────┬─────────────┤  ├──────────────────┤
+  │                              │ why         │  │ stage (compact   │
+  │   stage (fills, contain)     │ [1][2][✓]   │  │ layout, 46svh)   │
+  │                              │ caption     │  ├──────────────────┤
+  │                              │ knobs·fault │  │ [1][2][✓] tabs   │ panel
+  │                              │ Without|With│  │ caption, knobs,  │ (only
+  │                              │   |Δ table  │  │ compare table    │ scroller)
+  ├──────────────────────────────┴─────────────┤  ├──────────────────┤
+  │ ▶ ⏭ ↺ 0.5 1 2 · slow-mo · Key   ‹ Back Next›│  │ ▶ ⏭ ↺ 1×  Next › │ dock
+  └────────────────────────────────────────────┘  └──────────────────┘
+  ```
+
+- **Steps.** Each step is a tab: Problem, Fix, Takeaways. Switch with the tabs, the ← and → keys, or the single primary Next button in the dock.
+  - Both worlds run in lockstep on the same seed, and a fault button hits both.
+  - Switching shows the other world on the same stage. Nodes they share keep their place, new components scale in with a one-time accent ring, and links fade in.
+- **Numbers.** A "Without | With | Δ" table, coloured by good or bad, with the inactive column muted.
+- **Scene layouts.**
+  - **wide:** the desktop layout.
+  - **compact:** phones and short boxes. Tighter spacing, slightly smaller glyphs, and secondary labels only when they carry news.
+  - **tall:** narrow, tall boxes.
+
+  The stage measures its box and picks whichever layout reads best.
+- **Motion.**
+  - Ease-out for entering, and linear travel for requests.
+  - Panel content enters with opacity, an 8px shift and a light blur.
+  - Numbers are smoothed so they don't flicker.
+  - No decorative loops.
+  - Everything is off under reduced motion.
+- **Home.** A two-column hero: copy and CTA beside the live scene, with the dot key as a strip. The route map follows.

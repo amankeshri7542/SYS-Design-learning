@@ -19,14 +19,20 @@ There are 18 lessons on five "lines", ending in a capstone:
 | **R · Resilience** | Rate limiting · Circuit breakers · Autoscaling |
 | **★ Capstone** | Keep a URL shortener alive through four traffic stages |
 
-Every lesson has the same shape:
+Every lesson fits on one screen, so you never scroll to find the simulation and then scroll back to read about it:
 
-- A one-line **why** it exists.
-- **The problem**: the scene without the idea.
-- **The fix**: the same scene and the same random seed, with the idea added. Its numbers sit next to the problem's.
-- Three short takeaways: when to use it, the catch, and where you'll see it.
+- **Stage.** The live scene fills most of the screen.
+- **Side panel.** It holds a one-line **why**, then the steps as tabs:
+  - **The problem**: the scene without the idea.
+  - **The fix**: the same scene and the same random seed, with the idea added.
+  - **Recap**: when to use it, the catch, and where you'll see it.
+- **Comparison table.** Under the steps, a live **Without | With | Change** table measures both worlds side by side. They run in lockstep, and a fault button hits both.
+- **Dock.** Playback controls and the single **Next** button.
+- **Phones.** The stage stays fixed on top, the panel is the only part that scrolls, and the dock sits at the bottom.
 
-![The fix scene of the caching lesson, with live metrics compared to the no-cache run](docs/screenshots/lesson-caching.png)
+![The caching lesson on one screen: scene, steps, knob and Without/With/Change table](docs/screenshots/lesson-caching.png)
+
+<img src="docs/screenshots/mobile-rate-limiting.png" alt="The rate-limiting lesson on a phone" width="300">
 
 In the capstone you grow the architecture yourself. You add servers, a cache, replicas and a rate limiter, and each stage unlocks once you hold the latency and error target.
 
@@ -76,16 +82,18 @@ npm run tune           # print each figure's metrics over a simulated run
 src/
   app/                    Next.js App Router: home, /learn/[slug] (static), 404
   components/
-    stage.tsx             SVG nodes underneath, a canvas of moving requests on top
-    glyph.tsx             node shapes and icons
-    live.tsx              useLiveSim: animation loop, playback, metrics tiles
-    figure.tsx            one lesson scene: stage, controls, faults, knobs, metrics
-    capstone.tsx          the stage-by-stage capstone
+    player.tsx            the one-screen lesson player (bar · stage | panel · dock)
+    capstone.tsx          the stage-by-stage capstone, in the same shell
+    stage.tsx             SVG nodes underneath, a canvas of moving requests on top;
+                          picks a wide, compact (phone) or tall layout to fit its box
+    live.tsx              useLiveSims (lockstep worlds + animation loop), Compare, Transport
+    glyph.tsx, legend.tsx node shapes, icons, the dot key
+    hero.tsx, brand.tsx   home page scene, header and footer
     route-map.tsx         the transit map (SVG on desktop, a strip list on phones)
   lib/
     sim/engine.ts         deterministic, tick-based flow simulator
     sim/metrics.ts        sliding-window p95, error, hit, utilisation, and more
-    sim/layout.ts         layout coordinates → wide or tall (phone) viewBox
+    sim/layout.ts         layout coordinates → wide, compact or tall viewBox
     lessons/*.ts          lessons as pure build(values) → SceneSpec functions
 tests/                    node:test engine + lesson tests; Playwright browser tests
 ```
@@ -102,7 +110,10 @@ tests/                    node:test engine + lesson tests; Playwright browser te
   - Clients time out and retry, with backoff, jitter and an optional retry budget.
   - A timed-out request keeps running as a ghost. That wasted work is what makes retry storms possible.
 - **Live knobs.** Changing a knob rebuilds the scene spec, and `sim.reconfigure(spec)` patches the running simulation in place.
-- **Rendering.** Only on-screen figures animate. React re-renders the SVG about 11 times a second; the canvas draws every frame.
+- **Rendering.**
+  - Only on-screen scenes animate. React re-renders the SVG about 11 times a second; the canvas draws every frame.
+  - When you switch steps, components the two worlds share stay put and new ones scale in with an accent ring.
+  - Numbers are smoothed so they glide instead of flickering.
 - **Reduced motion.** Nothing autoplays. Figures open on a settled still frame, and Play and Step are always available.
 
 See [docs/plan.md](docs/plan.md) for the audit, the design decisions and the scope.
