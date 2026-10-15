@@ -5,6 +5,7 @@ import type { FigureDef } from "./types";
 /** The home page thesis: a small but complete system, with a server that fails now and then. */
 export const HERO: FigureDef = {
   tone: "explore",
+  short: "Live",
   title: "A small web system under load",
   caption:
     "Users send requests through a load balancer to three servers. The servers read through a cache to a database. Every so often a server crashes and the balancer routes around it.",

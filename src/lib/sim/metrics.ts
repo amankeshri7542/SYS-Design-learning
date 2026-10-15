@@ -33,6 +33,8 @@ export interface MetricSpec {
   nodes?: string[];
   /** Explains the number in plain words (shown as a tooltip and to screen readers). */
   hint?: string;
+  /** Override which direction is good news (e.g. more of the bot's requests turned away). */
+  better?: "low" | "high";
 }
 
 type Unit = "ms" | "pct" | "rate" | "count" | "ratio";
@@ -212,5 +214,5 @@ export function toneOf(m: MetricSpec, v: number | null, sloMs: number): Tone {
 }
 
 export function betterIs(m: MetricSpec) {
-  return META[m.id].better;
+  return m.better ?? META[m.id].better;
 }

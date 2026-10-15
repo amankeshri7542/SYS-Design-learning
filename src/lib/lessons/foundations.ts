@@ -20,6 +20,7 @@ const latency: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "Rising traffic",
       title: "One server, rising traffic",
       caption:
         "Traffic swells and fades. The line in front of the server stays short until the server is nearly full, then it grows much faster than the traffic does.",
@@ -32,6 +33,7 @@ const latency: Lesson = {
     },
     {
       tone: "explore",
+      short: "More workers",
       title: "Capacity is workers ÷ time per request",
       caption:
         "Four workers, each taking about 120 ms, can finish roughly 33 requests a second. Push traffic toward that number, then give the server more workers.",
@@ -75,6 +77,7 @@ const scaling: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "Scale up",
       title: "Scale up: one bigger machine",
       caption:
         "A single server with eight workers handles the load easily, until it crashes. Then every request fails until it comes back.",
@@ -84,6 +87,7 @@ const scaling: Lesson = {
     },
     {
       tone: "fix",
+      short: "Scale out",
       title: "Scale out: several smaller machines",
       caption:
         "The same eight workers are spread over four servers behind a load balancer. When one crashes, only its share of requests fails.",
@@ -101,7 +105,6 @@ const scaling: Lesson = {
           { script: outage("s1", "Server 1", 1300, 2400, 3600), wideH: 460 },
         );
       },
-      compare: { label: "one big server", build: bigServer },
     },
   ],
   takeaways: {
@@ -135,6 +138,7 @@ const balancing: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "Fixed servers",
       title: "Each region is stuck with one server",
       caption:
         "Europe sends seven times the traffic of the Americas. Server 1 builds a queue while server 3 sits mostly idle. Some requests are heavier (bigger dots take longer).",
@@ -143,6 +147,7 @@ const balancing: Lesson = {
     },
     {
       tone: "fix",
+      short: "Balanced",
       title: "One balancer in front of all three",
       caption:
         "Every request goes to the balancer, which picks a server. Try each strategy: “least busy” copes best when some requests are heavier than others.",
@@ -159,7 +164,6 @@ const balancing: Lesson = {
           ],
           { wideH: 460 },
         ),
-      compare: { label: "fixed regions", build: sticky },
     },
   ],
   takeaways: {
@@ -190,6 +194,7 @@ const health: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "No checks",
       title: "The balancer can't tell server 2 is dead",
       caption: "When server 2 crashes, a third of all requests still go to it and fail (red diamonds).",
       actions: [crash("s2", "server 2")],
@@ -198,6 +203,7 @@ const health: Lesson = {
     },
     {
       tone: "fix",
+      short: "Health checks",
       title: "The balancer pings each server",
       caption:
         "Small hollow dots are health checks. After two missed checks, server 2 is taken out of rotation. When it answers again, it's put back.",
@@ -205,7 +211,6 @@ const health: Lesson = {
       actions: [crash("s2", "server 2")],
       metrics: [M.errors(), M.p95(), { id: "inRotation", label: "Servers in use", nodes: ["lb"], hint: "Servers the balancer is sending traffic to." }],
       build: (v) => healthScene(v.every),
-      compare: { label: "no checks", build: () => healthScene(null) },
     },
   ],
   takeaways: {

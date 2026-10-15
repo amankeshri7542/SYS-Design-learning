@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const config: NextConfig = {
   poweredByHeader: false,
+  // The badge sits on top of the playback dock; build and runtime errors still show.
+  devIndicators: false,
   async headers() {
     return [
       {

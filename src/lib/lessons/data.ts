@@ -21,6 +21,7 @@ const replicas: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "One database",
       title: "One database does everything",
       caption: "Nine reads for every write, all hitting one machine that can manage about 37 a second. It's always full.",
       metrics: [M.p95(), M.busy(["primary"], "Database busy"), M.errors()],
@@ -28,6 +29,7 @@ const replicas: Lesson = {
     },
     {
       tone: "fix",
+      short: "Replicas",
       title: "Writes to the primary, reads from replicas",
       caption:
         "Each write is copied to the replicas a little later (small dots on the dashed lines). A read that reaches a replica before the copy arrives gets stale data.",
@@ -57,7 +59,6 @@ const replicas: Lesson = {
           { wideH: 480 },
         );
       },
-      compare: { label: "one database", build: oneDb },
     },
   ],
   takeaways: {
@@ -85,6 +86,7 @@ const sharding: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "One database",
       title: "Every write lands on one database",
       caption: "Replicas can't help here: every copy still has to apply every write. The single primary is saturated.",
       metrics: [M.p95(), M.busy(["db"], "Database busy"), M.errors()],
@@ -92,6 +94,7 @@ const sharding: Lesson = {
     },
     {
       tone: "fix",
+      short: "Shards",
       title: "Split keys across shards",
       caption:
         "A router hashes each key to choose its shard, so each one handles a fraction of the writes. Then add a celebrity: one key that's suddenly very popular.",
@@ -112,7 +115,6 @@ const sharding: Lesson = {
           { wideH: 480 },
         );
       },
-      compare: { label: "one database", build: oneWriter },
     },
   ],
   takeaways: {
@@ -167,6 +169,7 @@ const consistent: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "hash % N",
       title: "hash(key) % N",
       caption:
         "Watch for a fourth cache joining, and later leaving. N changes, so about three out of four keys now map to a different cache. Hits collapse and the database takes the load.",
@@ -175,12 +178,12 @@ const consistent: Lesson = {
     },
     {
       tone: "fix",
+      short: "Hash ring",
       title: "A hash ring",
       caption:
         "Caches and keys are placed around a ring, and each key belongs to the next cache clockwise. A newcomer takes over only the keys next to its own points.",
       metrics: [M.hit(["c1", "c2", "c3", "c4"]), M.busy(["db"], "Database busy"), movedMetric],
       build: hashing("ring"),
-      compare: { label: "hash % N", build: hashing("hash") },
     },
   ],
   takeaways: {
@@ -247,6 +250,7 @@ const cap: Lesson = {
   figures: [
     {
       tone: "tradeoff",
+      short: "Consistent",
       title: "Choose consistency: refuse when unsure",
       caption:
         "The EU copy forwards everything to the US leader, so answers are always current. When the link breaks, EU users get errors instead of possibly wrong data.",
@@ -256,13 +260,13 @@ const cap: Lesson = {
     },
     {
       tone: "tradeoff",
+      short: "Available",
       title: "Choose availability: answer anyway",
       caption:
         "Each region reads and writes locally and syncs in the background. During the split, EU users still get answers, but some are stale. Writes made on both sides conflict when the link comes back.",
       actions: [cut],
       metrics: [answered, M.stale({ tag: "eu", label: "EU stale reads" }), { id: "conflicts", label: "Conflicting writes", hint: "Keys written on both sides during a split." }],
       build: () => capScene("ap"),
-      compare: { label: "consistent", build: () => capScene("cp") },
     },
   ],
   takeaways: {

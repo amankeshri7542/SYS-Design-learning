@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { LESSONS, getLesson, neighbours } from "../src/lib/lessons";
 import { STAGES, START, TARGET, capstoneScene, type Arch } from "../src/lib/lessons/capstone";
 import { HERO } from "../src/lib/lessons/hero";
-import { defaultsOf, type FigureDef } from "../src/lib/lessons/types";
+import { buildSteps, defaultsOf, type FigureDef } from "../src/lib/lessons/types";
 import { Sim } from "../src/lib/sim/engine";
 import { betterIs, measure, type MetricSpec } from "../src/lib/sim/metrics";
 import type { SceneSpec } from "../src/lib/sim/types";
@@ -35,6 +35,7 @@ test("every lesson has a one-line why, a problem then a fix (or a trade-off pair
     assert.equal(l.figures.length, 2, `${l.slug} has two scenes`);
     const tones = l.figures.map((f) => f.tone).join(",");
     assert.ok(["problem,fix", "problem,explore", "tradeoff,tradeoff"].includes(tones), `${l.slug}: ${tones}`);
+    assert.ok(l.figures.every((f) => f.short.length <= 16), `${l.slug} step names fit a tab`);
     for (const f of l.figures) {
       assert.ok((f.knobs ?? []).length <= 2, `${l.slug} keeps knobs to two`);
       assert.ok(f.metrics.length <= 4, `${l.slug} keeps metrics to four`);
@@ -65,18 +66,18 @@ test("every scene builds and runs at every knob extreme without throwing", () =>
   }
 });
 
-// The teaching claim of each lesson: the fix measurably beats the problem on the first metric shown.
+// The teaching claim of each lesson: the second step measurably beats the first on the first metric shown.
 for (const lesson of LESSONS) {
-  const fix = lesson.figures[1];
-  if (!fix?.compare) continue;
+  const [problem, fix] = lesson.figures;
+  if (!fix || fix.tone === "explore") continue;
   test(`${lesson.code} ${lesson.title}: the fix beats the problem`, () => {
     const metric = fix.metrics[0];
-    const v = defaultsOf(fix);
+    const [without, withFix] = buildSteps([problem, fix], [defaultsOf(problem), defaultsOf(fix)]);
     const ms = lesson.slug === "consistent-hashing" || lesson.slug === "consistency-vs-availability" ? 9000 : 7000;
-    const withFix = average(fix.build(v), metric, ms);
-    const without = average(fix.compare!.build(v), metric, ms);
-    const gain = betterIs(metric) === "low" ? (without - withFix) / Math.max(without, 1e-9) : (withFix - without) / Math.max(withFix, 1e-9);
-    assert.ok(gain > 0.08, `${metric.label}: fix ${withFix.toFixed(3)} vs without ${without.toFixed(3)}`);
+    const a = average(withFix, metric, ms);
+    const b = average(without, metric, ms);
+    const gain = betterIs(metric) === "low" ? (b - a) / Math.max(b, 1e-9) : (a - b) / Math.max(a, 1e-9);
+    assert.ok(gain > 0.08, `${metric.label}: fix ${a.toFixed(3)} vs without ${b.toFixed(3)}`);
   });
 }
 

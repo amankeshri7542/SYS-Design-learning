@@ -21,6 +21,7 @@ const queues: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "Inline",
       title: "Doing slow work while the user waits",
       caption:
         "Sign-ups arrive in bursts, and each one sends a slow welcome email before answering. During a burst the server's waiting line overflows and sign-ups fail.",
@@ -29,6 +30,7 @@ const queues: Lesson = {
     },
     {
       tone: "fix",
+      short: "Queue",
       title: "Put the job on a queue, answer at once",
       caption:
         "The app drops each email job on a queue (the small squares) and replies right away. Workers drain the queue at a steady pace, so a burst just makes the line longer for a while.",
@@ -44,7 +46,6 @@ const queues: Lesson = {
           ],
           { wideH: v.n > 4 ? 520 : 460 },
         ),
-      compare: { label: "inline", build: inline },
     },
   ],
   takeaways: {
@@ -79,6 +80,7 @@ const pubsub: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "Direct calls",
       title: "The order service calls everyone",
       caption:
         "Each order calls email, then inventory, then analytics, one after another. The user waits for the sum of all three. When analytics crashes, orders fail too.",
@@ -88,6 +90,7 @@ const pubsub: Lesson = {
     },
     {
       tone: "fix",
+      short: "Pub/sub",
       title: "Publish one event and let subscribers listen",
       caption:
         "The order service publishes “order placed” once and answers. Each subscriber gets its own copy. If analytics is down, its copies pile up and wait. Orders don't notice.",
@@ -103,7 +106,6 @@ const pubsub: Lesson = {
           ],
           { script: outage("stats", "Analytics", 1400, 2900, 4200), wideH: 460 },
         ),
-      compare: { label: "direct calls", build: direct },
     },
   ],
   takeaways: {
@@ -156,6 +158,7 @@ const retries: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "Retry now",
       title: "Clients retry immediately",
       caption:
         "The service stalls for under a second. Clients give up after half a second and retry at once, but their abandoned requests are still in the queue (hollow ghosts). The load quadruples and it never recovers.",
@@ -164,13 +167,13 @@ const retries: Lesson = {
     },
     {
       tone: "fix",
+      short: "Backoff",
       title: "Back off, add jitter, cap the retries",
       caption:
         "Wait longer after each failure, randomise the wait so clients don't retry in sync, and allow only a small budget of retries. The queue drains and the service recovers.",
       knobs: [choice("s", "Retry strategy", ["At once", "Backoff + jitter", "+ retry budget"], 2)],
       metrics: [answered, amplify, M.p95()],
       build: (v) => stallScene(v.s),
-      compare: { label: "instant retries", build: () => stallScene(0) },
     },
   ],
   takeaways: {

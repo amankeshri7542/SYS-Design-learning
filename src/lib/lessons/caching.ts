@@ -20,6 +20,7 @@ const caching: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "No cache",
       title: "Every read goes to the database",
       caption:
         "The database can answer about 36 reads a second and it's getting 48. A queue builds in front of it and responses slow to a crawl.",
@@ -28,6 +29,7 @@ const caching: Lesson = {
     },
     {
       tone: "fix",
+      short: "With cache",
       title: "A cache in front of the database",
       caption:
         "The app asks the cache first. A hit (green ring) answers right away. A miss (amber ring) fetches from the database and keeps a copy for next time.",
@@ -40,7 +42,6 @@ const caching: Lesson = {
           cache("cache", [60, 50], "db", { capacity: v.size, ttlMs: 4000 }),
           database("db", [88, 50], { slots: 4, serviceMs: 110, queueMax: 40 }),
         ]),
-      compare: { label: "no cache", build: noCache },
     },
   ],
   takeaways: {
@@ -85,6 +86,7 @@ const cdn: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "Origin only",
       title: "Everyone fetches from one origin",
       caption:
         "The origin is in the US. Requests from Asia spend most of their time crossing the ocean, both there and back, before any work starts.",
@@ -93,6 +95,7 @@ const cdn: Lesson = {
     },
     {
       tone: "fix",
+      short: "With CDN",
       title: "Edge caches next to each region",
       caption:
         "Each region talks to a nearby edge server. Only misses make the long trip, and the copy they bring back serves everyone nearby.",
@@ -122,7 +125,6 @@ const cdn: Lesson = {
             warmMs: 1200,
           },
         ),
-      compare: { label: "no CDN", build: noCdn },
     },
   ],
   takeaways: {
@@ -150,6 +152,7 @@ const stale: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "Never expire",
       title: "Copies that never expire",
       caption:
         "Editors update items in the database, but the cache keeps serving the old copies. Violet rings are readers being handed out-of-date data.",
@@ -158,6 +161,7 @@ const stale: Lesson = {
     },
     {
       tone: "fix",
+      short: "Expire + purge",
       title: "Expire copies, or delete them on write",
       caption:
         "A short lifetime means fewer stale reads but more trips to the database. Deleting the copy when an editor writes fixes most of the staleness at once.",
@@ -167,7 +171,6 @@ const stale: Lesson = {
       ],
       metrics: [M.stale({ tag: "reader" }), M.hit(["cache"]), M.load(["db"], "Database load")],
       build: (v) => staleScene(v.ttl, v.purge === 1),
-      compare: { label: "never expiring", build: () => staleScene(undefined, false) },
     },
   ],
   takeaways: {
@@ -197,6 +200,7 @@ const stampede: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "Stampede",
       title: "A hot item expires",
       caption:
         "Nine in ten requests are for the same item. Each time its copy expires, a crowd of misses rushes the database and everyone waits.",
@@ -205,13 +209,13 @@ const stampede: Lesson = {
     },
     {
       tone: "fix",
+      short: "Coalesced",
       title: "One fetch, everyone else waits for it",
       caption:
         "With request coalescing, the first miss fetches the item and the others wait beside the cache for that one answer.",
       knobs: [choice("co", "Misses for the same item", ["All go to the database", "Share one fetch"], 1)],
       metrics: [M.p95(), M.load(["db"], "Database reads"), M.queue(["db"], "Database queue")],
       build: (v) => stampedeScene(v.co === 1),
-      compare: { label: "no coalescing", build: () => stampedeScene(false) },
     },
   ],
   takeaways: {

@@ -35,14 +35,14 @@ export interface Action {
 
 export interface FigureDef {
   tone: "problem" | "fix" | "tradeoff" | "explore";
+  /** Tab and column name, two words at most ("No cache", "With cache"). */
+  short: string;
   title: string;
   caption: string;
   knobs?: Knob[];
   actions?: Action[];
   metrics: MetricSpec[];
   build: (v: Values) => SceneSpec;
-  /** A hidden run of the problem scene with the same knobs, for "without" numbers. */
-  compare?: { label: string; build: (v: Values) => SceneSpec };
 }
 
 export type LineId = "foundations" | "caching" | "data" | "async" | "resilience" | "capstone";
@@ -70,4 +70,10 @@ export function isChoice(k: Knob): k is ChoiceKnob {
 
 export function defaultsOf(f: FigureDef): Values {
   return Object.fromEntries((f.knobs ?? []).map((k) => [k.id, k.value]));
+}
+
+/** Build every step's scene. Each step sees the other steps' knob values too (e.g. the same celebrity traffic). */
+export function buildSteps(figures: FigureDef[], values: Values[]) {
+  const shared = Object.assign({}, ...values) as Values;
+  return figures.map((f, i) => f.build({ ...shared, ...values[i] }));
 }

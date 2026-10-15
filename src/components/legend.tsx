@@ -1,6 +1,3 @@
-import { SIZES } from "@/lib/sim/layout";
-import type { Glyph } from "@/lib/sim/types";
-import { Body } from "./glyph";
 
 const DOTS: { shape: string; cls: string; name: string; text: string }[] = [
   { shape: "circle", cls: "req", name: "Request", text: "On its way, or waiting its turn." },
@@ -10,15 +7,6 @@ const DOTS: { shape: string; cls: string; name: string; text: string }[] = [
   { shape: "square", cls: "turned", name: "Turned away", text: "Refused fast on purpose: rate-limited or a fallback." },
   { shape: "diamond", cls: "err", name: "Failed", text: "An error. Dropped requests fall off the stage." },
   { shape: "ring", cls: "err", name: "Gave up", text: "The user timed out. The work may still be running." },
-];
-
-const PARTS: { glyph: Glyph; name: string; text: string; slots?: number }[] = [
-  { glyph: "client", name: "Users", text: "Where requests come from." },
-  { glyph: "lb", name: "Load balancer", text: "Picks which server gets each request." },
-  { glyph: "server", name: "Server", text: "Each socket is a worker. A filled socket is busy, a hollow one is stuck waiting.", slots: 4 },
-  { glyph: "cache", name: "Cache", text: "Fast copies. The bar shows how full it is." },
-  { glyph: "db", name: "Database", text: "The source of truth. Slow, and hard to scale.", slots: 3 },
-  { glyph: "queue", name: "Queue", text: "Work waiting for a worker (small squares are jobs)." },
 ];
 
 export function Dot({ shape, cls }: { shape: string; cls: string }) {
@@ -33,43 +21,45 @@ export function Dot({ shape, cls }: { shape: string; cls: string }) {
   );
 }
 
-/** "How to read a scene": the visual vocabulary every lesson uses. */
-export function Legend() {
+/** A small popover with the dot vocabulary, available next to every scene. */
+export function Key() {
   return (
-    <div className="legend">
-      <div>
-        <h3 className="legend-h">Dots are requests</h3>
-        <ul className="legend-dots">
+    <details className="key">
+      <summary>Key</summary>
+      <div className="key-pop">
+        <ul>
           {DOTS.map((d) => (
             <li key={d.name}>
               <Dot shape={d.shape} cls={d.cls} />
               <span>
-                <strong>{d.name}</strong> {d.text}
+                <strong>{d.name}.</strong> {d.text}
               </span>
             </li>
           ))}
+          <li>
+            <svg viewBox="-8 -8 16 16" className="dot" aria-hidden="true">
+              <circle r="5.5" className="socket-demo" />
+            </svg>
+            <span>
+              <strong>Sockets</strong> inside a server are its workers; a hollow ring is a worker stuck waiting.
+            </span>
+          </li>
         </ul>
       </div>
-      <div>
-        <h3 className="legend-h">Shapes are parts of the system</h3>
-        <ul className="legend-parts">
-          {PARTS.map((p) => {
-            const s = SIZES[p.glyph];
-            return (
-              <li key={p.name}>
-                <svg viewBox={`${-s.w / 2 - 4} ${-s.h / 2 - 4} ${s.w + 8} ${s.h + 8}`} className="part" aria-hidden="true">
-                  <g className={`node g-${p.glyph}`}>
-                    <Body glyph={p.glyph} w={s.w} h={s.h} slots={p.slots ?? 0} />
-                  </g>
-                </svg>
-                <span>
-                  <strong>{p.name}</strong> {p.text}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
+    </details>
+  );
+}
+
+/** Compact strip of the dot vocabulary for the home page. */
+export function DotStrip() {
+  return (
+    <ul className="dot-strip" aria-label="What the dots mean">
+      {DOTS.map((d) => (
+        <li key={d.name}>
+          <Dot shape={d.shape} cls={d.cls} />
+          {d.name}
+        </li>
+      ))}
+    </ul>
   );
 }

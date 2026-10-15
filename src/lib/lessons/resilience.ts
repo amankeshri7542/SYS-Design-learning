@@ -18,6 +18,7 @@ const limiting: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "No limit",
       title: "A scraper floods the API",
       caption:
         "The bot sends three times as much as all the real users combined. The server is buried, and real users wait or fail along with the bot.",
@@ -26,6 +27,7 @@ const limiting: Lesson = {
     },
     {
       tone: "fix",
+      short: "Rate limit",
       title: "A token bucket per client",
       caption:
         "Each client gets a steady allowance of requests plus a small burst. The bot's excess is turned away instantly (grey squares) and never reaches the server.",
@@ -33,7 +35,7 @@ const limiting: Lesson = {
       metrics: [
         M.p95({ tag: "user", label: "Users' response time" }),
         M.errors({ tag: "user", label: "Users failed" }),
-        { id: "rejected", label: "Bot turned away", tag: "bot", hint: "Share of the bot's requests rejected by the limiter." },
+        { id: "rejected", label: "Bot turned away", tag: "bot", better: "high", hint: "Share of the bot's requests rejected by the limiter." },
       ],
       build: (v: Values) =>
         scene(
@@ -45,7 +47,6 @@ const limiting: Lesson = {
           ],
           { wideH: 440 },
         ),
-      compare: { label: "no limit", build: unlimited },
     },
   ],
   takeaways: {
@@ -94,6 +95,7 @@ const breakers: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "No breaker",
       title: "Waiting on a payments service that hangs",
       caption:
         "Checkouts wait almost a second for payments before giving up. Hollow slots are workers stuck waiting. Soon there are none left, so even simple browsing queues up.",
@@ -102,13 +104,13 @@ const breakers: Lesson = {
     },
     {
       tone: "fix",
+      short: "Breaker",
       title: "Trip a breaker after repeated failures",
       caption:
         "After five failures in a row, the breaker opens. Checkouts get an instant “try again shortly” (grey) instead of a stuck worker. After a cool-down, one trial request tests whether payments is back.",
       knobs: [knob("cool", "Cool-down", 200, 2000, 100, 600, ms)],
       metrics: [browse, { id: "fallback", label: "Checkouts fast-failed", op: "write", hint: "Checkouts answered instantly by the open breaker." }, M.busy(["shop"], "Shop server busy")],
       build: (v) => shop({ threshold: 5, cooldownMs: v.cool }),
-      compare: { label: "no breaker", build: () => shop(undefined) },
     },
   ],
   takeaways: {
@@ -146,6 +148,7 @@ const autoscaling: Lesson = {
   figures: [
     {
       tone: "problem",
+      short: "Fixed fleet",
       title: "A fixed number of servers",
       caption:
         "Two servers cope at night and drown at the daily peak. Add more with the knob and the peak is fine, but now they sit idle most of the day.",
@@ -155,6 +158,7 @@ const autoscaling: Lesson = {
     },
     {
       tone: "fix",
+      short: "Autoscale",
       title: "Scale to a target utilisation",
       caption:
         "Every quarter-second, the autoscaler compares how busy the servers are with the target. It starts more (dashed while booting) or drains spares.",
@@ -172,7 +176,6 @@ const autoscaling: Lesson = {
           ],
           { wideH: 480 },
         ),
-      compare: { label: "two fixed servers", build: () => fixedFleet({ n: 2 }) },
     },
   ],
   takeaways: {
