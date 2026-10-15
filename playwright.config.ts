@@ -1,24 +1,25 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
+
 export default defineConfig({
   testDir: "./tests/browser",
   outputDir: "./test-results/artifacts",
-  timeout: 30000,
+  timeout: 45_000,
   fullyParallel: true,
-  workers: 2,
-  reporter: [
-    ["list"],
-    ["html", { outputFolder: "test-results/browser-report", open: "never" }],
-  ],
+  workers: 3,
+  reporter: [["list"]],
   use: {
     baseURL: "http://127.0.0.1:3100",
-    viewport: { width: 1440, height: 1050 },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
+  projects: [
+    { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
+    { name: "mobile", use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 } } },
+  ],
   webServer: {
     command: "npm run dev -- --port 3100",
     url: "http://127.0.0.1:3100",
     reuseExistingServer: true,
-    timeout: 60000,
+    timeout: 90_000,
   },
 });
