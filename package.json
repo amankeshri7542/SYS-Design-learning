@@ -1,18 +1,17 @@
 {
   "name": "system-lab",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
-    "start": "node scripts/start.mjs",
+    "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
-    "infra:prepare": "tsx scripts/prepare-infra.ts",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "tune": "tsx scripts/tune.ts"
   },
   "dependencies": {
-    "lucide-react": "^0.468.0",
     "next": "^16.2.9",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
