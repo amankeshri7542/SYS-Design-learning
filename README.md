@@ -1,257 +1,112 @@
 # System Lab
 
-A system-design learning workspace for curious developers. All **56 original lessons** are preserved, with specific controls, inspectable domain state, guided predictions, meaningful pseudocode, and optional AWS explanations.
+**Watch systems work. Then watch them break.** System Lab is an animated field guide to system design. Each lesson is a live simulation: requests flow as dots, caches hit and miss, queues fill, servers crash and recover, and the metrics change as you turn the knobs.
 
-Made with heart by [Aman](https://amankeshri.com).
+Live at **[sys-design-learning.vercel.app](https://sys-design-learning.vercel.app)**. Made with care by [Aman](https://amankeshri.com).
 
-## Run locally
+![Home: a live scene of users, a load balancer, three servers, a cache and a database](docs/screenshots/home.png)
 
-Node.js 22+, npm. No AWS credentials are required.
+## The route
+
+There are 18 lessons on five "lines", ending in a capstone:
+
+| Line | Stations |
+|---|---|
+| **F · Foundations** | Latency & throughput · Scaling up vs out · Load balancing · Health checks |
+| **C · Caching** | Caching · CDN · Expiry & stale data · Cache stampede |
+| **D · Data** | Read replicas · Sharding · Consistent hashing · Consistency vs availability |
+| **A · Async** | Message queues · Publish/subscribe · Retries & backoff |
+| **R · Resilience** | Rate limiting · Circuit breakers · Autoscaling |
+| **★ Capstone** | Keep a URL shortener alive through four traffic stages |
+
+Every lesson has the same shape:
+
+- A one-line **why** it exists.
+- **The problem**: the scene without the idea.
+- **The fix**: the same scene and the same random seed, with the idea added. Its numbers sit next to the problem's.
+- Three short takeaways: when to use it, the catch, and where you'll see it.
+
+![The fix scene of the caching lesson, with live metrics compared to the no-cache run](docs/screenshots/lesson-caching.png)
+
+In the capstone you grow the architecture yourself. You add servers, a cache, replicas and a rate limiter, and each stage unlocks once you hold the latency and error target.
+
+![Capstone: architecture controls, cost, and a target that has to hold](docs/screenshots/capstone.png)
+
+## How to read a scene
+
+- **Dots are requests.**
+  - Cobalt: in flight.
+  - Amber: running late.
+  - Green: answered.
+  - Violet donut: stale data.
+  - Slate square: turned away (rate-limited or a fallback).
+  - Red diamond: failed.
+  - Hollow red: the user gave up.
+- **Shapes are parts of the system.**
+  - Slot sockets inside a server are its workers. A hollow socket is a worker stuck waiting.
+  - Waiting requests line up in front of a node.
+  - A cache's bar shows how full it is.
+- Scenes run about 10× slower than the milliseconds in the metrics, so you can follow a single request.
+
+## Run it
+
+You need Node.js 22 or newer.
 
 ```bash
 npm ci
-npm --prefix infra ci  # SDK dependencies for the existing cloud boundary tests
-npm run dev
-# http://localhost:3000
+npm run dev            # http://127.0.0.1:3000
+```
 
+## Check it
+
+```bash
 npm run typecheck
-npm test
+npm test               # engine invariants + every lesson's claim, in numbers
 npm run build
-npm start
-
-# Reproducible browser checks; starts or reuses localhost:3100
 npx playwright install chromium
-npm run test:browser
+npm run test:browser   # desktop + mobile: pages render, scenes animate, controls work
+npm run tune           # print each figure's metrics over a simulated run
 ```
 
-The current local preview can use `npm run dev -- --port 3100`. This quality pass is committed and pushed on the existing branch at the owner's request. Deployment and AWS provisioning remain outside this pass. There is no configured lint script; TypeScript, semantic tests, browser tests, and the production build are the available verification gates.
+`npm test` asserts that, for every lesson, the fix beats the problem on its headline metric. A tuning change that would make an animation teach something false fails the build.
 
-## Learning experience
-
-- Guided Lesson keeps one decision, optional prediction, playback, and evidence together. Experiment mode exposes all inputs, exact pinned A / forked B comparison, and every changed input.
-- Cache inventory, instance fleets, message lifecycles, replica versions, atomic records, circuit states, hashing rings, identity/policies, network boundaries, and workflow timelines have distinct renderers.
-- Run, pause, resume, reset, single-event step, speed, seek, fault/recovery injection, explicit DLQ redrive, and validated share URLs all use the same deterministic event snapshots. Per-lesson drafts restore across navigation, refresh, and browser history.
-- Build a system introduces caching, balanced applications/read replicas, queues/workers, safe delivery, and resilience through concrete problems. Follow product reads, orders, and notifications independently.
-- Search and category filtering cover all 56 IDs. Optional checks distinguish explored from understood. Legacy completion arrays migrate conservatively. Guest and account records remain separate.
-- Mobile layouts stack state, show controls on demand, and use native inspector sheets. Native controls, visible focus, keyboard search, reduced-motion styling, and 16–18px lesson prose support reading and interaction.
-
-See the current [quality verification](docs/quality-verification.md), [audit and design direction](docs/quality-plan.md), and [recomputation measurements](docs/performance.md). Earlier implementation documentation: [per-lesson checklist](docs/lesson-checklist.md), [model contract](docs/model-contract.md), [implementation decisions](docs/implementation-plan.md), and [verification evidence](docs/verification.md). Screenshots are in [docs/screenshots](docs/screenshots).
-
-## Architecture
-
-```mermaid
-flowchart LR
-  Browser[Next.js / React learning workspace] --> Engine[Pure deterministic TypeScript engine]
-  Engine --> Snapshots[Domain events + immutable snapshots]
-  Snapshots --> Views[Family views / metrics / trace / comparison]
-  Browser --> Local[Versioned per-identity local progress]
-  API[Optional POST /api/simulate] --> Engine
-  Browser -. optional sign-in .-> Cognito[Cognito authorization code + PKCE]
-  Browser -. explicit progress sync .-> Proxy[Next.js /api/runs]
-  Proxy --> Gateway[API Gateway JWT authorization]
-  Gateway --> Lambda[Lambda scoped progress handler]
-  Lambda --> DB[(DynamoDB)]
-```
-
-The stack remains Next.js App Router, React, strict TypeScript, native SVG/HTML controls, plain CSS, and Lucide. Playwright is a development-only addition. There is no mandatory simulation network request. The optional simulation endpoint accepts v2 configuration and returns the same event run as the browser.
-
-Choose Lambda for bounded stateless handlers and progress persistence, EC2 when long-lived application state or instance lifecycle is the teaching objective, and managed services for durable queues, identity, storage, and replication. These are example architectures, not a requirement to operate every listed AWS service. Conceptual view is the default; AWS labels never provision resources.
-
-## Source layout
+## How it works
 
 ```text
 src/
-  app/
-    page.tsx, layout.tsx, globals.css, icon.svg
-    api/simulate/route.ts      # optional v2 execution; bounded body validation
-    api/runs/route.ts          # unchanged authenticated progress contract
-    auth/callback/page.tsx
+  app/                    Next.js App Router: home, /learn/[slug] (static), 404
   components/
-    lab.tsx                   # navigation, identity-scoped progress, library
-    experiment.tsx            # playback, controls, comparison, guided learning
-    architecture.tsx          # family renderers and native inspection dialog
-    operation-map.tsx          # connected operation and focused phone views
-    model-control.tsx          # semantic native controls
-    journey.tsx               # connected-system interaction
-    cloud-progress.tsx        # explicit sync, errors/retries, local sign-out
+    stage.tsx             SVG nodes underneath, a canvas of moving requests on top
+    glyph.tsx             node shapes and icons
+    live.tsx              useLiveSim: animation loop, playback, metrics tiles
+    figure.tsx            one lesson scene: stage, controls, faults, knobs, metrics
+    capstone.tsx          the stage-by-stage capstone
+    route-map.tsx         the transit map (SVG on desktop, a strip list on phones)
   lib/
-    catalog.ts                # original 56 IDs, mappings, reviewed metadata
-    lessons.ts                # controls, scenarios, content, checks, references
-    engine/
-      model.ts                # validated config, seeded draws, events, metrics
-      traffic.ts              # caches, fleets, message delivery
-      data.ts                 # replicas, records, hashing, policy, boundaries
-      workflows.ts            # breaker, retries, sagas, leases, reconstruction
-      circuit-policy.ts       # shared bounded breaker transition policy
-      index.ts                # pure model entry point
-    journey.ts                # pure connected-operation trace
-    session.ts                # validated per-lesson drafts and history restoration
-    controls.ts, inspection.ts # typed control labels and readable evidence
-    progress.ts               # migration, validation, namespace-safe persistence
-    auth.ts                   # existing PKCE plus local account/logout helpers
-    simulation.ts             # legacy envelope adapter and cloud bounds
-    request.ts                # bounded request reader
-infra/
-  template.yaml, handler.mjs, concepts.json, package.json, package-lock.json
-scripts/
-  start.mjs, prepare-infra.ts, lesson-checklist.ts
-tests/
-  engine.test.ts, journey.test.ts, session.test.ts
-  simulation.test.ts, cloud.test.ts
-  browser/{workspace,quality,visual}.spec.ts
-playwright.config.ts
-docs/
-  implementation-plan.md, lesson-checklist.md, model-contract.md, verification.md
-  quality-plan.md, quality-verification.md, engine-audit.md, journey-audit.md
-  quality/, quality-before/, screenshots/
+    sim/engine.ts         deterministic, tick-based flow simulator
+    sim/metrics.ts        sliding-window p95, error, hit, utilisation, and more
+    sim/layout.ts         layout coordinates → wide or tall (phone) viewBox
+    lessons/*.ts          lessons as pure build(values) → SceneSpec functions
+tests/                    node:test engine + lesson tests; Playwright browser tests
 ```
 
-## Core contracts
+- **The engine.** The engine (`src/lib/sim`) is deterministic: a seeded PRNG drives a fixed 2 ms tick, with no I/O.
+  - Requests travel out through the scene's nodes and retrace their path back.
+  - Node kinds:
+    - clients
+    - load balancers (round robin, random, least busy, hash, consistent-hash ring, health checks, autoscaling)
+    - servers (workers, waiting line, sequential calls, call timeouts, circuit breakers)
+    - caches (LRU, TTL, request coalescing, delete-on-write)
+    - databases (replicas with lag, multi-region CP/AP under a partition)
+    - queues, topics and rate limiters
+  - Clients time out and retry, with backoff, jitter and an optional retry budget.
+  - A timed-out request keeps running as a ghost. That wasted work is what makes retry storms possible.
+- **Live knobs.** Changing a knob rebuilds the scene spec, and `sim.reconfigure(spec)` patches the running simulation in place.
+- **Rendering.** Only on-screen figures animate. React re-renders the SVG about 11 times a second; the canvas draws every frame.
+- **Reduced motion.** Nothing autoplays. Figures open on a settled still frame, and Play and Step are always available.
 
-```ts
-const config = makeConfig("cache-aside");
-config.values.ttl = 2;
-config.seed = 42;
-const run = runExperiment(config); // no I/O
-const frame = run.frames[eventIndex];
-// frame.event, frame.world, frame.metrics, and frame.outcome describe one instant.
-```
+See [docs/plan.md](docs/plan.md) for the audit, the design decisions and the scope.
 
-The queue invariant is `accepted = completed + pending + deadLetter` after every event. Rejections were never accepted. Business effects are separate from delivery acknowledgments. The breaker includes closed → open → half-open → closed/reopened transitions. Hash movement is measured from actual finite key ownership. Canary summaries use the configured candidate share and error probability.
+## Deploy
 
-Each model declares its limits. These are educational finite workloads, not AWS quotas, service benchmarks, or capacity forecasts. See [model-contract.md](docs/model-contract.md) for time units and family assumptions.
-
-Workspace session v1 stores bounded, validated per-lesson configurations, fault/redrive schedules, mode, replay cursor, prediction state, and pinned comparisons. Shared v2 URLs still import; subsequent refresh resumes the local draft. Playback always restores paused. Invalid stored data stays untouched. Workspace drafts remain on this browser and are separate from account progress.
-
-Progress v2 stores `{ version: 2, explored: string[], understood: string[] }`. The v1 array is retained and migrated to explored only. Unrecognized or unavailable storage never triggers a destructive overwrite. A decoded token subject is used only as a local storage namespace, never as authorization. API Gateway verifies cloud authorization.
-
-The existing DynamoDB schema is retained: `pk=USER#<verified sub>`, `sk=CONCEPT#<lesson>`, `conceptId`, legacy bounded configuration fields, `completed`, and `updatedAt`. It upserts one record per concept. Cloud sync treats these records as explored, using default legacy configuration fields solely for compatibility. It does not claim to synchronize v2 experiment settings or understanding checks.
-
-`POST /api/simulate` still accepts the old input envelope through an adapter, but now returns the v2 event format. Consumers expecting the removed formula `points` response must migrate to `frames`. The application itself uses the engine directly.
-
-Google Fonts are optional runtime resources with system fallbacks. Browsing, simulation, and guest progress require no external service.
-
-### Optional AWS deployment
-
-Install the official [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) and [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) and authenticate with a deployment role. The app does not require these CLIs for local learning.
-
-On macOS with Homebrew, one installation option is:
-
-```bash
-brew install awscli aws-sam-cli
-aws configure sso
-aws sso login --profile your-deployment-profile
-npm run infra:prepare
-cd infra
-sam validate --lint
-sam build
-sam deploy --guided --profile your-deployment-profile
-```
-
-Choose your AWS region, a unique `DomainPrefix`, and `AppOrigin` exactly matching the URL used in the browser. Use `http://localhost:3000` for development and HTTPS in production. The template disallows arbitrary HTTP production origins. SAM will ask to create the Lambda execution role. The stack has API throttling, bounded Lambda concurrency, 14-day log retention, encrypted DynamoDB storage, and point-in-time recovery.
-
-Create your invited Cognito user in the AWS console or with `aws cognito-idp admin-create-user --user-pool-id <UserPoolId> --username <your-email> --user-attributes Name=email,Value=<your-email>`. This sends an invitation email when you execute it. No invitation was sent during scaffolding.
-
-Copy stack outputs into `.env.local`, rebuild/restart the web app, open **AWS & account**, and choose **Sign in to invited account**. Use **Sync explored lessons** and **Load account progress** explicitly. Guest records are never silently merged into an account. Understanding checks stay local per account because the existing cloud schema stores explored lessons only.
-
-```dotenv
-# Server only; stack ApiUrl output. No credentials in this value.
-AWS_LAB_API_URL=https://<api-id>.execute-api.<region>.amazonaws.com
-# Public identifiers. Public values are baked into the Next.js build.
-NEXT_PUBLIC_COGNITO_DOMAIN=https://<prefix>.auth.<region>.amazoncognito.com
-NEXT_PUBLIC_COGNITO_CLIENT_ID=<ClientId-output>
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
-
-The stack sets `PROGRESS_TABLE` in Lambda automatically and uses its execution role. It does not need `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` application variables. The SAM resources here target the standard AWS commercial partition.
-
-**Real-cloud verification before release:** deploy to a sandbox; verify the sign-in callback; save/load progress; confirm a second user cannot read the first user's partition; confirm expired and incorrectly scoped tokens fail; exercise throttling and storage failure; review logs; and restore a DynamoDB recovery point. No live AWS verification was performed by this scaffold.
-
-**Costs and cleanup:** SAM deployment creates billable resources. API throttling is not a billing ceiling. Add an account budget/alert before use. `sam delete` removes the stack's ordinary resources, but the table and user pool are deliberately retained to avoid losing learning data and identities. Delete retained resources manually only when you intend to discard them. No ElastiCache, Aurora, NAT gateway, EC2 fleet, or other expensive lesson infrastructure is created by this stack.
-
-### Docker
-
-```bash
-docker build -t system-lab \
-  --build-arg NEXT_PUBLIC_COGNITO_DOMAIN="$NEXT_PUBLIC_COGNITO_DOMAIN" \
-  --build-arg NEXT_PUBLIC_COGNITO_CLIENT_ID="$NEXT_PUBLIC_COGNITO_CLIENT_ID" \
-  --build-arg NEXT_PUBLIC_APP_URL="$NEXT_PUBLIC_APP_URL" .
-docker run --rm -p 3000:3000 \
-  -e AWS_LAB_API_URL="$AWS_LAB_API_URL" system-lab
-```
-
-The image runs as the unprivileged `node` user. Put a managed HTTPS ingress in front of it for production. For the anonymous simulation endpoint, add ingress rate limits appropriate to a public deployment; the optional cloud API's throttles do not protect the separate frontend host.
-
-## 4. Concept Mapping
-
-`Managed` means the lesson mechanism lives in a managed service; application glue can still be Lambda. Mappings are implementation recommendations, not a claim that every AWS service is deployed in this scaffold.
-
-| # | Concept | AWS services / mechanism | Compute |
-|---|---|---|---|
-| 1 | Cache-aside | ElastiCache for Valkey | Lambda |
-| 2 | Write-through cache | ElastiCache + Aurora | Lambda |
-| 3 | Write-behind cache | ElastiCache + SQS | EC2 |
-| 4 | Time-to-live | ElastiCache for Valkey | Lambda |
-| 5 | Cache eviction | ElastiCache for Valkey | EC2 |
-| 6 | Cache invalidation | DynamoDB Streams + Lambda | Lambda |
-| 7 | Cache stampede | ElastiCache for Valkey | EC2 |
-| 8 | CDN caching | CloudFront + S3 | Managed |
-| 9 | Load balancing | Application Load Balancer | EC2 |
-| 10 | Horizontal scaling | EC2 Auto Scaling | EC2 |
-| 11 | Vertical scaling | EC2 instance families | EC2 |
-| 12 | Target-tracking autoscaling | EC2 Auto Scaling + CloudWatch | EC2 |
-| 13 | Serverless concurrency | Lambda | Lambda |
-| 14 | Rate limiting | API Gateway + AWS WAF | Lambda |
-| 15 | Backpressure | SQS + Lambda concurrency | Lambda |
-| 16 | Connection pooling | RDS Proxy + Aurora | Lambda |
-| 17 | Sharding | DynamoDB partition keys | Managed |
-| 18 | Read replicas | Aurora replicas | Managed |
-| 19 | Secondary indexes | DynamoDB global secondary indexes | Managed |
-| 20 | ACID transactions | Aurora PostgreSQL | Managed |
-| 21 | Optimistic locking | DynamoDB conditional writes | Lambda |
-| 22 | Denormalization | DynamoDB | Managed |
-| 23 | Object storage | S3 | Managed |
-| 24 | Data lifecycle | S3 Lifecycle + Glacier | Managed |
-| 25 | Message queues | SQS | Lambda |
-| 26 | Publish / subscribe | SNS + SQS | Lambda |
-| 27 | Event streaming | Kinesis Data Streams | Lambda |
-| 28 | Dead-letter queues | SQS dead-letter queue | Lambda |
-| 29 | Idempotent consumers | DynamoDB conditional writes + SQS | Lambda |
-| 30 | Ordered delivery | SQS FIFO | Lambda |
-| 31 | Batch processing | Lambda + SQS | Lambda |
-| 32 | Event routing | EventBridge | Lambda |
-| 33 | Circuit breakers | EC2 application + CloudWatch | EC2 |
-| 34 | Retries with backoff | Step Functions | Lambda |
-| 35 | Timeout budgets | API Gateway + Lambda | Lambda |
-| 36 | Bulkhead isolation | Lambda reserved concurrency | Lambda |
-| 37 | Health checks | Application Load Balancer | EC2 |
-| 38 | Multi-AZ failover | Aurora + ALB | Managed |
-| 39 | Disaster recovery | AWS Backup + S3 replication | Managed |
-| 40 | Metrics, logs & traces | CloudWatch + X-Ray | Lambda |
-| 41 | Authentication | Cognito | Managed |
-| 42 | Least-privilege authorization | IAM + API Gateway | Lambda |
-| 43 | Encryption at rest | KMS + S3 | Managed |
-| 44 | Secrets rotation | Secrets Manager | Lambda |
-| 45 | Network isolation | VPC + security groups | EC2 |
-| 46 | Edge protection | AWS WAF + CloudFront | Managed |
-| 47 | Blue / green deployments | CodeDeploy + ALB | EC2 |
-| 48 | Canary releases | Lambda aliases + CodeDeploy | Lambda |
-| 49 | Eventual consistency | DynamoDB global tables | Managed |
-| 50 | Strongly consistent reads | DynamoDB regional tables | Managed |
-| 51 | CAP under a partition | DynamoDB global tables / quorum store | EC2 |
-| 52 | CQRS | DynamoDB Streams + Lambda | Lambda |
-| 53 | Event sourcing | DynamoDB + Streams | Lambda |
-| 54 | Distributed sagas | Step Functions | Lambda |
-| 55 | Distributed leases | DynamoDB conditional writes | EC2 |
-| 56 | Consistent hashing | EC2 application ring | EC2 |
-
-### References
-
-- [Next.js route handlers](https://nextjs.org/docs/app/getting-started/route-handlers)
-- [Next.js self-hosting](https://nextjs.org/docs/app/guides/self-hosting)
-- [DynamoDB key design](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-design.html)
-- [API Gateway HTTP API JWT authorizers](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-jwt-authorizer.html)
-- [Cognito authorization endpoint and PKCE](https://docs.aws.amazon.com/cognito/latest/developerguide/authorization-endpoint.html)
-- [Lambda best practices](https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html)
-
-Made with heart by [Aman](https://amankeshri.com).
+Vercel builds every push to `main`. No environment variables or external services are needed.
