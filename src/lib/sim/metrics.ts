@@ -1,0 +1,216 @@
+import type { Sim } from "./engine";
+
+export type MetricId =
+  | "p50"
+  | "p95"
+  | "errors"
+  | "rejected"
+  | "stale"
+  | "fallback"
+  | "throughput"
+  | "hit"
+  | "util"
+  | "peak"
+  | "load"
+  | "inRotation"
+  | "queue"
+  | "servers"
+  | "moved"
+  | "amplify"
+  | "conflicts"
+  | "answered"
+  | "jobWait"
+  | "unsynced";
+
+export interface MetricSpec {
+  id: MetricId;
+  label: string;
+  /** Only count requests from clients with this tag. */
+  tag?: string;
+  /** Only count reads or only writes. */
+  op?: "read" | "write";
+  /** Node ids for node-level metrics (hit ratio, utilisation, queue depth…). */
+  nodes?: string[];
+  /** Explains the number in plain words (shown as a tooltip and to screen readers). */
+  hint?: string;
+}
+
+type Unit = "ms" | "pct" | "rate" | "count" | "ratio";
+
+const META: Record<MetricId, { unit: Unit; better: "low" | "high" }> = {
+  p50: { unit: "ms", better: "low" },
+  p95: { unit: "ms", better: "low" },
+  errors: { unit: "pct", better: "low" },
+  rejected: { unit: "pct", better: "low" },
+  stale: { unit: "pct", better: "low" },
+  fallback: { unit: "pct", better: "low" },
+  throughput: { unit: "rate", better: "high" },
+  hit: { unit: "pct", better: "high" },
+  util: { unit: "pct", better: "low" },
+  peak: { unit: "pct", better: "low" },
+  load: { unit: "rate", better: "low" },
+  inRotation: { unit: "count", better: "high" },
+  queue: { unit: "count", better: "low" },
+  servers: { unit: "count", better: "low" },
+  moved: { unit: "pct", better: "low" },
+  amplify: { unit: "ratio", better: "low" },
+  conflicts: { unit: "count", better: "low" },
+  answered: { unit: "pct", better: "high" },
+  jobWait: { unit: "ms", better: "low" },
+  unsynced: { unit: "count", better: "low" },
+};
+
+function recent(sim: Sim, m: MetricSpec) {
+  const from = sim.t - sim.windowMs;
+  return sim.done.filter((d) => d.t > from && (!m.tag || d.tag === m.tag) && (!m.op || d.op === m.op));
+}
+
+function percentile(values: number[], q: number) {
+  if (!values.length) return null;
+  const s = [...values].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.floor(q * s.length))];
+}
+
+function share(sim: Sim, m: MetricSpec, pick: (r: string) => boolean, of?: (r: string) => boolean) {
+  const d = recent(sim, m).filter((x) => !of || of(x.result));
+  if (!d.length) return null;
+  return d.filter((x) => pick(x.result)).length / d.length;
+}
+
+function nodes(sim: Sim, ids?: string[]) {
+  return (ids ?? []).map((id) => sim.nodes.get(id)).filter((n) => !!n);
+}
+
+/** Current value of a metric over the simulation's sliding window. Null when there is no data yet. */
+export function measure(sim: Sim, m: MetricSpec): number | null {
+  switch (m.id) {
+    case "p50":
+    case "p95":
+      return percentile(
+        recent(sim, m).filter((d) => d.result !== "rejected").map((d) => d.lat),
+        m.id === "p50" ? 0.5 : 0.95,
+      );
+    case "errors":
+      return share(sim, m, (r) => r === "error");
+    case "rejected":
+      return share(sim, m, (r) => r === "rejected");
+    case "fallback":
+      return share(sim, m, (r) => r === "fallback");
+    case "answered":
+      return share(sim, m, (r) => r !== "error" && r !== "rejected");
+    case "stale":
+      return share(sim, m, (r) => r === "stale", (r) => r === "ok" || r === "stale");
+    case "throughput": {
+      const ok = recent(sim, m).filter((d) => d.result === "ok" || d.result === "stale" || d.result === "fallback");
+      return sim.t < 200 ? null : (ok.length / Math.min(sim.windowMs, sim.t)) * 1000;
+    }
+    case "hit": {
+      let h = 0;
+      let x = 0;
+      for (const n of nodes(sim, m.nodes)) {
+        h += n.hits.count(sim.t);
+        x += n.misses.count(sim.t);
+      }
+      return h + x ? h / (h + x) : null;
+    }
+    case "util": {
+      const on = nodes(sim, m.nodes).filter((n) => n.on);
+      return on.length ? on.reduce((s, n) => s + n.load, 0) / on.length : null;
+    }
+    case "peak": {
+      const on = nodes(sim, m.nodes).filter((n) => n.on);
+      return on.length ? Math.max(...on.map((n) => n.load)) : null;
+    }
+    case "load": {
+      if (sim.t < 200) return null;
+      const span = Math.min(sim.windowMs, sim.t);
+      return (nodes(sim, m.nodes).reduce((s, n) => s + n.arrivals.count(sim.t), 0) / span) * 1000;
+    }
+    case "inRotation": {
+      const lb = nodes(sim, m.nodes)[0];
+      if (!lb) return null;
+      return sim.flat(lb.spec.to).filter((id) => {
+        const s = sim.nodes.get(id);
+        return s?.on && s.ready && (lb.spec.health ? (lb.health.get(id)?.ok ?? true) : true);
+      }).length;
+    }
+    case "queue":
+      return nodes(sim, m.nodes).reduce((s, n) => s + n.queue.length, 0);
+    case "servers":
+      return nodes(sim, m.nodes).filter((n) => n.on).length;
+    case "moved": {
+      const ns = nodes(sim, m.nodes);
+      return ns.length ? Math.max(...ns.map((n) => n.moved)) : null;
+    }
+    case "amplify": {
+      const l = sim.logical.count(sim.t);
+      return l ? sim.attempts.count(sim.t) / l : null;
+    }
+    case "conflicts":
+      return sim.conflicts;
+    case "unsynced":
+      return sim.blocked.length;
+    case "jobWait": {
+      const from = sim.t - sim.windowMs;
+      return percentile(
+        sim.jobs.filter((j) => j.t > from).map((j) => j.lat),
+        0.95,
+      );
+    }
+  }
+}
+
+export function formatMetric(m: MetricSpec, v: number | null): string {
+  if (v === null || Number.isNaN(v)) return "—";
+  switch (META[m.id].unit) {
+    case "ms":
+      return v < 1000 ? `${Math.round(v)} ms` : `${(v / 1000).toFixed(v < 10000 ? 1 : 0)} s`;
+    case "pct": {
+      const p = v * 100;
+      if (p > 0 && p < 1) return "<1%";
+      if (p < 100 && p > 99) return ">99%";
+      return `${Math.round(p)}%`;
+    }
+    case "rate":
+      return `${Math.round(v)}/s`;
+    case "ratio":
+      return `×${v.toFixed(1)}`;
+    default:
+      return `${Math.round(v)}`;
+  }
+}
+
+export type Tone = "good" | "warn" | "bad" | "none";
+
+/** Colour a value by how healthy it is. Latency is judged against the scene's target. */
+export function toneOf(m: MetricSpec, v: number | null, sloMs: number): Tone {
+  if (v === null) return "none";
+  switch (m.id) {
+    case "p50":
+    case "p95":
+      return v <= sloMs ? "good" : v <= sloMs * 2 ? "warn" : "bad";
+    case "errors":
+    case "stale":
+      return v < 0.01 ? "good" : v < 0.05 ? "warn" : "bad";
+    case "answered":
+      return v > 0.99 ? "good" : v > 0.95 ? "warn" : "bad";
+    case "hit":
+      return v > 0.7 ? "good" : v > 0.4 ? "warn" : "bad";
+    case "util":
+    case "peak":
+      return v < 0.7 ? "good" : v < 0.9 ? "warn" : "bad";
+    case "moved":
+      return v < 0.35 ? "good" : v < 0.6 ? "warn" : "bad";
+    case "amplify":
+      return v < 1.2 ? "good" : v < 1.8 ? "warn" : "bad";
+    case "conflicts":
+    case "unsynced":
+      return v === 0 ? "good" : "warn";
+    default:
+      return "none";
+  }
+}
+
+export function betterIs(m: MetricSpec) {
+  return META[m.id].better;
+}
