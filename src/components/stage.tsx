@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { NodeRt, Req, Sim } from "@/lib/sim/engine";
 import { SIZES, bezier, curve, edgesOf, frameFor, glyphOf, pathD, type Frame, type Mode, type Pt } from "@/lib/sim/layout";
 import type { FxKind, Glyph, SceneSpec } from "@/lib/sim/types";
@@ -25,8 +25,10 @@ interface Layout {
   boxes: Map<string, Box>;
 }
 
-function layoutFor(spec: SceneSpec, mode: Mode): Layout {
-  const frame = frameFor(spec, mode);
+/** Lay out `spec` inside a frame sized for `frameSpec` (all steps of a lesson), so switching steps never rescales. */
+function layoutFor(spec: SceneSpec, mode: Mode, frameSpec: SceneSpec = spec, zoom = 1): Layout {
+  const base = frameFor(frameSpec, mode);
+  const frame = zoom === 1 ? base : { ...base, scale: base.scale * zoom };
   const boxes = new Map<string, Box>();
   for (const n of spec.nodes) {
     const glyph = glyphOf(n);
@@ -43,7 +45,7 @@ function layoutFor(spec: SceneSpec, mode: Mode): Layout {
       side: "below",
     });
   }
-  if (mode === "wide") {
+  if (mode !== "tall") {
     // Crowded columns, or a link running straight down through the label: put labels on the right.
     const linked = new Set(edgesOf(spec).flatMap((e) => [`${e.a}~${e.b}`, `${e.b}~${e.a}`]));
     for (const a of boxes.values()) {
@@ -84,9 +86,19 @@ interface FxDraw {
 }
 
 const TAU = Math.PI * 2;
-const MAX_QUEUE_DRAWN = { wide: 24, tall: 12 };
+const MAX_QUEUE_DRAWN = { wide: 24, compact: 18, tall: 12 };
 
-/** Live scene: SVG stations underneath, a canvas of moving requests on top. */
+/** Pick the layout that draws the scene biggest in the available box; ties go to the wide layout. */
+const LABEL_PX: Record<Mode, number> = { wide: 13.5, compact: 16, tall: 16 };
+
+/** Pick the layout whose labels come out largest on screen; the wide desktop layout wins whenever it reads well. */
+function pickMode(layouts: Record<Mode, Layout>, box: { w: number; h: number }): Mode {
+  const fit = (m: Mode) => Math.min(box.w / layouts[m].frame.W, box.h / layouts[m].frame.H);
+  if (fit("wide") >= 0.74) return "wide";
+  return (["wide", "compact", "tall"] as Mode[]).sort((a, b) => fit(b) * LABEL_PX[b] - fit(a) * LABEL_PX[a])[0];
+}
+
+/** Live scene: SVG stations underneath, a canvas of moving requests on top. It fills its box. */
 export function Stage({
   sim,
   spec,
@@ -94,6 +106,7 @@ export function Stage({
   reduced,
   label,
   drawRef,
+  frameSpec,
 }: {
   sim: Sim;
   spec: SceneSpec;
@@ -101,13 +114,50 @@ export function Stage({
   reduced: boolean;
   label: string;
   drawRef: RefObject<DrawFn | null>;
+  /** Size the frame for this spec instead (e.g. every step of a lesson combined). */
+  frameSpec?: SceneSpec;
 }) {
-  const layouts = useMemo(() => ({ wide: layoutFor(spec, "wide"), tall: layoutFor(spec, "tall") }), [spec]);
+  const base = useMemo(
+    () => ({
+      wide: layoutFor(spec, "wide", frameSpec),
+      compact: layoutFor(spec, "compact", frameSpec),
+      tall: layoutFor(spec, "tall", frameSpec),
+    }),
+    [spec, frameSpec],
+  );
+  const lanes = useMemo(() => {
+    const per = new Map<number, number>();
+    for (const n of (frameSpec ?? spec).nodes) per.set(n.at[0], (per.get(n.at[0]) ?? 0) + 1);
+    return Math.max(...per.values());
+  }, [spec, frameSpec]);
   const edges = useMemo(() => edgesOf(spec), [spec]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const live = useRef({ sim, spec, mode, reduced, layouts });
-  live.current = { sim, spec, mode, reduced, layouts };
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => {
+      const { width: w, height: h } = e.contentRect;
+      if (w > 0 && h > 0) setBox((b) => (b && Math.abs(b.w - w) < 1 && Math.abs(b.h - h) < 1 ? b : { w, h }));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const fitMode = box ? pickMode(base, box) : mode;
+  // A wide stage with plenty of spare height draws its stations a little larger (uncrowded scenes only).
+  const zoom = useMemo(() => {
+    if (!box || fitMode !== "wide" || lanes > 3) return 1;
+    const f = base.wide.frame;
+    const slack = box.h / box.w / (f.H / f.W);
+    return Math.round(Math.min(1.2, Math.max(1, 1 + (slack - 1.4) * 0.25)) * 20) / 20;
+  }, [box, fitMode, lanes, base]);
+  const layouts = useMemo(
+    () => (zoom === 1 ? base : { ...base, wide: layoutFor(spec, "wide", frameSpec, zoom) }),
+    [base, zoom, spec, frameSpec],
+  );
+  const live = useRef({ sim, spec, mode: fitMode, reduced, layouts });
+  live.current = { sim, spec, mode: fitMode, reduced, layouts };
   const st = useRef({
     vis: new Map<number, Pt>(),
     fx: [] as FxDraw[],
@@ -118,6 +168,7 @@ export function Stage({
     paths: new Map<string, { c: [Pt, Pt, Pt, Pt]; tA: number; tB: number }>(),
     pathsFor: null as Layout | null,
     throttle: new Map<string, number>(),
+    switchAt: 0,
   });
 
   useEffect(() => {
@@ -128,7 +179,10 @@ export function Stage({
       if (!mode || !canvas || !wrap) return;
       const L = layouts[mode];
       const s = st.current;
+      const real = performance.now();
       if (s.sim !== sim) {
+        // A different simulation (another step of the lesson): fade its requests in rather than popping.
+        if (s.sim) s.switchAt = real;
         s.sim = sim;
         s.vis.clear();
         s.fx = [];
@@ -138,7 +192,6 @@ export function Stage({
         s.paths.clear();
         s.pathsFor = L;
       }
-      const real = performance.now();
       if (!s.palette || real - s.paletteAt > 1000) {
         const cs = getComputedStyle(wrap);
         const v = (n: string) => cs.getPropertyValue(n).trim();
@@ -167,8 +220,12 @@ export function Stage({
       if (!ctx) return;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      const k = (cw * dpr) / L.frame.W;
-      ctx.setTransform(k, 0, 0, k, 0, 0);
+      // Letterbox exactly like the SVG underneath (preserveAspectRatio="xMidYMid meet").
+      const k = Math.min(cw / L.frame.W, ch / L.frame.H);
+      const ox = (cw - L.frame.W * k) / 2;
+      const oy = (ch - L.frame.H * k) / 2;
+      ctx.setTransform(k * dpr, 0, 0, k * dpr, ox * dpr, oy * dpr);
+      const fade = reduced ? 1 : Math.min(1, (real - s.switchAt) / 260);
 
       const now = sim.now;
       const slo = sim.spec.sloMs;
@@ -274,14 +331,22 @@ export function Stage({
           p = place(r, pos.p);
           work = pos.work;
         }
-        const size = (look.small ? 3.2 : R) * (r.cost > 1 ? 1.35 : 1);
-        ctx.globalAlpha = look.alpha;
+        let size = (look.small ? 3.2 : R) * (r.cost > 1 ? 1.35 : 1);
+        if (r.phase === "travel" && !reduced) {
+          // Requests grow out of the client and shrink back into it, so they don't pop in and out.
+          const span = r.t1 - r.t0;
+          const prog = span > 0 ? Math.min(1, Math.max(0, (now - r.t0) / span)) : 1;
+          const atClient = (id: string) => sim.nodes.get(id)?.spec.kind === "client";
+          if (r.dir === 1 && atClient(r.from) && prog < 0.18) size *= 0.45 + (0.55 * prog) / 0.18;
+          if (r.dir === -1 && atClient(r.to) && prog > 0.82) size *= 1 - (0.6 * (prog - 0.82)) / 0.18;
+        }
+        ctx.globalAlpha = look.alpha * fade;
         ctx.fillStyle = look.color;
         ctx.strokeStyle = look.color;
         if (work !== undefined && !reduced) {
-          ctx.globalAlpha = look.alpha * 0.3;
+          ctx.globalAlpha = look.alpha * 0.3 * fade;
           shape(ctx, look.shape, p.x, p.y, size);
-          ctx.globalAlpha = look.alpha;
+          ctx.globalAlpha = look.alpha * fade;
           ctx.beginPath();
           ctx.moveTo(p.x, p.y);
           ctx.arc(p.x, p.y, size, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - work));
@@ -300,7 +365,7 @@ export function Stage({
         ctx.textAlign = "center";
         for (const o of overflow) {
           if (o.inside) ctx.fillText(`+${o.n}`, o.x - 4, o.y - 12);
-          else if (mode === "wide") ctx.fillText(`+${o.n}`, o.x - 18, o.y + 4);
+          else if (mode !== "tall") ctx.fillText(`+${o.n}`, o.x - 18, o.y + 4);
           else ctx.fillText(`+${o.n}`, o.x + 22, o.y + 4);
         }
       }
@@ -332,14 +397,10 @@ export function Stage({
     };
   }, [drawRef]);
 
-  const modes: Mode[] = mode ? [mode] : ["wide", "tall"];
-  const style = {
-    "--ar-wide": `${layouts.wide.frame.W} / ${layouts.wide.frame.H}`,
-    "--ar-tall": `${layouts.tall.frame.W} / ${layouts.tall.frame.H}`,
-  } as React.CSSProperties;
+  const modes: Mode[] = fitMode ? [fitMode] : ["wide", "compact"];
 
   return (
-    <div className="stage" ref={wrapRef} style={style} data-mode={mode ?? "auto"}>
+    <div className="stage" ref={wrapRef} data-mode={fitMode ?? "auto"}>
       {modes.map((m) => (
         <StageSvg key={m} sim={sim} spec={spec} layout={layouts[m]} edges={edges} label={label} />
       ))}
@@ -363,6 +424,18 @@ function StageSvg({
 }) {
   const { frame, boxes } = layout;
   const lbViews = [...sim.nodes.values()].filter((n) => n.spec.health);
+  // Nodes that appear after the scene has settled (a step adds a cache, a queue…) get a one-time accent ring.
+  const born = useRef(performance.now());
+  const seen = useRef(new Map<string, number>());
+  const now = performance.now();
+  const fresh = (id: string) => {
+    let until = seen.current.get(id);
+    if (until === undefined) {
+      until = now - born.current > 500 ? now + 900 : 0;
+      seen.current.set(id, until);
+    }
+    return now < until;
+  };
   return (
     <svg className={`stage-svg stage-${frame.mode}`} viewBox={`0 0 ${frame.W} ${frame.H}`} role="img" aria-label={label}>
       <g className="links">
@@ -378,7 +451,7 @@ function StageSvg({
           const text = spec.linkLabels?.[`${e.a}>${e.b}`] ?? spec.linkLabels?.[`${e.b}>${e.a}`];
           const upright = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
           return (
-            <g key={`${e.a}~${e.b}`}>
+            <g key={`${e.a}~${e.b}`} className="link-g">
               <path className={`link ${e.style}${cut ? " cut" : ""}`} d={pathD(c)} />
               {cut && (
                 <g className="cut-mark" transform={`translate(${mid.x} ${mid.y})`}>
@@ -400,10 +473,15 @@ function StageSvg({
           const b = boxes.get(n.id)!;
           const rt = sim.nodes.get(n.id);
           if (!rt) return null;
-          const { cls, sub, badge } = describe(sim, rt, lbViews);
+          const { cls, sub: detail, badge } = describe(sim, rt, lbViews);
           const size = SIZES[b.glyph];
+          // In the compact phone layout, secondary labels appear only when they carry news.
+          const sub = frame.mode !== "compact" || cls || rt.queue.length || n.kind === "cache" || n.kind === "queue" ? detail : "";
           return (
-            <g key={n.id} className={`node g-${b.glyph} ${cls}`} transform={`translate(${b.x} ${b.y}) scale(${frame.scale})`}>
+            // Outer group glides between positions; inner group plays the one-time entrance.
+            <g key={n.id} className="node-pos" style={{ transform: `translate(${b.x}px, ${b.y}px) scale(${frame.scale})` }}>
+              <g className={`node g-${b.glyph} ${cls}`}>
+              {fresh(n.id) && <rect className="fresh-ring" x={-size.w / 2 - 8} y={-size.h / 2 - 8} width={size.w + 16} height={size.h + 16} rx="18" />}
               <Body glyph={b.glyph} w={size.w} h={size.h} slots={rt.spec.slots ?? 0} />
               {meter(rt, size.w, size.h)}
               <text className="node-label" x={labelX(b, size.w)} y={b.side === "below" ? size.h / 2 + 17 : -2} textAnchor={ANCHOR[b.side]}>
@@ -422,6 +500,7 @@ function StageSvg({
                   </text>
                 </g>
               )}
+              </g>
             </g>
           );
         })}
@@ -525,7 +604,7 @@ function queueSpot(n: NodeRt, b: Box, i: number, mode: Mode): Pt {
     const col = i % cols;
     return { x: b.x + b.w / 2 - (17 + col * 11) * s, y: b.y + (row ? 7 : -7) * s };
   }
-  if (mode === "wide") {
+  if (mode !== "tall") {
     const col = Math.floor(i / 3);
     const row = i % 3;
     return { x: b.x - b.w / 2 - 12 - col * 12, y: b.y + (row - 1) * 12 };
@@ -539,7 +618,7 @@ function queueSpot(n: NodeRt, b: Box, i: number, mode: Mode): Pt {
 function parkSpot(b: Box, i: number, mode: Mode): Pt {
   const col = i % 6;
   const row = Math.floor(i / 6);
-  if (mode === "wide") return { x: b.x - 30 + col * 12, y: b.y - b.h / 2 - 14 - row * 12 };
+  if (mode !== "tall") return { x: b.x - 30 + col * 12, y: b.y - b.h / 2 - 14 - row * 12 };
   return { x: b.x + b.w / 2 + 14 + row * 12, y: b.y - 30 + col * 12 };
 }
 

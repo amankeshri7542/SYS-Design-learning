@@ -17,11 +17,11 @@ function media(query: string) {
 const narrow = media("(max-width: 640px)");
 const reducedMotion = media("(prefers-reduced-motion: reduce)");
 
-/** "tall" on phones, "wide" elsewhere, null during server render (both layouts are emitted). */
+/** A first guess before the stage measures its box: "compact" on phones, "wide" elsewhere, null on the server. */
 export function useMode(): Mode | null {
   return useSyncExternalStore(
     narrow.subscribe,
-    () => (narrow.get() ? "tall" : "wide"),
+    () => (narrow.get() ? "compact" : "wide"),
     () => null,
   );
 }

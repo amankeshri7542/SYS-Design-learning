@@ -1,6 +1,7 @@
 import type { Glyph, NodeSpec, SceneSpec } from "./types";
 
-export type Mode = "wide" | "tall";
+/** wide: desktop. compact: phones and short boxes (tighter, slightly smaller). tall: narrow, tall boxes. */
+export type Mode = "wide" | "compact" | "tall";
 export type Pt = { x: number; y: number };
 
 export interface Size {
@@ -44,28 +45,37 @@ export function frameFor(spec: SceneSpec, mode: Mode): Frame {
   const vmin = Math.min(...vs);
   const vmax = Math.max(...vs);
   const vmid = (vmin + vmax) / 2;
-  if (mode === "wide") {
-    const W = 960;
-    const px = 84;
+  if (mode !== "tall") {
+    const c = mode === "compact";
+    const W = c ? 620 : 960;
+    const px = c ? 50 : 84;
+    const ys = c ? 0.8 : 1;
+    const scale = c ? 0.84 : 1;
     const x = (u: number) => px + (u / 100) * (W - 2 * px);
     if (spec.wideH) {
-      const H = spec.wideH;
-      const py = 58;
-      return { mode, W, H, scale: 1, pos: ([u, v]) => ({ x: x(u), y: py + (v / 100) * (H - 2 * py) }) };
+      const H = spec.wideH * ys;
+      const py = 58 * ys;
+      return { mode, W, H, scale, pos: ([u, v]) => ({ x: x(u), y: py + (v / 100) * (H - 2 * py) }) };
     }
-    const k = 3.4;
-    const H = Math.max(250, 130 + (vmax - vmin) * k);
-    return { mode, W, H, scale: 1, pos: ([u, v]) => ({ x: x(u), y: H / 2 + (v - vmid) * k }) };
+    const k = 3.4 * ys;
+    const H = Math.max(c ? 210 : 250, (c ? 116 : 130) + (vmax - vmin) * k);
+    return { mode, W, H, scale, pos: ([u, v]) => ({ x: x(u), y: H / 2 + (v - vmid) * k }) };
   }
-  const steps = [...new Set(spec.nodes.map((n) => n.at[0]))].sort((a, b) => a - b);
-  const rank = new Map(steps.map((u, i) => [u, i]));
-  const step = 185;
-  const py = 72;
-  const H = Math.max(300, 2 * py + (steps.length - 1) * step);
+  const groups = groupBy(spec.nodes, (n) => n.at[0]);
+  const steps = [...groups.keys()].sort((a, b) => a - b);
+  // Rows with one node put its label beside it, so they pack tighter; rows of several need room for labels below.
+  const ys = new Map<number, number>();
+  const py = 64;
+  let y = py;
+  steps.forEach((u, i) => {
+    if (i > 0) y += (groups.get(steps[i - 1])!.length > 1 ? 170 : 128);
+    ys.set(u, y);
+  });
+  const H = Math.max(300, y + py);
   const k = 4.6;
-  const W = Math.min(480, Math.max(300, 150 + (vmax - vmin) * k));
+  const W = Math.min(480, Math.max(360, 150 + (vmax - vmin) * k));
   let gap = Infinity;
-  for (const g of groupBy(spec.nodes, (n) => n.at[0]).values()) {
+  for (const g of groups.values()) {
     const across = g.map((n) => n.at[1]).sort((a, b) => a - b);
     for (let i = 1; i < across.length; i++) gap = Math.min(gap, (across[i] - across[i - 1]) * k);
   }
@@ -75,7 +85,7 @@ export function frameFor(spec: SceneSpec, mode: Mode): Frame {
     W,
     H,
     scale,
-    pos: ([u, v]) => ({ x: W / 2 + (v - vmid) * k, y: py + (rank.get(u) ?? 0) * step }),
+    pos: ([u, v]) => ({ x: W / 2 + (v - vmid) * k, y: ys.get(u) ?? py }),
   };
 }
 
@@ -115,11 +125,12 @@ export function edgesOf(spec: SceneSpec): Edge[] {
 
 /** Cubic curve between two points that leaves and enters along the flow axis. */
 export function curve(a: Pt, b: Pt, mode: Mode): [Pt, Pt, Pt, Pt] {
-  const along = mode === "wide" ? b.x - a.x : b.y - a.y;
+  const flat = mode !== "tall";
+  const along = flat ? b.x - a.x : b.y - a.y;
   const d = Math.abs(along) * 0.5;
   if (d < 12) return [a, a, b, b];
   const s = Math.sign(along);
-  return mode === "wide"
+  return flat
     ? [a, { x: a.x + s * d, y: a.y }, { x: b.x - s * d, y: b.y }, b]
     : [a, { x: a.x, y: a.y + s * d }, { x: b.x, y: b.y - s * d }, b];
 }
