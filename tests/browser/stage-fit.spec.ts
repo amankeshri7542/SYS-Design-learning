@@ -3,8 +3,8 @@ import { LESSONS } from "../../src/lib/lessons";
 import { buildSteps, defaultsOf, type Lesson } from "../../src/lib/lessons/types";
 
 // Every lesson, every step, on every project: stage text is legible and inside the stage, labels never collide,
-// nothing floats over the stage, phone controls are big enough to tap, and a single row of stations doesn't float in
-// an empty desktop stage.
+// no rail shows through a label, nothing floats over the stage, phone controls are big enough to tap, and a single row of
+// stations doesn't float in an empty desktop stage.
 // Reduced motion makes each measurement a settled still frame (no entrances or glides in flight).
 test.use({ reducedMotion: "reduce" });
 
@@ -32,6 +32,8 @@ interface Measured {
   covered: string[];
   /** How far the beat strip and the stage overlap, in px (they are separate rows of the sheet). */
   stripOverlap: number;
+  /** Station labels with a rail showing through them (a label may only lie across a rail on a plate that hides it). */
+  onRail: string[];
 }
 
 /** Read the stage once: every SVG text box (relative to the stage), its rendered size, station fill, and small tap targets. */
@@ -63,6 +65,20 @@ const measure = (page: Page) =>
         return !top || !stage.contains(top);
       })
       .map((b) => b.closest(".node")!.querySelector(".node-label")?.textContent ?? "?");
+    // Sample every rail's centre line on screen; a station's label or sub-label must not sit on one.
+    const railPts = [...svg.querySelectorAll<SVGPathElement>(".rail-core, .link.sync")].flatMap((path) => {
+      const m = path.getScreenCTM()!;
+      const len = path.getTotalLength();
+      return Array.from({ length: 81 }, (_, i) => path.getPointAtLength((len * i) / 80).matrixTransform(m));
+    });
+    const onRail = [...svg.querySelectorAll<SVGTextElement>(".node-label, .node-sub")]
+      .filter((t) => {
+        const r = t.getBoundingClientRect();
+        const plate = t.parentElement?.querySelector(".label-plate")?.getBoundingClientRect();
+        const hidden = plate && plate.left <= r.left + 1 && plate.right >= r.right - 1 && plate.top <= r.top + 1 && plate.bottom >= r.bottom - 1;
+        return !hidden && railPts.some((p) => p.x > r.left - 3 && p.x < r.right + 3 && p.y > r.top - 3 && p.y < r.bottom + 3);
+      })
+      .map((t) => t.textContent ?? "");
     const strip = document.querySelector(".theatre .beat")!.getBoundingClientRect();
     const stripOverlap = Math.max(0, Math.min(strip.bottom, sr.bottom) - Math.max(strip.top, sr.top));
     const fill = (Math.max(...nodes.map((r) => r.bottom)) - Math.min(...nodes.map((r) => r.top))) / sr.height;
@@ -73,7 +89,7 @@ const measure = (page: Page) =>
         return { what: (e.getAttribute("aria-label") || e.textContent || e.className).trim().slice(0, 30), w: r.width, h: r.height };
       })
       .filter((x) => x.w < 40 || x.h < 40);
-    return { stage: { w: sr.width, h: sr.height }, texts, fill, small, covered: [...new Set(covered)], stripOverlap };
+    return { stage: { w: sr.width, h: sr.height }, texts, fill, small, covered: [...new Set(covered)], stripOverlap, onRail };
   });
 
 const overlap = (a: Box, b: Box) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 0.5;
@@ -112,6 +128,7 @@ for (const lesson of LESSONS) {
 
       expect.soft(m.covered, "nothing floats over a station").toEqual([]);
       expect.soft(m.stripOverlap, "the beat strip has its own row").toBeLessThanOrEqual(0.5);
+      expect.soft(m.onRail, "no rail shows through a station label").toEqual([]);
       if (isMobile) expect.soft(m.small, "every control is at least 40×40").toEqual([]);
 
       if (!isMobile && shape?.lanes === 1 && info.project.name.startsWith("desktop")) {

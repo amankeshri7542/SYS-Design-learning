@@ -3,8 +3,12 @@ import type { Glyph, NodeSpec, SceneSpec } from "./types";
 /** wide: desktop. compact: phones and short boxes (tighter, slightly smaller). tall: narrow, tall boxes. */
 export type Mode = "wide" | "compact" | "tall";
 export type Pt = { x: number; y: number };
-/** Where a node's label sits: below it, or beside it when below would sit in the path of traffic or a neighbour. */
-export type Side = "below" | "right" | "left";
+/**
+ * Where a node's label sits: below it, or beside it when below would sit in the path of traffic or a neighbour.
+ * The two-part sides keep clear of a rail through the node's centre: "below-right" starts just right of a rail running
+ * down from it, "right-high" sits beside it but above a rail leaving sideways, "right-low" below that rail.
+ */
+export type Side = "below" | "right" | "left" | "below-right" | "below-left" | "right-high" | "left-high" | "right-low" | "left-low";
 
 export interface Size {
   w: number;
@@ -37,7 +41,8 @@ export const SIZES: Record<Glyph, Size> = {
  * Stage text in CSS pixels. Labels keep these sizes on every screen; the frame grows to make room for them instead.
  * `globals.css` sets the same numbers as `--label-px`, `--sub-px` and `--badge-px`.
  */
-export const TEXT = { label: 13, sub: 12, badge: 11, line: 1.25, gap: 10, side: 10, gutter: 16 } as const;
+export const TEXT = { label: 13, sub: 12, badge: 11, line: 1.25, gap: 10, side: 10, gutter: 16, rail: 6 } as const;
+// `rail`: how far a label keeps from a rail's centre line (the rail is 8 px wide).
 /**
  * Average advance per character, in em: Atkinson Hyperlegible Next bold for labels (measured 0.48–0.5, with a margin)
  * and Overpass Mono for subs and badges. The browser stage-fit test fails if an estimate is ever too small.
@@ -165,7 +170,7 @@ function baseFrame(scene: Scene, mode: Mode, zoom: number, k = 1, sides: Map<str
   const line = (n: NodeSpec) => (n.slots && n.kind !== "client" ? 1.5 * (2 * 6.4 * Math.max(0.9, scale) + 2) : 0);
   const top = (g: NodeSpec[]) => Math.max(...g.map((n) => half(n) + line(n)));
   const bottom = (g: NodeSpec[]) =>
-    Math.max(...g.map((n) => (side(n) === "below" ? half(n) + TEXT.gap / k + ext.get(nodeKey(n))!.h : Math.max(half(n), ext.get(nodeKey(n))!.h / 2))));
+    Math.max(...g.map((n) => (side(n).startsWith("below") ? half(n) + TEXT.gap / k + ext.get(nodeKey(n))!.h : Math.max(half(n), ext.get(nodeKey(n))!.h / 2))));
   const link = Math.max(36, 34 / k);
   const ys = new Map<number, number>();
   let y = top(groups.get(rows[0])!);
@@ -235,6 +240,8 @@ export function frameFor(scene: Scene, mode: Mode, fit?: Fit): Frame {
   const H = Math.max(base.H, all.h + 2 * g);
   const dx = (W - all.w) / 2 - all.x;
   const dy = (H - all.h) / 2 - all.y;
+  // Now the frame is sized, labels across a rail may move to a side that still fits in it.
+  ({ placed } = placeAll(scene, { ...base, sides: new Map([...placed].map(([key, p]) => [key, p.side])) }, { x: g - dx, y: g - dy, w: W - 2 * g, h: H - 2 * g }));
   const sides = new Map([...placed].map(([key, p]) => [key, p.side]));
   const pos = base.pos;
   return { ...base, W, H, k, spare: 0, sides, hits, pos: (at) => { const p = pos(at); return { x: p.x + dx, y: p.y + dy }; } };
@@ -283,6 +290,8 @@ export interface Placed {
   /** The node, its label block and (where one can appear) its shoulder badges, in viewBox units. */
   rects: Rect[];
   label: Rect;
+  /** The label still lies across a rail: it gets a plate in the sheet's colour, so the rail passes under it. */
+  plate: boolean;
 }
 
 /** Width and height of a node's label block in viewBox units (`k` = rendered px per unit). */
@@ -293,14 +302,72 @@ export function labelExtent(n: NodeSpec, spec: SceneSpec, mode: Mode, k: number)
   return { w: w / k, h: h / k };
 }
 
+/**
+ * Where a label block sits relative to its node's centre, in viewBox units: the x its text is anchored at, the top of
+ * the block, and the text anchor. `w` and `h` are the node's size and `block` the label block's height, all in viewBox
+ * units; `k` is rendered px per unit. The layout and the renderer both use this, so they always agree.
+ */
+export function labelSpot(side: Side, w: number, h: number, block: number, k: number) {
+  const [where, lift] = side.split("-") as ["below" | "right" | "left", "right" | "left" | "high" | "low" | undefined];
+  // As far off a rail's centre line as a label sits from its node: clear of the rail's own width and its margin.
+  const off = TEXT.side / k;
+  if (where === "below") {
+    const x = lift === "right" ? off : lift === "left" ? -off : 0;
+    return { x, top: h / 2 + TEXT.gap / k, anchor: lift === "right" ? "start" : lift === "left" ? "end" : "middle" } as const;
+  }
+  const x = where === "right" ? w / 2 + TEXT.side / k : -w / 2 - TEXT.side / k;
+  const top = lift === "high" ? -off - block : lift === "low" ? off : -block / 2;
+  return { x, top, anchor: where === "right" ? "start" : "end" } as const;
+}
+
 const overlaps = (a: Rect, b: Rect, m = 0) => a.x < b.x + b.w + m && b.x < a.x + a.w + m && a.y < b.y + b.h + m && b.y < a.y + a.h + m;
+
+/** Does the segment p→q pass through r, grown by m on every side? (Liang–Barsky clipping.) */
+function crosses(p: Pt, q: Pt, r: Rect, m: number): boolean {
+  const dx = q.x - p.x;
+  const dy = q.y - p.y;
+  let t0 = 0;
+  let t1 = 1;
+  for (const [d, room] of [[-dx, p.x - (r.x - m)], [dx, r.x + r.w + m - p.x], [-dy, p.y - (r.y - m)], [dy, r.y + r.h + m - p.y]]) {
+    if (d === 0) {
+      if (room < 0) return false;
+      continue;
+    }
+    const t = room / d;
+    if (d < 0) t0 = Math.max(t0, t);
+    else t1 = Math.min(t1, t);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
+/** Each link of every step as a polyline (the stretch its rail is drawn on), with the two stations it joins. */
+function railsOf(scene: Scene, frame: Frame, placed: Map<string, Placed>): { ends: [string, string]; pts: Pt[] }[] {
+  return scene.steps.flatMap((st) => {
+    const key = new Map(st.nodes.map((n) => [n.id, nodeKey(n)]));
+    return edgesOf(st).flatMap((e) => {
+      const ka = key.get(e.a);
+      const kb = key.get(e.b);
+      const a = ka && placed.get(ka);
+      const b = kb && placed.get(kb);
+      if (!a || !b) return [];
+      const [t0, t1] = railSpan(a, b, frame.mode, frame.k);
+      const c = subCurve(curve(a, b, frame.mode), t0, t1);
+      return [{ ends: [ka, kb] as [string, string], pts: Array.from({ length: 25 }, (_, i) => bezier(c, i / 24)) }];
+    });
+  });
+}
 
 /**
  * Place every node of the scene in `frame`: its box, its label and its badges. Unless the frame already knows a
  * node's side, the label takes the first side, in order of preference, that is clear of every station and every
  * label placed so far in a step that shows both. `hits` counts the labels that found no clear side.
+ *
+ * With `within` (the frame's room, once it is sized), labels that came to lie across a rail then move to another
+ * side if one is clear of stations, labels and rails and still inside that room: keeping a label off a rail is never
+ * worth growing the frame and shrinking the scene. A label that stays on a rail is marked for a plate.
  */
-export function placeAll(scene: Scene, frame: Frame): { placed: Map<string, Placed>; hits: number } {
+export function placeAll(scene: Scene, frame: Frame, within?: Rect): { placed: Map<string, Placed>; hits: number } {
   const spec = scene.spec;
   const k = frame.k;
   const s = frame.scale;
@@ -326,11 +393,9 @@ export function placeAll(scene: Scene, frame: Frame): { placed: Map<string, Plac
   const linked = new Set(scene.steps.flatMap((st) => edgesOf(st).flatMap((e) => [`${e.a}~${e.b}`, `${e.b}~${e.a}`])));
   const rectFor = (a: (typeof boxes)[number], sd: Side): Rect => {
     const { w: tw, h: th } = a.ext;
-    return sd === "below"
-      ? { x: a.x - tw / 2, y: a.y + a.h / 2 + gap, w: tw, h: th }
-      : sd === "right"
-        ? { x: a.x + a.w / 2 + side, y: a.y - th / 2, w: tw, h: th }
-        : { x: a.x - a.w / 2 - side - tw, y: a.y - th / 2, w: tw, h: th };
+    const spot = labelSpot(sd, a.w, a.h, th, k);
+    const left = spot.anchor === "start" ? spot.x : spot.anchor === "end" ? spot.x - tw : spot.x - tw / 2;
+    return { x: a.x + left, y: a.y + spot.top, w: tw, h: th };
   };
   const prefer = (a: (typeof boxes)[number]): Side[] => {
     if (frame.mode !== "tall") {
@@ -349,20 +414,50 @@ export function placeAll(scene: Scene, frame: Frame): { placed: Map<string, Plac
     const order: Side[] = right >= need ? ["right", "left", "below"] : left >= need ? ["left", "right", "below"] : ["below", "right", "left"];
     return order;
   };
-  const labels: { key: string; rect: Rect }[] = [];
+  const labels = new Map<string, Rect>();
   const out = new Map<string, Placed>();
   let hits = 0;
+  // Clear of every other station and label shown in a step with this one.
+  const clear = (a: (typeof boxes)[number], r: Rect) =>
+    boxes.every((b) => b === a || !scene.together(a.key, b.key) || b.solid.every((q) => !overlaps(r, q, margin))) &&
+    [...labels].every(([key, l]) => key === a.key || !scene.together(a.key, key) || !overlaps(r, l, margin));
   for (const a of boxes) {
-    const clear = (r: Rect) =>
-      boxes.every((b) => b === a || !scene.together(a.key, b.key) || b.solid.every((q) => !overlaps(r, q, margin))) &&
-      labels.every((l) => !scene.together(a.key, l.key) || !overlaps(r, l.rect, margin));
     const known = frame.sides.get(a.key);
     const order = known ? [known] : prefer(a);
-    const sd = order.find((o) => clear(rectFor(a, o))) ?? order[0];
+    const sd = order.find((o) => clear(a, rectFor(a, o))) ?? order[0];
     const label = rectFor(a, sd);
-    if (!clear(label)) hits++;
-    labels.push({ key: a.key, rect: label });
-    out.set(a.key, { x: a.x, y: a.y, w: a.w, h: a.h, side: sd, rects: [...a.solid, label], label });
+    if (!clear(a, label)) hits++;
+    labels.set(a.key, label);
+    out.set(a.key, { x: a.x, y: a.y, w: a.w, h: a.h, side: sd, rects: [...a.solid, label], label, plate: false });
+  }
+
+  // A rail is 8px wide on screen; keep labels a little further off it than that.
+  const rails = railsOf(scene, frame, out);
+  const room = TEXT.rail / k;
+  const offRails = (a: (typeof boxes)[number], r: Rect) =>
+    rails.every(
+      (l) => !scene.together(a.key, l.ends[0]) || !scene.together(a.key, l.ends[1]) || l.pts.every((p, i) => i === 0 || !crosses(l.pts[i - 1], p, r, room)),
+    );
+  const fits = (r: Rect) => !!within && r.x >= within.x && r.y >= within.y && r.x + r.w <= within.x + within.w && r.y + r.h <= within.y + within.h;
+  for (const a of boxes) {
+    const was = out.get(a.key)!;
+    if (offRails(a, was.label)) continue;
+    if (!within) {
+      out.set(a.key, { ...was, plate: true });
+      continue;
+    }
+    // Nearest first: just beside the rail, then beside the node, then beside it but off the rail's line.
+    const sides: Side[] = was.side.startsWith("below")
+      ? ["below-right", "below-left", "right", "left", "right-high", "left-high", "right-low", "left-low"]
+      : ["right-high", "left-high", "right-low", "left-low", "right", "left", "below", "below-right", "below-left"];
+    const sd = sides.find((o) => o !== was.side && fits(rectFor(a, o)) && clear(a, rectFor(a, o)) && offRails(a, rectFor(a, o)));
+    if (!sd) {
+      out.set(a.key, { ...was, plate: true });
+      continue;
+    }
+    const label = rectFor(a, sd);
+    labels.set(a.key, label);
+    out.set(a.key, { ...was, side: sd, rects: [...a.solid, label], label });
   }
   return { placed: out, hits };
 }
@@ -493,6 +588,39 @@ export function bezier(c: [Pt, Pt, Pt, Pt], t: number): Pt {
     x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
     y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
   };
+}
+
+/** The part of a cubic curve between t0 and t1, as a cubic curve of its own (de Casteljau). */
+export function subCurve(c: [Pt, Pt, Pt, Pt], t0: number, t1: number): [Pt, Pt, Pt, Pt] {
+  if (t0 <= 0 && t1 >= 1) return c;
+  const lerp = (p: Pt, q: Pt, t: number) => ({ x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t });
+  // Split at t, keeping the part after it (or before it).
+  const split = ([p0, p1, p2, p3]: [Pt, Pt, Pt, Pt], t: number, after: boolean): [Pt, Pt, Pt, Pt] => {
+    const a = lerp(p0, p1, t);
+    const b = lerp(p1, p2, t);
+    const d = lerp(p2, p3, t);
+    const e = lerp(a, b, t);
+    const f = lerp(b, d, t);
+    const m = lerp(e, f, t);
+    return after ? [m, f, d, p3] : [p0, a, e, m];
+  };
+  const tail = t0 > 0 ? split(c, t0, true) : c;
+  return t1 < 1 ? split(tail, (t1 - t0) / (1 - t0), false) : tail;
+}
+
+/** A station as the rails see it: its centre, size and label side. */
+type Station = Pt & { w: number; h: number; side: Side };
+
+/**
+ * The stretch of a link (as curve parameters) its rail is drawn on and its traffic travels. In the tall phone layout a
+ * label centred below a node sits where a link leaving downward would run, so the rail starts and ends beneath it.
+ */
+export function railSpan(a: Station, b: Station, mode: Mode, k: number): [number, number] {
+  if (mode !== "tall") return [0, 1];
+  const len = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y) * 1.05);
+  const below = (TEXT.gap + TEXT.label * TEXT.line + TEXT.sub * TEXT.line + 8) / k;
+  const under = (n: Station, other: Station) => n.side === "below" && other.y > n.y + 4;
+  return [under(a, b) ? Math.min(0.4, (a.h / 2 + below) / len) : 0, under(b, a) ? Math.max(0.6, 1 - (b.h / 2 + below) / len) : 1];
 }
 
 export function pathD(c: [Pt, Pt, Pt, Pt]) {

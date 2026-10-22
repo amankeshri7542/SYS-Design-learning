@@ -1468,7 +1468,8 @@ svg.stroke {
 
 .tone-problem { --tone: var(--bad); --on-tone: var(--on-bad); --tone-text: var(--t-bad); }
 .tone-fix { --tone: var(--good); --on-tone: var(--on-good); --tone-text: var(--t-ok); }
-.tone-tradeoff { --tone: var(--stale); --on-tone: var(--on-stale); --tone-text: var(--t-stale); }
+/* A trade-off has no better side, so it takes no colour: violet means a stale answer on the stage. */
+.tone-tradeoff { --tone: var(--ink); --on-tone: var(--paper); --tone-text: var(--ink-2); }
 .tone-explore { --tone: var(--accent); --on-tone: var(--on-accent); --tone-text: var(--t-req); }
 
 .controls {
@@ -1979,6 +1980,11 @@ svg.stroke {
   stroke: var(--stage);
   stroke-width: calc(4px / var(--k, 1) / var(--ns, 1));
   stroke-linejoin: round;
+}
+
+/* A label that has to lie across a rail sits on a plate in the sheet's colour; the rail runs under it. */
+.label-plate {
+  fill: var(--stage);
 }
 
 .link-label {
