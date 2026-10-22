@@ -56,36 +56,50 @@ export function useLiveSims(specs: SceneSpec[], opts: { onFrame?: (sims: Sim[], 
   }, [visible, reduced, list]);
 
   const drawRef = useRef<DrawFn | null>(null);
-  const loop = useRef({ playing, speed, visible, stepUntil: 0, list, onFrame: opts.onFrame });
-  loop.current = { ...loop.current, playing, speed, visible, list, onFrame: opts.onFrame };
+  const loop = useRef({ playing, speed, stepUntil: 0, list, onFrame: opts.onFrame });
+  loop.current = { ...loop.current, playing, speed, list, onFrame: opts.onFrame };
   const timeScale = specs[0]?.timeScale ?? 0.1;
 
+  // The loop only runs while the scene is on screen and the tab is showing: no frames, no wake-ups, otherwise.
   useEffect(() => {
+    if (!visible) return;
     let raf = 0;
-    let last = performance.now();
+    let last = 0;
     let lastTick = 0;
     const frame = (now: number) => {
       const dt = Math.min(100, now - last);
       last = now;
       const L = loop.current;
-      if (L.visible && !document.hidden) {
-        const running = L.playing || now < L.stepUntil;
-        if (running) {
-          const ms = dt * timeScale * L.speed;
-          for (const s of L.list) s.step(ms);
-          L.onFrame?.(L.list, dt * L.speed);
-        }
-        drawRef.current?.(dt);
-        if (running && now - lastTick > 90) {
-          lastTick = now;
-          setTick((t) => t + 1);
-        }
+      const running = L.playing || now < L.stepUntil;
+      if (running) {
+        const ms = dt * timeScale * L.speed;
+        for (const s of L.list) s.step(ms);
+        L.onFrame?.(L.list, dt * L.speed);
+      }
+      drawRef.current?.(dt);
+      if (running && now - lastTick > 90) {
+        lastTick = now;
+        setTick((t) => t + 1);
       }
       raf = requestAnimationFrame(frame);
     };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
-  }, [timeScale]);
+    const start = () => {
+      if (raf || document.hidden) return;
+      last = performance.now();
+      raf = requestAnimationFrame(frame);
+    };
+    const stop = () => {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    };
+    const onVisibility = () => (document.hidden ? stop() : start());
+    document.addEventListener("visibilitychange", onVisibility);
+    start();
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [timeScale, visible]);
 
   const restart = () => {
     setEpoch((e) => e + 1);
@@ -171,6 +185,25 @@ function Target({ m, sloMs }: { m: MetricSpec; sloMs: number }) {
   return isLatency(m) ? <small className="target">target ≤ {sloMs} ms</small> : null;
 }
 
+/**
+ * Cues for changes: `cue(cell, value)` is true for a moment after a cell's value differs from the one it last had.
+ * A cell seen for the first time never cues, so nothing moves as the table first appears.
+ */
+function useCues() {
+  const seen = useRef(new Map<string, { v: string; at: number }>());
+  const now = performance.now();
+  return (cell: string, v: string) => {
+    const was = seen.current.get(cell);
+    if (!was) {
+      seen.current.set(cell, { v, at: -Infinity });
+      return false;
+    }
+    // A value hovering at a boundary would flip every tick: cue a cell at most once in a second and a half.
+    if (was.v !== v) seen.current.set(cell, { v, at: now - was.at > 1500 ? now : was.at });
+    return now - seen.current.get(cell)!.at < 300;
+  };
+}
+
 /** Smooths a stream of values so numbers glide instead of flickering at 11 updates a second. */
 function useSmoothed() {
   const prev = useRef<Map<string, number>>(new Map());
@@ -241,6 +274,7 @@ export interface Column {
  */
 export function Compare({ metrics, columns, verdict }: { metrics: MetricSpec[]; columns: Column[]; verdict: boolean }) {
   const smooth = useSmoothed();
+  const cue = useCues();
   const activeIndex = Math.max(0, columns.findIndex((c) => c.active));
   const cells = metrics.map((m) => columns.map((c, j) => smooth(`${j}:${m.label}`, measure(c.sim, m), m)));
   const history = useHistory(
@@ -290,12 +324,17 @@ export function Compare({ metrics, columns, verdict }: { metrics: MetricSpec[]; 
                   key={j}
                   className={`num tone-${toneOf(m, v, columns[j].sim.spec.sloMs)}${columns[j].active ? " on" : ""}${best !== null && v === best ? " best" : ""}`}
                 >
-                  {formatMetric(m, v)}
+                  {/* Keyed by tone: a number crossing into a new tone gets a one-time cue (never on first draw). */}
+                  <span key={toneOf(m, v, columns[j].sim.spec.sloMs)} className={cue(`${j}:${m.label}`, toneOf(m, v, columns[j].sim.spec.sloMs)) ? "cue" : undefined}>
+                    {formatMetric(m, v)}
+                  </span>
                 </td>
               ))}
               {two && (
                 <td className={`delta${change?.cls ?? ""}`}>
-                  <ChangeText change={change} />
+                  <span key={change ? change.text.charAt(0) + change.cls : "none"} className={cue(`d:${m.label}`, change ? change.text.charAt(0) + change.cls : "none") ? "cue" : undefined}>
+                    <ChangeText change={change} />
+                  </span>
                 </td>
               )}
               <td className="trend" aria-hidden="true">

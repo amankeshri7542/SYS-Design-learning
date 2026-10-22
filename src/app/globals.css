@@ -106,6 +106,12 @@
   --dur-exit: 160ms;
   --dur-switch: 480ms;
   --dur-hero: 900ms;
+  /* The second beat of a step switch starts this long after the first. */
+  --beat: 120ms;
+  /* The scene intro (src/lib/motion.ts INTRO): parts 60 ms apart, each entering in 360 ms, links drawing in 420 ms. */
+  --intro-step: 60ms;
+  --intro-node: 360ms;
+  --intro-stroke: 420ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --ease-linear: linear;
@@ -734,6 +740,12 @@ svg.stroke {
   stroke-width: 1.7;
 }
 
+.dot .hollow {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.6;
+}
+
 .dot .socket-demo {
   fill: var(--socket);
   stroke: var(--dot-req);
@@ -1326,6 +1338,18 @@ svg.stroke {
   transform: scale(1.25);
 }
 
+/* Back appears once you leave the first step: it slides in from the side it points to. */
+.btn-back {
+  animation: back-in var(--dur-exit) var(--ease-out) both;
+}
+
+@keyframes back-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+}
+
 .btn-back svg {
   width: 15px;
 }
@@ -1626,6 +1650,19 @@ svg.stroke {
   color: var(--t-bad);
 }
 
+/* A number that crosses into a new tone, or a change that flips direction, nudges into place once. */
+.compare .cue {
+  display: inline-block;
+  animation: cue var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes cue {
+  from {
+    opacity: 0.3;
+    transform: translateY(3px);
+  }
+}
+
 /* The change's size as a thin bar under it: full width at a doubling (or from nothing), never longer. */
 .delta-bar {
   display: block;
@@ -1808,8 +1845,20 @@ svg.stroke {
   display: block;
 }
 
+/* A step switch is two beats of one family: parts leave and stations start gliding at once; new parts, their links and
+   the accent ring follow one beat (120 ms) later. */
 .link-g {
-  animation: fade-in var(--dur-base) var(--ease-out) both;
+  animation: fade-in var(--dur-base) var(--ease-out) var(--beat) both;
+}
+
+.link-g.leaving {
+  animation: fade-out var(--dur-exit) var(--ease-exit) both;
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
 }
 
 @keyframes fade-in {
@@ -1853,6 +1902,45 @@ svg.stroke {
   opacity: 0;
 }
 
+/* Traffic glow: a rail lights up as strongly as the traffic it carries, and reddens when most of it fails. */
+.link-flow {
+  fill: none;
+  stroke: var(--dot-req);
+  stroke-width: 5px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  transition: opacity var(--dur-base) var(--ease-linear);
+}
+
+.link-flow.failing {
+  stroke: var(--dot-err);
+}
+
+/* Marks on a rail (a cut network, an open breaker) scale in once. */
+.mark {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mark-in var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes mark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+.break-mark rect {
+  fill: var(--stage);
+}
+
+.break-mark path {
+  fill: none;
+  stroke: var(--bad);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+
 .cut-mark circle {
   fill: var(--bad);
 }
@@ -1864,13 +1952,22 @@ svg.stroke {
 }
 
 .node-pos {
-  transition: transform 0.6s var(--ease-out);
+  transition: transform var(--dur-switch) var(--ease-out), opacity var(--dur-base) var(--ease-linear);
 }
 
 .node {
   transform-box: fill-box;
   transform-origin: center;
-  animation: node-in var(--dur-switch) var(--ease-out) both;
+  transition: opacity var(--dur-base) var(--ease-linear);
+}
+
+/* A part a step adds enters on the second beat; a part a step removes shrinks a little and fades. */
+.node.entering {
+  animation: node-in var(--dur-base) var(--ease-out) var(--beat) both;
+}
+
+.node.leaving {
+  animation: node-leave var(--dur-exit) var(--ease-exit) both;
 }
 
 @keyframes node-in {
@@ -1880,13 +1977,63 @@ svg.stroke {
   }
 }
 
+@keyframes node-leave {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* The scene intro, once per lesson: stations build in along the flow, 60 ms apart, and each link draws itself from
+   its upstream end. Parts the previous lesson already showed are simply there. */
+.stage[data-intro] .node:not(.known) {
+  animation: node-in var(--intro-node) var(--ease-out) calc(var(--i, 0) * var(--intro-step)) both;
+}
+
+.stage[data-intro] .link-g:not(.known) {
+  animation: none;
+}
+
+.stage[data-intro] .link-g.flow:not(.known) :is(.rail, .rail-core) {
+  animation: link-draw var(--intro-stroke) var(--ease-out) calc(var(--i, 0) * var(--intro-step) + var(--beat)) both;
+}
+
+.stage[data-intro] .link-g.sync:not(.known) {
+  animation: fade-in var(--intro-stroke) var(--ease-out) calc(var(--i, 0) * var(--intro-step) + var(--beat)) both;
+}
+
+.stage[data-intro] .link-g:not(.known) .link-flow {
+  visibility: hidden;
+}
+
+/* Rails keep a constant width on screen, so their dashes are measured on screen too: --len is the link's length in px. */
+@keyframes link-draw {
+  from {
+    stroke-dasharray: calc(var(--len) * 1px) calc(var(--len) * 1px);
+    stroke-dashoffset: calc(var(--len) * 1px);
+  }
+  to {
+    stroke-dasharray: calc(var(--len) * 1px) calc(var(--len) * 1px);
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Focus: what the narration points at stays; the rest of the stage steps back. */
+.stage[data-focus] .node-pos.dim {
+  opacity: 0.45;
+}
+
+.stage[data-focus] .link-g.dim {
+  opacity: 0.5;
+}
+
 .fresh-ring {
   fill: none;
   stroke: var(--accent);
   stroke-width: 2.5;
   transform-box: fill-box;
   transform-origin: center;
-  animation: fresh 0.9s var(--ease-out) both;
+  animation: fresh var(--dur-switch) var(--ease-out) var(--beat) both;
   pointer-events: none;
 }
 
@@ -2023,6 +2170,44 @@ svg.stroke {
   stroke-dasharray: 5 5;
 }
 
+/* A crash: the station's frame drops a little and settles there while it is down. Booting: it rises into place. */
+.node .frame {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.node.down .frame {
+  animation: node-drop var(--dur-base) var(--ease-out) both;
+}
+
+.node.booting .frame {
+  animation: node-in var(--dur-switch) var(--ease-out) both;
+}
+
+@keyframes node-drop {
+  45% {
+    transform: translateY(3px);
+  }
+  to {
+    transform: translateY(1.5px);
+  }
+}
+
+/* A replica with a copy still on its way: a violet rule under its platform (violet, as in a stale answer). */
+.behind-mark {
+  fill: none;
+  stroke: var(--dot-stale);
+  stroke-width: 2.5px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-linear);
+}
+
+.behind-mark.on {
+  opacity: 1;
+}
+
 .node.draining {
   opacity: 0.6;
 }
@@ -2052,6 +2237,10 @@ svg.stroke {
 .fill-cache { fill: var(--dot-req); }
 
 /* Shoulder badges: state on the right in a filled tone, role on the left as an outlined tag. */
+.badge {
+  animation: fade-in var(--dur-exit) var(--ease-out) both;
+}
+
 .badge rect {
   fill: var(--muted);
 }
@@ -2081,6 +2270,28 @@ svg.stroke {
 .badge-role text {
   fill: var(--ink);
 }
+
+/* The breaker's pill: the marker slides along the foot between closed, testing and open. */
+.badge.pill {
+  animation: none;
+}
+
+.pill .pill-track,
+.pill .pill-marker {
+  fill: var(--on-tone-pill, var(--paper));
+}
+
+.pill .pill-track {
+  opacity: 0.35;
+}
+
+.pill .pill-marker {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.pill.badge-good { --on-tone-pill: var(--on-good); }
+.pill.badge-warn { --on-tone-pill: var(--on-warn); }
+.pill.badge-bad { --on-tone-pill: var(--on-bad); }
 
 /* ------------------------------------------------------------------ capstone */
 

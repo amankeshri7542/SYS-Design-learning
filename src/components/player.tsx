@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { getLesson, lessonsOn, lineOf, neighbours } from "@/lib/lessons";
-import { buildSteps, defaultsOf, headlineOf, isChoice, type FigureDef, type Knob, type Values } from "@/lib/lessons/types";
+import { buildSteps, defaultsOf, headlineOf, isChoice, type FigureDef, type Knob, type RangeKnob, type Values } from "@/lib/lessons/types";
 import type { MetricSpec } from "@/lib/sim/metrics";
 import { KeyPopover } from "./legend";
 import { ArrowIcon, BoltIcon, Clock, Compare, MetricSummary, Transport, useLiveSims } from "./live";
@@ -304,6 +304,29 @@ export function KnobControl({ k, value, name, onChange }: { k: Knob; value: numb
       </fieldset>
     );
   }
+  return <Slider k={k} value={value} name={name} onChange={onChange} />;
+}
+
+/**
+ * A slider that follows the pointer at once but rebuilds the scene at most once a frame: dragging fires input events
+ * faster than the screen refreshes, and each one would rebuild every step's scene.
+ */
+function Slider({ k, value, name, onChange }: { k: RangeKnob; value: number; name: string; onChange: (v: number) => void }) {
+  const [drag, setDrag] = useState<number | null>(null);
+  const frame = useRef(0);
+  const latest = useRef(value);
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  const change = (v: number) => {
+    latest.current = v;
+    setDrag(v);
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      onChange(latest.current);
+      setDrag(null);
+    });
+  };
+  const shown = drag ?? value;
   const id = `${name}-${k.id}`;
   return (
     <div className="knob knob-range">
@@ -311,9 +334,9 @@ export function KnobControl({ k, value, name, onChange }: { k: Knob; value: numb
         {k.label}
       </label>
       <output className="knob-value" htmlFor={id}>
-        {k.format ? k.format(value) : value}
+        {k.format ? k.format(shown) : shown}
       </output>
-      <input id={id} type="range" min={k.min} max={k.max} step={k.step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <input id={id} type="range" min={k.min} max={k.max} step={k.step} value={shown} onChange={(e) => change(Number(e.target.value))} />
     </div>
   );
 }
