@@ -488,8 +488,13 @@ Every milestone ends with the full gate (§10), screenshots at 1440×900, 1280×
   - The summary sits above the panel, where it comes in the Tab order.
 - **Small phones held sideways take the landscape layout.** A 667×375 phone is both 760 px or narrower and landscape, so the portrait rules now apply only in portrait or at heights over 520 px. Without that, the stage fell into the strip's row. A test at 667×375 covers it.
 - **Only transform and opacity animate.** The active column's rule, the progress stations and the strip's text change state at once. The Play button keeps one name, "Play", and `aria-pressed` says whether it is playing.
-- **Found, not fixed: the trade-off tone is violet,** the stale dot's text tone, and the strip now shows it ("Trade-off"). This predates M2 and should be settled with the catalog colours in M5.
-- **Found, not fixed: a label can sit on a rail.** M1's placement avoids stations and other labels but not links. The capstone at 844×390 shows "Server 1" on the rail to the database. M3, which reworks the stage, should add rails as obstacles.
+- **Trade-off steps are neutral ink, not violet.** The strip showed "Trade-off" in the stale dot's violet, a second meaning for that colour. A trade-off has no better side, so it takes no colour.
+- **Labels keep off rails.** The M2 review found labels lying across rails (the capstone's "Server 1" at 844×390).
+  - Once the frame is sized, such a label moves to a side that is clear of stations, labels and rails and still fits the frame. Keeping off a rail is never worth shrinking the scene.
+  - New sides sit just beside a rail running down from a node, or beside a node but off its rail's line. `labelSpot()` gives the layout and the renderer the same offsets.
+  - On phones, a rail leaving a node downward starts beneath its label, the same stretch its requests already travelled.
+  - Where no side is free (D3's middle cache, between two rails), the label sits on a plate in the sheet's colour and the rail passes under it.
+  - The stage-fit test fails any rail showing through a station label.
 
 ### M3 — Motion that teaches (L)
 
