@@ -108,9 +108,12 @@ export interface NodeRt {
   waiters: Map<number, Req[]>;
   data: Map<number, number>;
   buckets: Map<string, { tokens: number; t: number }>;
-  breaker: { state: "closed" | "open" | "half"; fails: number; openedAt: number; trial: boolean };
+  /** `trialId`: the request sent as the half-open breaker's one trial (0 when none). */
+  breaker: { state: "closed" | "open" | "half"; fails: number; openedAt: number; trial: boolean; trialId: number };
   health: Map<string, { ok: boolean; fails: number; passes: number }>;
   load: number;
+  /** Running hot: its line passed twice its workers, and has not yet fallen back to its workers' count. */
+  hot: boolean;
   hits: Win;
   misses: Win;
   arrivals: Win;
@@ -154,6 +157,11 @@ export class Sim {
   partitioned = false;
   blocked: Req[] = [];
   conflicts = 0;
+  /**
+   * Traffic per link (keyed by the two node ids, sorted, joined by "~"): requests sent along it and errors that came
+   * back along it. Output only, for the stage's flow glow (`flowOf` in metrics.ts).
+   */
+  links = new Map<string, { sent: number; failed: number }>();
   /** Every first attempt, in order (only with `{ trace: true }`). A problem and its fix must produce the same trace. */
   trace: Spawn[] = [];
   readonly windowMs: number;
@@ -254,9 +262,10 @@ export class Sim {
       waiters: new Map(),
       data: new Map(),
       buckets: new Map(),
-      breaker: { state: "closed", fails: 0, openedAt: 0, trial: false },
+      breaker: { state: "closed", fails: 0, openedAt: 0, trial: false, trialId: 0 },
       health: new Map(),
       load: 0,
+      hot: false,
       hits: new Win(this.windowMs),
       misses: new Win(this.windowMs),
       arrivals: new Win(this.windowMs),
@@ -395,6 +404,10 @@ export class Sim {
       if (slots) {
         const util = Math.min(1, (n.work.length + n.held.length) / slots);
         n.load += (util - n.load) * 0.05;
+        // Hot on a line twice its workers (or saturated with any line); cool again once the line is back to its workers.
+        const hot = n.hot ? n.queue.length > slots : n.queue.length > slots * 2 || (n.load > 0.92 && n.queue.length > 0);
+        if (hot && !n.hot) this.effect("hot", n.spec.id);
+        n.hot = hot;
       }
       if (n.bootUntil && t >= n.bootUntil) {
         n.bootUntil = 0;
@@ -611,6 +624,14 @@ export class Sim {
     r.t1 = this.t + (ms ?? this.latency(from, to));
     const dest = this.nodes.get(to);
     if (dest) dest.incoming++;
+    if (r.op !== "probe") this.link(from, to).sent++;
+  }
+
+  private link(a: string, b: string) {
+    const key = a < b ? `${a}~${b}` : `${b}~${a}`;
+    let l = this.links.get(key);
+    if (!l) this.links.set(key, (l = { sent: 0, failed: 0 }));
+    return l;
   }
 
   private respond(r: Req, result?: Result) {
@@ -627,6 +648,7 @@ export class Sim {
     r.to = to;
     r.t0 = this.t;
     r.t1 = this.t + this.latency(from, to);
+    if (r.op !== "probe" && r.result === "error") this.link(from, to).failed++;
   }
 
   private arrive(r: Req) {
@@ -711,7 +733,9 @@ export class Sim {
   }
 
   private fail(n: NodeRt, r: Req) {
-    this.effect("drop", n.spec.id);
+    // Refused at a full line: it falls from the line's tail.
+    const full = n.queue.length >= (n.spec.queueMax ?? Infinity);
+    this.effect("drop", n.spec.id, full ? n.queue.length : undefined);
     if (r.detached) {
       r.phase = "gone";
       return;
@@ -899,7 +923,10 @@ export class Sim {
         this.effect("reject", n.spec.id);
         return this.respond(r, "fallback");
       }
-      if (b.state === "half") b.trial = true;
+      if (b.state === "half") {
+        b.trial = true;
+        b.trialId = r.id;
+      }
     }
     this.call(n, r, calls);
   }
@@ -1007,6 +1034,7 @@ export class Sim {
       }
       b.fails = 0;
       b.trial = false;
+      b.trialId = 0;
       return;
     }
     b.fails++;
@@ -1014,6 +1042,7 @@ export class Sim {
       b.state = "open";
       b.openedAt = this.t;
       b.trial = false;
+      b.trialId = 0;
       this.effect("open", n.spec.id);
     }
   }
@@ -1023,6 +1052,7 @@ export class Sim {
     const ok = r.result === "ok";
     if (ok && (n.spec.capacity ?? 0) > 0) {
       n.cache.set(r.key, { seq: r.seq, exp: this.t + (n.spec.ttlMs ?? Infinity), last: this.t });
+      this.effect("fill", n.spec.id);
       this.evict(n);
     }
     const w = n.waiters.get(r.key);
@@ -1047,6 +1077,7 @@ export class Sim {
           lru = k;
         }
       n.cache.delete(lru);
+      this.effect("evict", n.spec.id);
     }
   }
 
@@ -1120,8 +1151,8 @@ export class Sim {
     return out;
   }
 
-  private effect(kind: FxKind, node: string) {
-    this.fx.push({ t: this.t, kind, node });
+  private effect(kind: FxKind, node: string, slot?: number) {
+    this.fx.push(slot === undefined ? { t: this.t, kind, node } : { t: this.t, kind, node, slot });
   }
 }
 

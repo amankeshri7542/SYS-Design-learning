@@ -1,6 +1,6 @@
 # System Lab v3 plan
 
-- **Status:** proposed, 2026-10-22. M0, M1 and M2 built 2026-10-22.
+- **Status:** proposed, 2026-10-22. M0, M1, M2 and M3 built 2026-10-22.
 - **Planned with:** Claude Fable 5.1. **To be built with:** Claude Opus 5.5, one milestone per session.
 - **Research behind it:** `docs/research/` holds five reports. Read the one a milestone points to before starting it.
   - `design-audit.md`: visual and UX audit, art direction, home and player layouts, component inventory.
@@ -517,11 +517,39 @@ Every milestone ends with the full gate (§10), screenshots at 1440×900, 1280×
 | `tests/browser/motion.spec.ts` | new | On `/learn/rate-limiting` at 2× and the built-out capstone, with 4× CPU throttling on desktop and mobile: rAF gap p95 ≤ 17 ms, no gap > 34 ms, app callback p95 ≤ 4 ms. Under reduced motion: sim time does not move, no intro runs, and no fresh ring element exists. |
 
 **Acceptance:**
-- [ ] In C1 Fix, a miss visibly fills the cache bar and an eviction drops a slate square.
-- [ ] In R2, the breaker pill slides closed → open → testing → closed, and the payments rail empties while open.
-- [ ] In consistent-hashing, keys visibly change owner when cache 4 joins: the hit rate dips and the database rail brightens.
-- [ ] One tab switch uses two beats of one duration family, not seven clocks.
-- [ ] Frame-budget and reduced-motion tests pass.
+- [x] In C1 Fix, a miss visibly fills the cache bar and an eviction drops out of it. The fill is a cobalt square sliding into the bar; the eviction is an ink chip, not the planned slate square (see the decisions). `tests/motion.test.ts` checks the engine fires both, and frame captures show both.
+- [x] In R2, the breaker pill slides closed → open → testing → closed, and the payments rail empties while open.
+  - A break-mark sits on the rail and its glow goes out.
+  - The engine test checks that only legal moves happen and that no request crosses the rail while the breaker is open.
+  - A browser test watches the pill open.
+- [x] In consistent-hashing, the hit rate dips and the database rail brightens when cache 4 joins. Measured at the second join, once the caches are warm:
+  - hash % N: 14 → 25 database requests per 800 ms, and hits fall from 66% to 51%;
+  - the hash ring: 11 → 13.
+  - Nothing yet shows a single key moving; the dip shows as the faint miss rings and fill squares at the caches. Following one request is M4's tracer.
+- [x] One tab switch uses two beats of one duration family. Every switch animation has a delay of 0 or 120 ms and a duration of 120, 160, 240 or 480 ms, which a browser test checks.
+- [x] Frame-budget and reduced-motion tests pass. At 4× CPU slowdown, on rate limiting at 2× and the built-out capstone, desktop and phone:
+  - frame gaps are 16.7–16.8 ms at p95 and 16.8 ms at worst (budget: 17 and 34 ms);
+  - the app's work per frame is 0.7–1.5 ms at p95 (budget: 4 ms).
+
+**Decisions made while building M3:**
+- **Hits and misses keep a faint ring at the cache.** The pop (hit) and the sliding copy (miss) carry the meaning, but C1's caption names a "green ring" and an "amber ring". So each cache gets at most one small, faint ring every 250 ms; M4b's new copy can drop it. Every other outcome ring is gone: rings mark state changes only.
+- **An eviction falls as a flat ink chip, not a slate square.** A slate square already means "turned away", and an evicted entry is data, not a request.
+- **Link flow is counted in the engine.** `Sim.links` counts sends per link and the errors that come back along it.
+  - `flowOf` smooths that over 250 simulated ms, not 400, so a rail visibly empties within a breaker's 600 ms open time.
+  - An open breaker's rail drops its glow at once.
+- **The breaker pill is the state word with a marker sliding along its foot.** There is no room for three labelled segments on a station's shoulder. Its colour changes at once: only transform and opacity animate.
+- **Running hot is an engine flag with hysteresis.** It turns on when the line passes twice the workers and off when it falls back to the workers' count. Its ring fires once per rise, not on every tick, and the stage's hot outline reads the same flag.
+- **A long waiting line packs to 0.88 and 0.78 of its spacing**, not 0.85 and 0.72: tighter read as a smear, not as a line.
+- **The stroke draw uses each link's on-screen length (`--len`).** `pathLength` does not combine with the rails' non-scaling strokes.
+- **The intro starts in the render that first has a measured layout,** so the scene never shows for a frame before it. The measured layout replaces the first guess outright, so nothing glides from a guessed place.
+- **Lesson-to-lesson continuity is a module variable** of the last stage's stations (glyph and label), recorded only by an unmount after 300 ms so the development double-mount can't erase the intro. The 160 ms cross-fade on "Next stop" was left out: the skipped intro carries the continuity.
+- **React re-renders at the 11 Hz tick as before; memoised `NodeView` and `LinkView` make that cheap.** The plan proposed rendering only when a stage signature changes, but the panel's numbers need the tick anyway, and the frame budget holds with room to spare.
+- **The metric cue fires when a number changes tone or a change flips direction**, at most once per cell every 1.5 s. A cue on every unit of change would flicker constantly with live numbers.
+- **The engine-output tests live in a new `tests/motion.test.ts`**, beside the stage-side claims they back, rather than in `tests/sim.test.ts`.
+- **Frame budgets run in their own Playwright projects after the others**, alone. With three workers sharing the CPU, the 4× throttle measured the harness, not the app.
+- **Focus (§2.8) is built but not used yet.** `Stage` takes `focus` and dims every station, link and request outside it. M4a's beats will drive it.
+- **Not built:** the write's pop at the primary when it spawns a copy (§2.6). The copy itself, its trail and the replica's violet rule carry the idea.
+- **The `improve-animations` audit** found three things, all fixed: the metric cue could restart every tick at a tone boundary; the pill marker and the intro used literal durations instead of tokens; Back popped in. The exit curve, the 480 ms glide and step switches animating on arrow keys are documented choices in motion-audit §3, so they stand.
 
 ### M4a — Concept delivery runtime and three reference lessons (L)
 

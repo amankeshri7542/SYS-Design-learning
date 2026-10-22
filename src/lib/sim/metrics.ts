@@ -265,3 +265,35 @@ export function changeSize(from: number, to: number): number {
 export function formatClock(timeScale: number, speed: number) {
   return `1 s on screen = ${Math.round(1000 * timeScale * speed)} ms`;
 }
+
+/** Simulated ms over which a link's flow settles: short enough that a link visibly empties while a breaker is open. */
+const FLOW_TAU = 250;
+const flows = new WeakMap<Sim, Map<string, { t: number; sent: number; failed: number; rate: number; errors: number }>>();
+
+/**
+ * Traffic on the link between `a` and `b` (either way round): requests a second, smoothed over about a quarter of a
+ * simulated second, and the share of them that came back as errors. The stage reads it to light the rails.
+ */
+export function flowOf(sim: Sim, a: string, b: string): { rate: number; errors: number } {
+  const key = a < b ? `${a}~${b}` : `${b}~${a}`;
+  const now = sim.links.get(key) ?? { sent: 0, failed: 0 };
+  let seen = flows.get(sim);
+  if (!seen) flows.set(sim, (seen = new Map()));
+  const was = seen.get(key);
+  if (!was || sim.t < was.t) {
+    // First look (or the scene restarted): start from the average so far rather than from nothing.
+    const rate = sim.t > 0 ? (now.sent / sim.t) * 1000 : 0;
+    const errors = now.sent ? now.failed / now.sent : 0;
+    seen.set(key, { t: sim.t, sent: now.sent, failed: now.failed, rate, errors });
+    return { rate, errors };
+  }
+  const dt = sim.t - was.t;
+  if (dt > 0) {
+    const w = 1 - Math.exp(-dt / FLOW_TAU);
+    const sent = now.sent - was.sent;
+    was.rate += ((sent / dt) * 1000 - was.rate) * w;
+    if (sent > 0) was.errors += (Math.min(1, (now.failed - was.failed) / sent) - was.errors) * w;
+    Object.assign(was, { t: sim.t, sent: now.sent, failed: now.failed });
+  }
+  return { rate: was.rate, errors: was.errors };
+}

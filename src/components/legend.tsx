@@ -10,6 +10,7 @@ const DOTS: { shape: string; cls: string; name: string; text: string }[] = [
   { shape: "square", cls: "turned", name: "Turned away", text: "Refused fast on purpose: rate-limited or a fallback." },
   { shape: "diamond", cls: "err", name: "Failed", text: "An error. Dropped requests fall off the stage." },
   { shape: "ring", cls: "err", name: "Gave up", text: "The user timed out. The work may still be running." },
+  { shape: "hollow", cls: "copy", name: "Copy", text: "A write on its way to a replica, which is behind until it lands." },
 ];
 
 export function Dot({ shape, cls }: { shape: string; cls: string }) {
@@ -20,6 +21,7 @@ export function Dot({ shape, cls }: { shape: string; cls: string }) {
       {shape === "square" && <rect x="-5" y="-5" width="10" height="10" rx="1.5" />}
       {shape === "diamond" && <path d="M0-7L7 0L0 7L-7 0Z" />}
       {shape === "ring" && <circle r="4.8" className="ring" />}
+      {shape === "hollow" && <rect x="-3.6" y="-3.6" width="7.2" height="7.2" rx="1" className="hollow" />}
     </svg>
   );
 }

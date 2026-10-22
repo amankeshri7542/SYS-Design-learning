@@ -87,6 +87,7 @@ src/
     capstone.tsx          the stage-by-stage capstone, in the same shell
     stage.tsx             SVG nodes underneath, a canvas of moving requests on top;
                           picks a wide, compact (phone) or tall layout to fit its box
+    stage-draw.ts         the canvas: requests batched by look, trails, queue pressure, effects
     live.tsx              useLiveSims (lockstep worlds + animation loop), Compare, MetricSummary, Transport
     glyph.tsx, legend.tsx node shapes, icons, the dot key
     hero.tsx, brand.tsx   home page scene, header and footer

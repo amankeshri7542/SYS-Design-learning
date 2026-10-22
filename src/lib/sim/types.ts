@@ -125,10 +125,18 @@ export type FxKind =
   | "recover"
   | "open"
   | "close"
-  | "boot";
+  | "boot"
+  /** A cache wrote an entry (a miss coming back fills it). */
+  | "fill"
+  /** A full cache pushed its least recently used entry out. */
+  | "evict"
+  /** A node started running hot: its line grew past twice its workers. */
+  | "hot";
 
 export interface Fx {
   t: number;
   kind: FxKind;
   node: string;
+  /** For a drop at a full waiting line: the slot it would have taken (the line's tail). */
+  slot?: number;
 }
