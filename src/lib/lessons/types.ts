@@ -1,6 +1,7 @@
 import type { Sim } from "../sim/engine";
 import type { MetricSpec } from "../sim/metrics";
 import type { SceneSpec } from "../sim/types";
+import { sequenceOf, type Beat, type Check, type DotKind, type Part, type Prediction, type TraceSpec } from "./beats";
 
 export type Values = Record<string, number>;
 
@@ -42,9 +43,27 @@ export interface FigureDef {
   knobs?: Knob[];
   actions?: Action[];
   metrics: MetricSpec[];
-  /** Label of the metric the lesson's claim is about. Defaults to the fix figure's first metric. */
-  headline?: string;
+  /**
+   * The lesson's claim: the label of the metric it is about (defaults to the fix figure's first metric), and the
+   * comparison read as one sentence with numbers (`{p95:problem}`), shown on the Recap. They are read as the beat
+   * `at` fires (a moment the claim is about, such as a crash), or live when it has no such beat.
+   */
+  headline?: { metric: string; sentence: string; at?: string };
   build: (v: Values) => SceneSpec;
+  /** Build lines: each part introduced in one line before the traffic starts (or, in a later step, as it arrives). */
+  parts?: Part[];
+  /** What to watch, in order: 3–6 beats. */
+  beats?: Beat[];
+  /** A guess the learner commits to before the break. */
+  predict?: Prediction;
+  /** The fault the learner causes: the beat `beat` waits until they press its button (or Next, which presses it). */
+  break?: { action: string; beat: string };
+  /** Beats after the step's last one, inviting the learner to turn a knob. */
+  invite?: Beat[];
+  /** The dot kinds this step shows, when they differ from the lesson's. */
+  key?: DotKind[];
+  /** Whose request "Follow one request" follows. Defaults to the scene's first client. */
+  trace?: TraceSpec;
 }
 
 export type LineId = "foundations" | "caching" | "data" | "async" | "resilience" | "capstone";
@@ -56,14 +75,26 @@ export interface Line {
   blurb: string;
 }
 
+export type Level = "beginner" | "intermediate" | "advanced";
+
 export interface Lesson {
   slug: string;
   code: string;
   line: LineId;
   title: string;
   why: string;
+  level?: Level;
+  /** Minutes the lesson takes, end to end. */
+  minutes?: number;
+  /** A question the learner has felt, ≤16 words, using no term the lesson teaches. */
+  hook?: string;
+  /** The dot kinds the lesson shows: its local key. */
+  dots?: DotKind[];
   figures: FigureDef[];
-  takeaways: { use: string; catch: string; seen: string };
+  /** One or two questions on the Recap. */
+  checks?: Check[];
+  /** `rule`: the lesson in ≤8 memorable words. `interview`: one line to say in an interview (advanced lessons). */
+  takeaways: { use: string; catch: string; seen: string; rule?: string; interview?: string };
 }
 
 export function isChoice(k: Knob): k is ChoiceKnob {
@@ -73,7 +104,12 @@ export function isChoice(k: Knob): k is ChoiceKnob {
 /** The metric a lesson's claim is about: the second figure's `headline`, or that figure's first metric. */
 export function headlineOf(figures: FigureDef[]): string {
   const f = figures[1] ?? figures[0];
-  return f.headline ?? f.metrics[0].label;
+  return f.headline?.metric ?? f.metrics[0].label;
+}
+
+/** A step's narration in order: its build lines, its beats, then its invitations. */
+export function beatsOf(f: FigureDef): Beat[] {
+  return sequenceOf(f.parts, [...(f.beats ?? []), ...(f.invite ?? [])]);
 }
 
 export function defaultsOf(f: FigureDef): Values {

@@ -1,15 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { getLesson, lessonsOn, lineOf, neighbours } from "@/lib/lessons";
-import { buildSteps, defaultsOf, headlineOf, isChoice, type FigureDef, type Knob, type RangeKnob, type Values } from "@/lib/lessons/types";
+import type { Focus } from "@/lib/lessons/beats";
+import { beatsOf, buildSteps, defaultsOf, headlineOf, isChoice, type FigureDef, type Knob, type Lesson, type RangeKnob, type Values } from "@/lib/lessons/types";
+import type { Sim } from "@/lib/sim/engine";
 import type { MetricSpec } from "@/lib/sim/metrics";
+import { BeatStrip, CheckCard, PredictCard, WatchList, useBeats } from "./beats";
+import { FlightStrip, useFollow } from "./follow";
 import { KeyPopover } from "./legend";
 import { ArrowIcon, BoltIcon, Clock, Compare, MetricSummary, Transport, useLiveSims } from "./live";
 import { MarkVisited } from "./route-map";
-import { BeatStrip, Shell, usePlayerKeys } from "./shell";
+import { Shell, usePlayerKeys } from "./shell";
 import { Stage } from "./stage";
+import { Rich, TermChips, TermProvider } from "./term";
 
 const TONE: Record<FigureDef["tone"], string> = {
   problem: "The problem",
@@ -21,6 +26,9 @@ const TONE: Record<FigureDef["tone"], string> = {
 /**
  * A lesson on one screen. The scene stays in view while you read, switch between the problem and the fix,
  * turn knobs and compare numbers. Only the reading part of the panel scrolls, and only if it must.
+ *
+ * Each step walks through its beats: the parts first, then what to watch, each pointed at on the stage. Next brings on
+ * the next beat (or lets a paused one go), and moves to the next step once the beats are done.
  */
 export function LessonPlayer({ slug }: { slug: string }) {
   const lesson = getLesson(slug)!;
@@ -32,12 +40,71 @@ export function LessonPlayer({ slug }: { slug: string }) {
   const [values, setValues] = useState<Values[]>(() => figs.map(defaultsOf));
   const specs = useMemo(() => buildSteps(figs, values), [figs, values]);
   const warm = Math.max(400, ...specs.map((s) => s.warmMs ?? 0));
-  const live = useLiveSims(specs, { warm });
   const shown = Math.min(step, figs.length - 1);
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
+
+  const beats = useBeats(lesson, step);
+  const follow = useFollow();
+  const followRef = useRef(follow);
+  followRef.current = follow;
+  const onGrid = useCallback(
+    (sims: Sim[]) => {
+      const stop = beats.onGrid(sims);
+      if (followRef.current.active) for (const s of sims) followRef.current.look(s);
+      return stop;
+    },
+    [beats],
+  );
+  const live = useLiveSims(specs, { warm, hold: beats.hold, onGrid });
   const fig = figs[shown];
   const sim = live.sims[shown];
   const go = (s: number) => setStep(Math.max(0, Math.min(last, s)));
-  usePlayerKeys(live, (d) => setStep((s) => Math.max(0, Math.min(last, s + d))));
+
+  const isOn = (id: string) => figs.some((f, j) => f.actions?.find((x) => x.id === id)?.isOn(live.sims[j]));
+  // The same fault (matched by id) hits every step's world, so the comparison stays fair.
+  const runFault = (id: string, on: boolean) => {
+    figs.forEach((f, j) => f.actions?.find((x) => x.id === id)?.run(live.sims[j], on));
+    live.refresh();
+  };
+  const b = beats.bind(live, { run: runFault, isOn });
+  const narrated = useMemo(() => figs.some((f) => beatsOf(f).length), [figs]);
+
+  const toggle = () => {
+    if (!live.playing) b.played();
+    live.toggle();
+  };
+  // Reduced motion: Step brings on the step's next beat, on a still frame (a moment's step once they're done).
+  const step1 = () => (live.reduced && step < last && !b.done ? void b.next() : live.step());
+  const onNext = () => {
+    if (step >= last) return;
+    if (b.next() === "step") go(step + 1);
+  };
+  const flight = follow.view();
+  const toggleFollow = () => {
+    if (follow.active) return follow.stop(), live.refresh();
+    const client = fig.trace?.client ?? sim.list.find((n) => n.spec.client)?.spec.id;
+    if (!client) return;
+    follow.begin(sim, client);
+    follow.holdResult(live.reduced);
+    // Reduced motion: run on to the end of the request's life and show it whole, on one still frame.
+    if (live.reduced) live.advance(() => follow.look(sim), 20000);
+    else live.play();
+    live.refresh();
+  };
+  // A beat that says "follow one" starts following, once, as it fires (not when it is shown again).
+  const followCue = b.beat?.follow && b.announce ? `${step}:${b.beat.id}` : null;
+  const toggleRef = useRef(toggleFollow);
+  toggleRef.current = toggleFollow;
+  useEffect(() => {
+    if (followCue && !followRef.current.active) toggleRef.current();
+  }, [followCue]);
+  usePlayerKeys({ ...live, toggle }, (d) => setStep((s) => Math.max(0, Math.min(last, s + d))), {
+    "[": b.back,
+    "]": onNext,
+    f: toggleFollow,
+    ...Object.fromEntries([...figs, null].map((_, i) => [String(i + 1), () => go(i)])),
+  });
   const [tabsRef, tight] = useTightTabs();
   // The tabs pattern: arrow keys (wrapping), Home and End move between steps; Tab leaves the row.
   const onTabKey = (e: KeyboardEvent) => {
@@ -69,172 +136,253 @@ export function LessonPlayer({ slug }: { slug: string }) {
     table?.scrollIntoView({ block: "nearest", behavior: live.reduced ? "auto" : "smooth" });
     table?.focus({ preventScroll: true });
   };
+  const focus: Focus | null = b.focus;
+  const asking = !!b.predict?.open;
+  const breakLabel = b.breakDue ? fig.actions?.find((a) => a.id === b.breakDue)?.label : undefined;
 
   return (
-    <Shell
-      className={`line-${line.id}`}
-      simTime={sim.t}
-      rootRef={live.rootRef as React.Ref<HTMLDivElement>}
-      bar={
-        <>
-          <MarkVisited slug={slug} />
-          <nav className="bar-line" aria-label={`${line.name} line`}>
-            <Link href="/#route" className="roundel-sm" aria-label="Route map" title={`${line.name} line · route map`}>
-              {line.letter}
-            </Link>
-            <ol className="bar-stops">
-              {lessonsOn(lesson.line).map((s) => (
-                <li key={s.slug}>
-                  <Link href={`/learn/${s.slug}`} aria-current={s.slug === slug ? "page" : undefined} title={s.title}>
-                    {s.code}
-                  </Link>
-                </li>
+    <TermProvider lesson={slug} onShow={(f) => b.show(f)}>
+      <Shell
+        className={`line-${line.id}`}
+        simTime={sim.t}
+        rootRef={live.rootRef as React.Ref<HTMLDivElement>}
+        bar={
+          <>
+            <MarkVisited slug={slug} />
+            <nav className="bar-line" aria-label={`${line.name} line`}>
+              <Link href="/#route" className="roundel-sm" aria-label="Route map" title={`${line.name} line · route map`}>
+                {line.letter}
+              </Link>
+              <ol className="bar-stops">
+                {lessonsOn(lesson.line).map((s) => (
+                  <li key={s.slug}>
+                    <Link href={`/learn/${s.slug}`} aria-current={s.slug === slug ? "page" : undefined} title={s.title}>
+                      {s.code}
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+            <h1 className="bar-title" title={lesson.why}>
+              <span className="bar-code">{lesson.code}</span>
+              <span className="bar-name">{lesson.title}</span>
+            </h1>
+            <KeyPopover dots={fig.key ?? lesson.dots} />
+            <span className="bar-arrows">
+              {prev ? (
+                <Link href={`/learn/${prev.slug}`} className="icon-link" aria-label={`Previous lesson: ${prev.title}`} title={`${prev.code} ${prev.title}`}>
+                  <ArrowIcon dir="left" />
+                </Link>
+              ) : (
+                <span />
+              )}
+              {next && (
+                <Link href={`/learn/${next.slug}`} className="icon-link" aria-label={`Next lesson: ${next.title}`} title={`${next.code} ${next.title}`}>
+                  <ArrowIcon />
+                </Link>
+              )}
+            </span>
+          </>
+        }
+        beat={
+          <BeatStrip
+            sim={sim}
+            lead={
+              <span key={fig.short} className={`beat-tone tone-${fig.tone}`}>
+                {TONE[fig.tone]}
+              </span>
+            }
+            beat={narrated ? (step < last ? b.beat : null) : undefined}
+            announce={b.announce}
+            clock={<Clock live={live} />}
+          />
+        }
+        stage={
+          <Stage
+            sim={sim}
+            spec={specs[shown]}
+            frameSpecs={specs}
+            mode={live.mode}
+            reduced={live.reduced}
+            label={`${fig.title}. ${fig.caption.replace(/\[\[[\w-]+\|([^\]]+)\]\]/g, "$1")}`}
+            drawRef={live.drawRef}
+            focus={focus}
+            callout={step < last && b.beat ? { id: `${step}:${b.beat.id}`, text: b.beat.text, waiting: b.beat.waiting } : null}
+            follow={flight?.id ?? null}
+          />
+        }
+        flight={flight && <FlightStrip v={flight} onClose={() => (follow.stop(), live.refresh())} />}
+        summary={<MetricSummary metric={headline} columns={columns} verdict={verdict} onOpen={showTable} />}
+        panel={
+          <>
+            <div className="panel-head">
+              <div ref={tabsRef} className={`tabs${tight ? " tight" : ""}`} role="tablist" aria-label="Steps" onKeyDown={onTabKey}>
+                {[...figs.map((f) => f.short), "Recap"].map((name, i) => (
+                  <button
+                    key={name}
+                    type="button"
+                    role="tab"
+                    id={`tab-${i}`}
+                    aria-selected={step === i}
+                    aria-controls="step-panel"
+                    tabIndex={step === i ? 0 : -1}
+                    className={`tab${i < last ? ` tone-${figs[i].tone}` : ""}`}
+                    onClick={() => go(i)}
+                  >
+                    {/* The number is the visible label of a squeezed tab, so it is part of the tab's name; the tick is not. */}
+                    <span className="tab-n" aria-hidden={i < last ? undefined : true}>
+                      {i < last ? i + 1 : "✓"}
+                    </span>
+                    <span className="tab-name">{name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div id="step-panel" role="tabpanel" aria-labelledby={`tab-${step}`} className="step" key={step}>
+              {step < last ? (
+                <>
+                  {step === 0 && lesson.hook && (
+                    <p className="hook">
+                      <Rich text={lesson.hook} />
+                    </p>
+                  )}
+                  <h2 className="step-title">{fig.title}</h2>
+                  {b.predict && (asking || (b.predict.answer !== undefined && (step === b.predict.step || step === b.predict.revealStep))) && (
+                    <PredictCard p={b.predict} onAnswer={(i) => b.answer(i)} />
+                  )}
+                  {!asking && (
+                    <>
+                      {/* Reduced motion: the beats to step through take the caption's place (the stage still carries it). */}
+                      <TermChips keys={b.terms} />
+                      {live.reduced && b.list.length ? (
+                        <WatchList items={b.list} />
+                      ) : (
+                        <p className="step-text">
+                          <Rich text={fig.caption} />
+                        </p>
+                      )}
+                      {!!(fig.knobs?.length || fig.actions?.length) && (
+                        <div className="controls">
+                          {fig.knobs?.map((k) => (
+                            <KnobControl key={k.id} k={k} value={values[shown][k.id]} name={`${slug}-${shown}`} onChange={(v) => setKnob(k, v)} spot={focus?.knob === k.id} />
+                          ))}
+                          {fig.actions && (
+                            <div className="faults">
+                              {fig.actions.map((a) => {
+                                const on = a.isOn(sim);
+                                return (
+                                  <button
+                                    key={a.id}
+                                    type="button"
+                                    className={`btn btn-fault${on ? " on" : ""}${focus?.action === a.id || b.breakDue === a.id ? " spot" : ""}`}
+                                    aria-pressed={on}
+                                    onClick={() => {
+                                      runFault(a.id, !on);
+                                      if (!on) b.pressed(a.id);
+                                    }}
+                                  >
+                                    <BoltIcon />
+                                    {on ? a.undo : a.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              ) : (
+                <Recap lesson={lesson} claim={b.claim} onWrong={(f) => b.show(f, 6000)} />
+              )}
+            </div>
+          </>
+        }
+        pinned={<Compare metrics={metrics} verdict={verdict} columns={columns} spot={focus?.metric} why={b.why} />}
+        dock={
+          <>
+            <Transport live={{ ...live, toggle, step: step1 }} />
+            <Clock live={live} />
+            <button
+              type="button"
+              className={`btn btn-follow${follow.active ? " on" : ""}`}
+              aria-pressed={follow.active}
+              onClick={toggleFollow}
+              title="Follow one request (f)"
+              aria-label="Follow one request"
+            >
+              <FollowIcon />
+              <span className="when-wide">Follow one</span>
+            </button>
+            <span className="dock-fill" />
+            <span className="dock-progress" aria-hidden="true">
+              {[...figs, null].map((_, i) => (
+                <i key={i} className={i === step ? "on" : i < step ? "past" : undefined} />
               ))}
-            </ol>
-          </nav>
-          <h1 className="bar-title" title={lesson.why}>
-            <span className="bar-code">{lesson.code}</span>
-            <span className="bar-name">{lesson.title}</span>
-          </h1>
-          <KeyPopover />
-          <span className="bar-arrows">
-            {prev ? (
-              <Link href={`/learn/${prev.slug}`} className="icon-link" aria-label={`Previous lesson: ${prev.title}`} title={`${prev.code} ${prev.title}`}>
+            </span>
+            {step > 0 && (
+              <button type="button" className="btn btn-back" onClick={() => go(step - 1)}>
                 <ArrowIcon dir="left" />
+                <span>Back</span>
+              </button>
+            )}
+            {step < last ? (
+              <button type="button" className="btn-primary btn-next" onClick={onNext} data-beats={b.done ? undefined : b.remaining}>
+                <NextLabel b={b} breakLabel={breakLabel} next={nextLabel} />
+              </button>
+            ) : next ? (
+              <Link href={`/learn/${next.slug}`} className="btn-primary btn-next">
+                <span className="btn-next-label">
+                  <span className="when-wide">Next stop: </span>
+                  {next.code} {next.title}
+                </span>
+                <ArrowIcon />
               </Link>
             ) : (
-              <span />
-            )}
-            {next && (
-              <Link href={`/learn/${next.slug}`} className="icon-link" aria-label={`Next lesson: ${next.title}`} title={`${next.code} ${next.title}`}>
+              <Link href="/#route" className="btn-primary btn-next">
+                <span className="btn-next-label">Route map</span>
                 <ArrowIcon />
               </Link>
             )}
-          </span>
-        </>
-      }
-      beat={
-        <BeatStrip
-          sim={sim}
-          lead={
-            <span key={fig.short} className={`beat-tone tone-${fig.tone}`}>
-              {TONE[fig.tone]}
-            </span>
-          }
-          clock={<Clock live={live} />}
-        />
-      }
-      stage={<Stage sim={sim} spec={specs[shown]} frameSpecs={specs} mode={live.mode} reduced={live.reduced} label={`${fig.title}. ${fig.caption}`} drawRef={live.drawRef} />}
-      summary={<MetricSummary metric={headline} columns={columns} verdict={verdict} onOpen={showTable} />}
-      panel={
-        <>
-          <div className="panel-head">
-            <div ref={tabsRef} className={`tabs${tight ? " tight" : ""}`} role="tablist" aria-label="Steps" onKeyDown={onTabKey}>
-              {[...figs.map((f) => f.short), "Recap"].map((name, i) => (
-                <button
-                  key={name}
-                  type="button"
-                  role="tab"
-                  id={`tab-${i}`}
-                  aria-selected={step === i}
-                  aria-controls="step-panel"
-                  tabIndex={step === i ? 0 : -1}
-                  className={`tab${i < last ? ` tone-${figs[i].tone}` : ""}`}
-                  onClick={() => go(i)}
-                >
-                  {/* The number is the visible label of a squeezed tab, so it is part of the tab's name; the tick is not. */}
-                  <span className="tab-n" aria-hidden={i < last ? undefined : true}>
-                    {i < last ? i + 1 : "✓"}
-                  </span>
-                  <span className="tab-name">{name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div id="step-panel" role="tabpanel" aria-labelledby={`tab-${step}`} className="step" key={step}>
-            {step < last ? (
-              <>
-                <h2 className="step-title">{fig.title}</h2>
-                <p className="step-text">{fig.caption}</p>
-                {!!(fig.knobs?.length || fig.actions?.length) && (
-                  <div className="controls">
-                    {fig.knobs?.map((k) => <KnobControl key={k.id} k={k} value={values[shown][k.id]} name={`${slug}-${shown}`} onChange={(v) => setKnob(k, v)} />)}
-                    {fig.actions && (
-                      <div className="faults">
-                        {fig.actions.map((a) => {
-                          const on = a.isOn(sim);
-                          return (
-                            <button
-                              key={a.id}
-                              type="button"
-                              className={`btn btn-fault${on ? " on" : ""}`}
-                              aria-pressed={on}
-                              onClick={() => {
-                                // The same fault (matched by id) hits every step's world, so the comparison stays fair.
-                                figs.forEach((f, j) => f.actions?.find((x) => x.id === a.id)?.run(live.sims[j], !on));
-                                live.refresh();
-                              }}
-                            >
-                              <BoltIcon />
-                              {on ? a.undo : a.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            ) : (
-              <Recap why={lesson.why} takeaways={lesson.takeaways} />
-            )}
-          </div>
-        </>
-      }
-      pinned={<Compare metrics={metrics} verdict={verdict} columns={columns} />}
-      dock={
-        <>
-          <Transport live={live} />
-          <Clock live={live} />
-          <span className="dock-fill" />
-          <span className="dock-progress" aria-hidden="true">
-            {[...figs, null].map((_, i) => (
-              <i key={i} className={i === step ? "on" : i < step ? "past" : undefined} />
-            ))}
-          </span>
-          {step > 0 && (
-            <button type="button" className="btn btn-back" onClick={() => go(step - 1)}>
-              <ArrowIcon dir="left" />
-              <span>Back</span>
-            </button>
-          )}
-          {step < last ? (
-            <button type="button" className="btn-primary btn-next" onClick={() => go(step + 1)}>
-              <span className="btn-next-label">
-                <span className="when-wide">Next: </span>
-                {nextLabel}
-              </span>
-              <ArrowIcon />
-            </button>
-          ) : next ? (
-            <Link href={`/learn/${next.slug}`} className="btn-primary btn-next">
-              <span className="btn-next-label">
-                <span className="when-wide">Next stop: </span>
-                {next.code} {next.title}
-              </span>
-              <ArrowIcon />
-            </Link>
-          ) : (
-            <Link href="/#route" className="btn-primary btn-next">
-              <span className="btn-next-label">Route map</span>
-              <ArrowIcon />
-            </Link>
-          )}
-        </>
-      }
-    />
+          </>
+        }
+      />
+    </TermProvider>
   );
 }
+
+/** What Next does now: let a paused beat go, cause the break, skip the guess, bring on a beat, or go to the next step. */
+function NextLabel({ b, breakLabel, next }: { b: ReturnType<ReturnType<typeof useBeats>["bind"]>; breakLabel?: string; next: string }) {
+  if (breakLabel)
+    return (
+      <>
+        <BoltIcon />
+        <span className="btn-next-label">{breakLabel}</span>
+      </>
+    );
+  const text = b.waiting === "beat" ? "Continue" : b.waiting === "ask" ? <>Skip<span className="when-wide"> the guess</span></> : !b.done ? "Next" : null;
+  return (
+    <>
+      <span className="btn-next-label">
+        {text ?? (
+          <>
+            <span className="when-wide">Next: </span>
+            {next}
+          </>
+        )}
+      </span>
+      <ArrowIcon />
+    </>
+  );
+}
+
+const FollowIcon = () => (
+  <svg viewBox="0 0 16 16" aria-hidden="true" className="stroke">
+    <circle cx="8" cy="8" r="2.4" />
+    <circle cx="8" cy="8" r="5.6" />
+  </svg>
+);
 
 /**
  * True when the step tabs can't all show their names on one row; the other tabs then shrink to their numbers.
@@ -265,33 +413,50 @@ function useTightTabs() {
   return [ref, tight] as const;
 }
 
-function Recap({ why, takeaways }: { why: string; takeaways: { use: string; catch: string; seen: string } }) {
+/** The lesson in one rule, the why, the claim in numbers, a check or two, and where it is used. */
+function Recap({ lesson, claim, onWrong }: { lesson: Lesson; claim: string | null; onWrong: (f: Focus) => void }) {
+  // Read once, as the Recap opens: a sentence whose numbers flicker is hard to read.
+  const [sentence] = useState(claim);
+  const t = lesson.takeaways;
   return (
     <>
       <h2 className="step-title">What to remember</h2>
-      <p className="step-text recap-why">{why}</p>
+      {t.rule && <p className="rule">{t.rule}</p>}
+      <p className="step-text recap-why">{lesson.why}</p>
+      {sentence && (
+        <p className="step-text in-numbers">
+          <span className="card-eyebrow">In numbers</span> <Rich text={sentence} />
+        </p>
+      )}
+      {lesson.checks?.map((c, i) => <CheckCard key={c.prompt} c={c} n={i + 1} onWrong={onWrong} />)}
       <dl className="takeaways">
         <div>
           <dt>Use it when</dt>
-          <dd>{takeaways.use}</dd>
+          <dd>{t.use}</dd>
         </div>
         <div>
           <dt>The catch</dt>
-          <dd>{takeaways.catch}</dd>
+          <dd>{t.catch}</dd>
         </div>
         <div>
           <dt>Seen in</dt>
-          <dd>{takeaways.seen}</dd>
+          <dd>{t.seen}</dd>
         </div>
+        {t.interview && (
+          <div>
+            <dt>In an interview</dt>
+            <dd>{t.interview}</dd>
+          </div>
+        )}
       </dl>
     </>
   );
 }
 
-export function KnobControl({ k, value, name, onChange }: { k: Knob; value: number; name: string; onChange: (v: number) => void }) {
+export function KnobControl({ k, value, name, onChange, spot }: { k: Knob; value: number; name: string; onChange: (v: number) => void; spot?: boolean }) {
   if (isChoice(k)) {
     return (
-      <fieldset className="knob knob-choice">
+      <fieldset className={`knob knob-choice${spot ? " spot" : ""}`}>
         <legend>{k.label}</legend>
         <div className="seg seg-wrap">
           {k.options.map((o) => (
@@ -304,14 +469,14 @@ export function KnobControl({ k, value, name, onChange }: { k: Knob; value: numb
       </fieldset>
     );
   }
-  return <Slider k={k} value={value} name={name} onChange={onChange} />;
+  return <Slider k={k} value={value} name={name} onChange={onChange} spot={spot} />;
 }
 
 /**
  * A slider that follows the pointer at once but rebuilds the scene at most once a frame: dragging fires input events
  * faster than the screen refreshes, and each one would rebuild every step's scene.
  */
-function Slider({ k, value, name, onChange }: { k: RangeKnob; value: number; name: string; onChange: (v: number) => void }) {
+function Slider({ k, value, name, onChange, spot }: { k: RangeKnob; value: number; name: string; onChange: (v: number) => void; spot?: boolean }) {
   const [drag, setDrag] = useState<number | null>(null);
   const frame = useRef(0);
   const latest = useRef(value);
@@ -329,7 +494,7 @@ function Slider({ k, value, name, onChange }: { k: RangeKnob; value: number; nam
   const shown = drag ?? value;
   const id = `${name}-${k.id}`;
   return (
-    <div className="knob knob-range">
+    <div className={`knob knob-range${spot ? " spot" : ""}`}>
       <label className="knob-label" htmlFor={id}>
         {k.label}
       </label>
@@ -340,3 +505,4 @@ function Slider({ k, value, name, onChange }: { k: RangeKnob; value: number; nam
     </div>
   );
 }
+

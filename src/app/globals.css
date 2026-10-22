@@ -835,6 +835,27 @@ svg.stroke {
   }
 }
 
+.key-sub {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font: 700 var(--fs-caption)/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.key-rest {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+
+.key-rest summary {
+  margin-bottom: 8px;
+  color: var(--ink-2);
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+
 /* ------------------------------------------------------------------ route map */
 
 .route-svg {
@@ -1165,7 +1186,8 @@ svg.stroke {
   gap: 2px;
 }
 
-/* The theatre holds one sheet: the beat strip along its top edge, the stage, and (later) the flight strip. */
+/* The theatre holds one sheet: the beat strip along its top edge and the stage. Following a request, the flight strip
+   takes the beat strip's row. */
 .theatre {
   grid-area: theatre;
   display: grid;
@@ -1175,8 +1197,11 @@ svg.stroke {
 }
 
 .sheet {
+  --strip-row: 1;
+  --stage-row: 2;
   display: grid;
   grid-template-rows: 36px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1186,8 +1211,11 @@ svg.stroke {
   box-shadow: var(--e-sheet);
 }
 
-/* The beat strip: what the scene shows, and the events as they happen. Its own row; nothing floats on the stage. */
+/* The beat strip: what the scene shows, and the beat (or the events) as they happen. Its own row; nothing floats on
+   the stage. */
 .beat {
+  grid-row: var(--strip-row);
+  grid-column: 1;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1239,6 +1267,501 @@ svg.stroke {
 /* The clock sits in the dock; only phones, whose dock has no room for it, show it on the strip. */
 .beat .slowmo {
   display: none;
+}
+
+/* Where the step is in its beats: small ink stations, the current one larger. Ink, never a dot colour. */
+.beat-pips {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+
+.beat-pips i {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-round);
+  box-shadow: inset 0 0 0 1.5px var(--rail);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.beat-pips i.past {
+  box-shadow: inset 0 0 0 3px var(--ink-2);
+}
+
+.beat-pips i.on {
+  box-shadow: inset 0 0 0 3px var(--ink);
+  transform: scale(1.35);
+}
+
+/* A wide stage shows the beat beside what it names: the strip then keeps the step's place, not the words. */
+.sheet:has(.callout[data-placed]) .beat-text {
+  visibility: hidden;
+}
+
+.sheet > .stage {
+  grid-row: var(--stage-row);
+  grid-column: 1;
+}
+
+/* The flight strip: one followed request's life, in the beat strip's row while it runs. */
+.flight {
+  grid-row: var(--strip-row);
+  grid-column: 1;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 6px 0 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+  animation: beat-in var(--dur-base) var(--ease-out) both;
+}
+
+.flight-tag {
+  flex: none;
+  color: var(--ink);
+  font: 700 var(--fs-caption)/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.flight-text {
+  flex: 1 1 40%;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font: 600 var(--fs-meta)/1.2 var(--font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Rails are a thin line, waiting an open box, work a filled one: shape and ink, since the dot colours are taken. */
+.flight-bar {
+  display: flex;
+  flex: 1 1 30%;
+  align-items: center;
+  gap: 1px;
+  min-width: 60px;
+  max-width: 260px;
+  height: 12px;
+}
+
+.hop {
+  min-width: 2px;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.hop-travel {
+  height: 2px;
+  background: var(--rail);
+}
+
+.hop-wait {
+  box-shadow: inset 0 0 0 1.5px var(--ink-2);
+}
+
+.hop-work {
+  background: var(--ink);
+}
+
+.flight-sum {
+  display: flex;
+  flex: none;
+  gap: 10px;
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.flight-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-color: transparent;
+}
+
+/* ------------------------------------------------------------------ beats: callouts, cards, terms */
+
+/* A callout: the beat's words beside what they name, on a card in the stage's clear space, with a short ink leader.
+   The line's colour marks its edge, like an annotation in a field guide. */
+.callout {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  max-width: 264px;
+  padding: 8px 12px 9px;
+  border: 1px solid var(--ink);
+  border-left: 3px solid var(--lc);
+  border-radius: var(--r-ctl);
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--e-raised);
+  font: 600 var(--fs-ui)/1.4 var(--font-body);
+  text-wrap: pretty;
+  animation: callout-in var(--dur-base) var(--ease-out) both;
+}
+
+.callout:not([data-placed]) {
+  visibility: hidden;
+  animation: none;
+}
+
+@keyframes callout-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.callout-leader {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  animation: fade-in var(--dur-base) var(--ease-out) both;
+}
+
+.callout-leader line {
+  stroke: var(--ink);
+  stroke-width: 1.5px;
+}
+
+.callout-leader circle {
+  fill: var(--ink);
+}
+
+/* A glossary term in running text: its plain words, underlined with dots. A tap opens the definition. */
+.term {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted 1.5px;
+  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+.term:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Touch layouts: a term in the text is a marked word; its button is a chip in the panel. */
+.term-word {
+  text-decoration: underline dotted 1.5px;
+  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
+  text-underline-offset: 3px;
+}
+
+.term-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.term-chip {
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--r-round);
+  color: var(--ink-2);
+  font: 600 var(--fs-meta)/1 var(--font-body);
+  text-decoration: underline dotted 1.5px color-mix(in srgb, currentColor 55%, transparent);
+  text-underline-offset: 3px;
+}
+
+/* A term's definition and a metric's explainer: popovers in the Key's style, beside what opened them. */
+.term-pop,
+.metric-pop {
+  position: fixed;
+  inset: auto;
+  width: min(320px, calc(100vw - 24px));
+  max-height: calc(100svh - 24px);
+  margin: 0;
+  overflow-y: auto;
+  padding: 8px 14px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--e-raised);
+}
+
+.term-pop.above {
+  translate: 0 -100%;
+}
+
+.term-pop:popover-open,
+.metric-pop:popover-open {
+  animation: pop-in var(--dur-base) var(--ease-out) both;
+}
+
+.term-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin: 0 -6px 4px 0;
+}
+
+.term-head h2 {
+  margin: 0;
+  font: 600 var(--fs-h3)/1.15 var(--font-guide), Georgia, serif;
+}
+
+.term-alias {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1.3 var(--font-mono);
+}
+
+.term-short,
+.metric-line,
+.metric-why {
+  margin: 0 0 6px;
+  color: var(--ink-2);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+}
+
+.metric-line:first-of-type {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.metric-why strong {
+  color: var(--ink);
+}
+
+.term-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+.term-all {
+  margin-left: auto;
+  font-size: var(--fs-meta);
+}
+
+/* The hook: the question the lesson answers, in the guide's voice. */
+.hook {
+  margin: 4px 0 -2px;
+  color: var(--ink-2);
+  font: italic 500 var(--fs-h3)/1.3 var(--font-guide), Georgia, serif;
+  text-wrap: balance;
+}
+
+/* Cards in the panel: the prediction, the checks and (reduced motion) what to watch. Paper, like the controls. */
+.card,
+.watch {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--r-card);
+  background: var(--paper);
+}
+
+.card-eyebrow {
+  margin: 0;
+  color: var(--lc-ink);
+  font: 700 var(--fs-caption)/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.card-prompt {
+  margin: 0;
+  color: var(--ink);
+  font: 600 17px/1.3 var(--font-guide), Georgia, serif;
+}
+
+.card-options {
+  display: grid;
+  gap: 6px;
+}
+
+.opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-ctl);
+  background: var(--surface);
+  color: var(--ink);
+  font: 600 var(--fs-ui)/1.3 var(--font-body);
+  text-align: left;
+  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.opt:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.opt:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.opt:disabled {
+  opacity: 0.5;
+}
+
+.opt.right {
+  border-color: var(--t-ok);
+  color: var(--t-ok);
+}
+
+.opt.wrong {
+  border-color: var(--t-bad);
+  color: var(--t-bad);
+}
+
+.opt svg,
+.card-result svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  vertical-align: -3px;
+}
+
+.mark-right {
+  color: var(--t-ok);
+}
+
+.mark-wrong {
+  color: var(--t-bad);
+}
+
+.card-result,
+.card-why {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-ui);
+  line-height: 1.45;
+}
+
+.card.done {
+  padding-block: 10px;
+}
+
+.card-result strong {
+  color: var(--ink);
+}
+
+.card-wait {
+  color: var(--muted);
+}
+
+/* Reduced motion: the step's beats as a list; Next brings each on, on a still frame. */
+.watch ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: beat;
+}
+
+.watch li {
+  position: relative;
+  padding-left: 26px;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+  counter-increment: beat;
+}
+
+.watch li::before {
+  content: counter(beat);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-round);
+  box-shadow: inset 0 0 0 1.5px var(--rail);
+  font: 600 var(--fs-caption)/1 var(--font-mono);
+}
+
+.watch li:not(.now) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watch li.seen {
+  color: var(--ink-2);
+}
+
+.watch li.now {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.watch li.now::before {
+  background: var(--ink);
+  box-shadow: none;
+  color: var(--paper);
+}
+
+/* What the beat points at in the panel (a knob, a fault, a row of numbers): an accent ring, like keyboard focus. */
+.knob.spot,
+.btn-fault.spot {
+  border-radius: var(--r-ctl);
+  box-shadow: 0 0 0 2px var(--accent);
+  animation: spot-in var(--dur-switch) var(--ease-out) both;
+}
+
+.compare tr.spot > * {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+@keyframes spot-in {
+  from {
+    transform: scale(1.03);
+  }
+}
+
+/* The Recap: the lesson's rule in the guide's voice, the claim in numbers. */
+.rule {
+  margin: 2px 0 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--lc);
+  color: var(--ink);
+  font: italic 500 var(--fs-h3)/1.3 var(--font-guide), Georgia, serif;
+  text-wrap: balance;
+}
+
+.in-numbers .card-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Follow one request: a dock button. On, it reads like Play. */
+.btn-follow svg {
+  width: 16px;
+}
+
+.btn-follow.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
 }
 
 /* The panel: a reading part that scrolls if it must, and the numbers pinned under it. */
@@ -1604,11 +2127,23 @@ svg.stroke {
   font: 700 var(--fs-meta)/1.2 var(--font-body);
   text-align: left;
   white-space: normal;
-  cursor: help;
 }
 
-.compare tbody th span {
+.compare tbody th .mx {
   display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline dotted 1px color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.compare tbody th .mx:hover {
+  color: var(--ink);
 }
 
 /* "target ≤ 400 ms" under a response-time label */
@@ -2078,6 +2613,12 @@ svg.stroke {
   vector-effect: non-scaling-stroke;
 }
 
+/* The narration points at a station's workers: their sockets take an ink edge. */
+.node.spot-sockets .socket {
+  stroke: var(--ink);
+  stroke-width: 1.75px;
+}
+
 .node .tick {
   stroke: var(--rule);
   stroke-width: 1.5;
@@ -2158,6 +2699,11 @@ svg.stroke {
 
 .node.down .node-sub {
   fill: var(--t-bad);
+}
+
+/* Stalled: no worker takes anything. A dashed ink edge, like a pause. */
+.node.stalled .body {
+  stroke-dasharray: 6 4;
 }
 
 .node.benched .body {
@@ -2268,6 +2814,19 @@ svg.stroke {
 }
 
 .badge-role text {
+  fill: var(--ink);
+}
+
+/* The countdown to an armed event at this station (a stall ends in "0.6 s"): an outlined tag, dashed like a pause. */
+.badge-clock rect {
+  fill: var(--card);
+  stroke: var(--ink);
+  stroke-width: 1px;
+  stroke-dasharray: 3 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.badge-clock text {
   fill: var(--ink);
 }
 
@@ -2527,6 +3086,61 @@ svg.stroke {
   font-weight: 700;
 }
 
+/* The glossary: every term in plain words, with the lesson that shows it. */
+.glossary {
+  padding: var(--sp-8) 0 var(--sp-9);
+}
+
+.glossary h1 {
+  margin: 12px 0 0;
+  font: 600 clamp(2rem, 4.4vw, 3rem)/1.08 var(--font-guide), Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+.glossary .lede {
+  max-width: 36em;
+}
+
+.glossary-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: var(--sp-4);
+  margin: var(--sp-7) 0 0;
+}
+
+.glossary-list > div {
+  scroll-margin-top: 24px;
+  padding: var(--sp-4) var(--sp-4) var(--sp-4) 18px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--ink);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.glossary-list dt {
+  font: 600 var(--fs-h3)/1.2 var(--font-guide), Georgia, serif;
+}
+
+.glossary-alias {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1.3 var(--font-mono);
+}
+
+.glossary-list dd {
+  margin: 8px 0 0;
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+}
+
+.glossary-where {
+  display: block;
+  margin-top: 10px;
+  font-size: var(--fs-meta);
+}
+
 .lost {
   padding-top: var(--sp-9);
 }
@@ -2619,28 +3233,76 @@ svg.stroke {
   .theatre {
     padding: 8px 8px 6px;
   }
-  /* The beat strip moves to the sheet's bottom edge and carries the clock. */
+  /* The beat strip moves to the sheet's bottom edge and carries the clock. Phones have no room for a callout, so the
+     strip carries the beat's words: two lines of them, over a row with the step's place and the clock. */
   .sheet {
-    grid-template-rows: minmax(0, 1fr) 32px;
+    --strip-row: 2;
+    --stage-row: 1;
+    grid-template-rows: minmax(0, 1fr) 56px;
     border-radius: var(--r-card);
   }
-  .beat {
-    order: 1;
-    gap: 10px;
-    padding: 0 12px;
+  .beat,
+  .flight {
     border-top: 1px solid var(--rule);
     border-bottom: 0;
   }
-  .beat:has(.beat-text:not(:empty)) .beat-tone {
-    display: none;
+  .beat {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "text text text text"
+      "tone pips . clock";
+    align-items: center;
+    gap: 2px 10px;
+    padding: 5px 12px 4px;
+  }
+  .beat-tone {
+    grid-area: tone;
+    font-size: var(--fs-caption);
+  }
+  .beat-text {
+    grid-area: text;
   }
   .beat-text:not(:empty) {
     padding-left: 0;
     border-left: 0;
   }
+  .beat-text span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    line-height: 1.3;
+  }
+  .beat-pips {
+    grid-area: pips;
+  }
   .beat .slowmo {
+    grid-area: clock;
     display: block;
-    margin-left: auto;
+  }
+  .flight {
+    flex-wrap: wrap;
+    align-content: center;
+    gap: 2px 10px;
+    padding: 4px 4px 4px 12px;
+  }
+  .flight-text {
+    flex: 1 1 60%;
+    white-space: normal;
+    line-height: 1.25;
+  }
+  .flight-bar {
+    order: 3;
+    flex: 1 1 45%;
+  }
+  .flight-sum {
+    order: 4;
+  }
+  .flight-close {
+    width: 40px;
+    height: 40px;
   }
   .summary-row {
     display: block;
@@ -2678,7 +3340,13 @@ svg.stroke {
     display: none;
   }
   .btn-next {
-    padding: 0 16px;
+    gap: 6px;
+    padding: 0 12px;
+  }
+  .btn-follow {
+    flex: none;
+    width: 40px;
+    padding: 0;
   }
   .step-title {
     font-size: 21px;
@@ -2726,12 +3394,34 @@ svg.stroke {
   .theatre {
     padding: 6px;
   }
+  /* The strip carries the beat's words here too (the stage is too small for a callout): two lines of them. */
   .sheet {
-    grid-template-rows: 30px minmax(0, 1fr);
+    grid-template-rows: 44px minmax(0, 1fr);
     border-radius: var(--r-card);
   }
   .beat {
     padding: 0 12px;
+  }
+  .beat:has(.beat-text:not(:empty)) .beat-tone {
+    display: none;
+  }
+  .beat-text:not(:empty) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .beat-text span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    line-height: 1.3;
+  }
+  .flight-sum {
+    display: none;
+  }
+  .flight-close {
+    width: 40px;
+    height: 40px;
   }
   .summary-row {
     display: block;
@@ -2770,6 +3460,9 @@ svg.stroke {
   }
   .step > .controls {
     order: 1;
+  }
+  .step > .hook {
+    order: -1;
   }
   .dock {
     padding: 0 12px;
@@ -2820,6 +3513,12 @@ svg.stroke {
   .icon-link {
     width: 44px;
     height: 40px;
+  }
+  .compare tbody th .mx {
+    display: flex;
+    align-items: center;
+    min-width: 40px;
+    min-height: 40px;
   }
 }
 

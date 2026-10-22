@@ -1,33 +1,41 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
-import type { Sim } from "@/lib/sim/engine";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Brand } from "./brand";
-import { freshNote, type Live } from "./live";
+import type { Live } from "./live";
 
-/** Space or k toggles playback; arrow keys move between steps. Ignored while a control has focus. */
-export function usePlayerKeys(live: Live, onStep?: (delta: number) => void) {
+/**
+ * Space or k toggles playback; arrow keys move between steps; `keys` adds single keys of the player's own ([ and ] for
+ * beats, f to follow a request, 1–3 for steps). Ignored while a control has focus.
+ */
+export function usePlayerKeys(live: Pick<Live, "toggle">, onStep?: (delta: number) => void, keys: Record<string, () => void> = {}) {
+  const latest = useRef({ live, onStep, keys });
+  latest.current = { live, onStep, keys };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (t && t.closest("input, select, textarea, button, summary, a, [contenteditable], [popover]")) return;
+      const { live, onStep, keys } = latest.current;
       if (e.key === " " || e.key === "k") {
         e.preventDefault();
         live.toggle();
       } else if (onStep && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
         e.preventDefault();
         onStep(e.key === "ArrowRight" ? 1 : -1);
+      } else if (keys[e.key]) {
+        e.preventDefault();
+        keys[e.key]();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [live, onStep]);
+  }, []);
 }
 
 /**
- * The one-screen layout. The bar on top; the theatre, where a beat strip sits on the stage's sheet (and a flight
- * strip will sit under it, once a request can be followed); the panel, whose reading part scrolls while the numbers
+ * The one-screen layout. The bar on top; the theatre, where a beat strip sits on the stage's sheet (a followed
+ * request's flight strip takes the strip's row while it runs); the panel, whose reading part scrolls while the numbers
  * stay pinned below it; and the dock. Phones add a summary row of the headline number. The document never scrolls.
  */
 export function Shell({
@@ -78,23 +86,3 @@ export function Shell({
   );
 }
 
-/**
- * The narration line on the stage's sheet: along its top edge, or its bottom edge on phones. Until scripted beats
- * arrive it says what the scene shows (`lead`) and carries the scene's events: a fresh one in ink, then the latest
- * one quietly until the next. Phones also give it the slow-motion clock, which the dock has no room for.
- */
-export function BeatStrip({ lead, sim, clock }: { lead?: ReactNode; sim: Sim; clock?: ReactNode }) {
-  const fresh = freshNote(sim);
-  const text = fresh ?? sim.notes[sim.notes.length - 1]?.text ?? "";
-  return (
-    <div className={`beat${fresh ? " fresh" : ""}`}>
-      {lead}
-      <p className="beat-text">{text && <span key={text}>{text}</span>}</p>
-      {/* Only a fresh event is announced, not the latest one shown again after a step switch. */}
-      <span className="sr-only" aria-live="polite">
-        {fresh ?? ""}
-      </span>
-      {clock}
-    </div>
-  );
-}

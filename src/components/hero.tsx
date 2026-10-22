@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { HERO } from "@/lib/lessons/hero";
 import { MetricList, Transport, useLiveSims } from "./live";
-import { BeatStrip } from "./shell";
+import { BeatStrip } from "./beats";
 import { Stage } from "./stage";
 
 /** The home page's live scene: already running when you arrive, so it shows the visual language in motion. */

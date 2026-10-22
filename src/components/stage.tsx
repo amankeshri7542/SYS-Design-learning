@@ -31,9 +31,11 @@ import {
 } from "@/lib/sim/layout";
 import { flowOf } from "@/lib/sim/metrics";
 import type { Glyph, NodeSpec, SceneSpec } from "@/lib/sim/types";
+import type { Focus } from "@/lib/lessons/beats";
 import { DUR, INTRO, TAU as SMOOTH, smooth } from "@/lib/motion";
+import { Callout, type CalloutSpot } from "./beats";
 import { Body, slotSpots, type Spot } from "./glyph";
-import { Batch, FAINT, RINGS, TAU, Trails, drawFx, parkSpot, queueSpot, shape, squeeze as squeezeOf, styleOf, wedge, type FxDraw, type Palette } from "./stage-draw";
+import { Batch, FAINT, RINGS, TAU, Trails, drawFx, parkSpot, queueSpot, shape, squeeze as squeezeOf, styleOf, wedge, type FxDraw, type Look, type Palette } from "./stage-draw";
 
 export type DrawFn = (dt: number) => void;
 
@@ -50,6 +52,8 @@ interface Box {
   room: number;
   /** The label's block, when a rail runs under it and it needs a plate (viewBox units). */
   plate?: Rect;
+  /** The station, its label and its badges (viewBox units): what a callout keeps clear of. */
+  rects: Rect[];
 }
 
 interface Layout {
@@ -82,6 +86,7 @@ function layoutIn(spec: SceneSpec, frame: Frame): Layout {
       glyph,
       side: p.side,
       plate: p.plate ? p.label : undefined,
+      rects: p.rects,
       room: Math.max(0, Math.min(p.x - p.w / 2, ...left.filter((d) => d > -p.w))),
       spots: slotSpots(glyph, size.w, size.h, n.slots ?? 0).map((q) => ({ x: p.x + q.x * s, y: p.y + q.y * s, r: q.r * s })),
     });
@@ -185,6 +190,8 @@ export function Stage({
   drawRef,
   frameSpecs,
   focus,
+  callout,
+  follow,
 }: {
   sim: Sim;
   spec: SceneSpec;
@@ -194,8 +201,12 @@ export function Stage({
   drawRef: RefObject<DrawFn | null>;
   /** Size the frame for all of these (every step of a lesson), so switching steps never rescales. */
   frameSpecs?: SceneSpec[];
-  /** Node ids the narration is about: everything else on the stage dims. */
-  focus?: string[];
+  /** What the narration is about: those stations, rails and dots stay bright; everything else on the stage dims. */
+  focus?: Focus | null;
+  /** The current beat's words, shown beside what it points at when the stage has room (wide layouts only). */
+  callout?: { id: string; text: string; waiting: boolean } | null;
+  /** The request being followed: it gets a halo, and every other request steps back. */
+  follow?: number | null;
 }) {
   const scene = useMemo(() => (frameSpecs ? combine(frameSpecs) : sceneOf(spec)), [frameSpecs, spec]);
   const edges = useMemo(() => edgesOf(spec), [spec]);
@@ -256,9 +267,16 @@ export function Stage({
     };
   }, []);
 
-  const focusSet = useMemo(() => (focus?.length ? new Set(focus) : null), [focus]);
-  const live = useRef({ sim, reduced, layout, box, intro: run, focus: focusSet });
-  live.current = { sim, reduced, layout, box, intro: run, focus: focusSet };
+  // The stations in focus (a rail's two ends count), keyed by content so a new focus object each render costs nothing.
+  const focusKey = JSON.stringify(focus ?? null);
+  const focusSet = useMemo(() => {
+    const f = JSON.parse(focusKey) as Focus | null;
+    const ids = [...(f?.nodes ?? []), ...(f?.link ?? [])];
+    return ids.length ? new Set(ids) : null;
+  }, [focusKey]);
+  const dotFocus = focus?.dots ?? null;
+  const live = useRef({ sim, reduced, layout, box, intro: run, focus: focusSet, dots: dotFocus, follow: follow ?? null });
+  live.current = { sim, reduced, layout, box, intro: run, focus: focusSet, dots: dotFocus, follow: follow ?? null };
   const st = useRef({
     vis: new Map<number, Pt>(),
     fx: [] as FxDraw[],
@@ -273,11 +291,13 @@ export function Stage({
     pops: new Map<number, number>(),
     dots: new Batch(),
     trails: new Trails(),
+    /** Where the followed request has been on screen, for its path. */
+    path: { id: 0, pts: [] as Pt[] },
   });
 
   useEffect(() => {
     drawRef.current = (dt: number) => {
-      const { sim, reduced, layout: L, box, intro, focus } = live.current;
+      const { sim, reduced, layout: L, box, intro, focus, dots: dotFocus, follow } = live.current;
       const canvas = canvasRef.current;
       const wrap = wrapRef.current;
       if (!L || !box || !canvas || !wrap) return;
@@ -443,8 +463,31 @@ export function Stage({
       }
       ctx.globalAlpha = 1;
 
-      // Focus: requests not at, or heading to, a station in focus fade back.
-      const dim = (r: Req) => (focus && !focus.has(r.at) && !focus.has(r.to) && !focus.has(r.from) ? 0.4 : 1);
+      // Focus: requests the narration isn't about step back. A followed request outranks any focus.
+      const kind = (r: Req, look: Look) => {
+        switch (dotFocus) {
+          case "waiting":
+            return r.phase === "wait" && (!focus || focus.has(r.at));
+          case "late":
+            return look.color === P.slow;
+          case "gaveup":
+            return look.shape === "ring" && look.color === P.err;
+          case "stale":
+            return look.shape === "donut";
+          case "turned":
+            return look.shape === "square" && look.color === P.turned;
+          case "failed":
+            return look.shape === "diamond";
+          default:
+            return true;
+        }
+      };
+      const dim = (r: Req, look: Look) => {
+        if (follow) return r.id === follow ? 1 : 0.3;
+        if (dotFocus) return kind(r, look) ? 1 : 0.3;
+        return focus && !focus.has(r.at) && !focus.has(r.to) && !focus.has(r.from) ? 0.4 : 1;
+      };
+      let halo: { p: Pt; size: number } | null = null;
       const atClient = (id: string) => sim.nodes.get(id)?.spec.kind === "client";
       const fromCache = (id: string) => sim.nodes.get(id)?.spec.kind === "cache";
       const popped = new Set<number>();
@@ -492,11 +535,30 @@ export function Stage({
           if (pos.size && !look.small) base = pos.size;
           size = base * (r.cost > 1 ? 1.35 : 1);
         }
-        const alpha = look.alpha * fade * dim(r);
+        const alpha = look.alpha * fade * dim(r, look);
+        if (r.id === follow) halo = { p, size };
         if (work !== undefined && !reduced) wipes.push({ look, alpha, p, size, work });
         else s.dots.add(look, alpha, p.x, p.y, size);
       }
       for (const id of s.pops.keys()) if (!popped.has(id)) s.pops.delete(id);
+      // The followed request's way so far: a fine ink line behind it.
+      if (follow !== s.path.id) s.path = { id: follow ?? 0, pts: [] };
+      if (halo) {
+        const h: { p: Pt } = halo;
+        const end = s.path.pts[s.path.pts.length - 1];
+        if (!end || Math.hypot(end.x - h.p.x, end.y - h.p.y) > 3 / k) s.path.pts.push(h.p);
+      }
+      if (s.path.pts.length > 1) {
+        ctx.save();
+        ctx.strokeStyle = P.ink;
+        ctx.globalAlpha = 0.45 * fade;
+        ctx.lineWidth = 1.5 / k;
+        ctx.setLineDash([3 / k, 4 / k]);
+        ctx.beginPath();
+        s.path.pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+        ctx.stroke();
+        ctx.restore();
+      }
       s.trails.draw(ctx, 2.2 / k, fade);
       s.dots.draw(ctx);
       // Requests in service: a ghost of the dot with a clock-wipe of the work still to do.
@@ -510,6 +572,16 @@ export function Stage({
         ctx.arc(w.p.x, w.p.y, w.size, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - w.work));
         ctx.closePath();
         ctx.fill();
+      }
+      // A halo in ink around the followed request: never a dot colour, since it is not a state of the request.
+      if (halo) {
+        const h: { p: Pt; size: number } = halo;
+        ctx.globalAlpha = fade;
+        ctx.strokeStyle = P.ink;
+        ctx.lineWidth = 2 / k;
+        ctx.beginPath();
+        ctx.arc(h.p.x, h.p.y, h.size + 4 / k, 0, TAU);
+        ctx.stroke();
       }
       ctx.globalAlpha = 1;
       s.vis = next;
@@ -561,6 +633,52 @@ export function Stage({
     };
   }, [drawRef]);
 
+  // Where the callout may go, in CSS px: beside what the beat points at, clear of every station and label. Wide
+  // layouts only; phones and crowded stages carry the words in the strip.
+  const spot = useMemo<CalloutSpot | null>(() => {
+    if (!layout || !box || layout.frame.mode !== "wide") return null;
+    const f = JSON.parse(focusKey) as Focus | null;
+    const { frame, boxes } = layout;
+    const k = Math.min(box.w / frame.W, box.h / frame.H);
+    const ox = (box.w - frame.W * k) / 2;
+    const oy = (box.h - frame.H * k) / 2;
+    const px = (r: Rect): Rect => ({ x: r.x * k + ox, y: r.y * k + oy, w: r.w * k, h: r.h * k });
+    const union = (rs: Rect[]): Rect => {
+      const x = Math.min(...rs.map((r) => r.x));
+      const y = Math.min(...rs.map((r) => r.y));
+      return { x, y, w: Math.max(...rs.map((r) => r.x + r.w)) - x, h: Math.max(...rs.map((r) => r.y + r.h)) - y };
+    };
+    let anchor: Rect | null = null;
+    let block: Rect | null = null;
+    const b = f?.nodes?.[0] ? boxes.get(f.nodes[0]) : undefined;
+    if (b) {
+      const body = { x: b.x - b.w / 2, y: b.y - b.h / 2, w: b.w, h: b.h };
+      anchor = body;
+      block = union(b.rects);
+      if (f?.dots === "waiting" && b.room > 0) {
+        // The line in front of the station: point at where it forms.
+        const len = Math.min(b.room, b.w * 1.4);
+        anchor = { x: b.x - b.w / 2 - len, y: b.y - b.h * 0.3, w: len, h: b.h * 0.6 };
+        block = union([anchor, ...b.rects]);
+      }
+    } else if (f?.link) {
+      const [p, q] = f.link.map((id) => boxes.get(id));
+      if (p && q) {
+        const mid = bezier(curve(p, q, frame.mode), 0.5);
+        anchor = block = { x: mid.x - 4, y: mid.y - 4, w: 8, h: 8 };
+      }
+    }
+    if (!anchor || !block) return null;
+    const rails = edges.flatMap((e) => {
+      const p = boxes.get(e.a);
+      const q = boxes.get(e.b);
+      if (!p || !q) return [];
+      const c = curve(p, q, frame.mode);
+      return [Array.from({ length: 21 }, (_, i) => bezier(c, i / 20)).map((pt) => ({ x: pt.x * k + ox, y: pt.y * k + oy }))];
+    });
+    return { anchor: px(anchor), block: px(block), obstacles: [...boxes.values()].flatMap((x) => x.rects.map(px)), rails, box };
+  }, [layout, box, focusKey, edges]);
+
   return (
     <div
       className="stage"
@@ -572,9 +690,21 @@ export function Stage({
     >
       {/* The measured layout replaces the first guess outright: stations never glide from a guessed place. */}
       {(layout ? [layout] : (guesses ?? [])).map((l) => (
-        <StageSvg key={`${layout ? "" : "guess-"}${l.frame.mode}`} sim={sim} spec={spec} layout={l} edges={edges} label={label} reduced={reduced} intro={run} focus={focusSet} />
+        <StageSvg
+          key={`${layout ? "" : "guess-"}${l.frame.mode}`}
+          sim={sim}
+          spec={spec}
+          layout={l}
+          edges={edges}
+          label={label}
+          reduced={reduced}
+          intro={run}
+          focus={focusSet}
+          sockets={!!focus?.sockets}
+        />
       ))}
       <canvas ref={canvasRef} className="stage-canvas" aria-hidden="true" />
+      {callout && spot && !run && <Callout id={callout.id} text={callout.text} spot={spot} waiting={callout.waiting} />}
     </div>
   );
 }
@@ -607,6 +737,7 @@ function StageSvg({
   reduced,
   intro,
   focus,
+  sockets,
 }: {
   sim: Sim;
   spec: SceneSpec;
@@ -616,10 +747,15 @@ function StageSvg({
   reduced: boolean;
   intro: Intro | null;
   focus: Set<string> | null;
+  /** Outline the focused stations' sockets (their workers). */
+  sockets: boolean;
 }) {
   const { frame, boxes } = layout;
   const k = frame.k;
   const lbViews = [...sim.nodes.values()].filter((n) => n.spec.health);
+  // Armed events on their way: the station they will happen to counts down to them, in the system's own time.
+  const due = new Map<string, number>();
+  for (const p of sim.pending) if (p.node && !due.has(p.node)) due.set(p.node, Math.max(0, p.at - sim.t));
   const leaders = new Set(spec.nodes.flatMap((n) => (n.leader ? [n.leader] : [])));
   // Nodes that appear after the scene has settled (a step adds a cache, a queue…) enter in the switch's second beat
   // with a one-time accent ring.
@@ -760,6 +896,8 @@ function StageSvg({
               i={rank(n.id)}
               known={known(n)}
               focused={!focus || focus.has(n.id)}
+              pointed={sockets && !!focus?.has(n.id)}
+              countdown={due.has(n.id) ? `${(due.get(n.id)! / 1000).toFixed(1)} s` : undefined}
             />
           );
         })}
@@ -867,6 +1005,8 @@ const NodeView = memo(function NodeView({
   i,
   known,
   focused,
+  pointed,
+  countdown,
 }: {
   n: NodeSpec;
   b: Box;
@@ -887,6 +1027,10 @@ const NodeView = memo(function NodeView({
   i: number;
   known: boolean;
   focused: boolean;
+  /** The narration points at this station's sockets. */
+  pointed: boolean;
+  /** Time until an armed event happens here ("0.6 s"). */
+  countdown?: string;
 }) {
   const size = SIZES[b.glyph];
   // CSS px to the node's own units: stage text keeps its size however the scene is scaled.
@@ -899,7 +1043,7 @@ const NodeView = memo(function NodeView({
   return (
     // Outer group glides between positions; inner group plays the entrances and state changes.
     <g className={`node-pos${focused ? "" : " dim"}`} style={{ transform: `translate(${b.x}px, ${b.y}px) scale(${s})`, "--ns": s } as CSSProperties}>
-      <g className={`node g-${b.glyph} ${cls}${fresh ? " entering" : ""}${known ? " known" : ""}`} style={{ "--i": i } as CSSProperties}>
+      <g className={`node g-${b.glyph} ${cls}${fresh ? " entering" : ""}${known ? " known" : ""}${pointed ? " spot-sockets" : ""}`} style={{ "--i": i } as CSSProperties}>
         {fresh && <rect className="fresh-ring" x={-size.w / 2 - 8} y={-size.h / 2 - 8} width={size.w + 16} height={size.h + 16} rx="16" />}
         <g className="frame">
           <Body glyph={b.glyph} w={size.w} h={size.h} slots={slots} />
@@ -923,7 +1067,11 @@ const NodeView = memo(function NodeView({
         ) : (
           badge && <Badge text={badge} tone={tone ?? "bad"} x={size.w / 2} y={-size.h / 2} k={k} s={s} dir={1} />
         )}
-        {role && <Badge text={role} tone="role" x={-size.w / 2} y={-size.h / 2} k={k} s={s} dir={-1} />}
+        {role ? (
+          <Badge text={role} tone="role" x={-size.w / 2} y={-size.h / 2} k={k} s={s} dir={-1} />
+        ) : (
+          countdown && <Badge text={countdown} tone="clock" x={-size.w / 2} y={-size.h / 2} k={k} s={s} dir={-1} />
+        )}
       </g>
     </g>
   );
@@ -1065,5 +1213,7 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
   }
   const pill = s.breaker ? n.breaker.state : undefined;
   const badge = s.kind === "db" && s.leader && sim.partitioned ? { text: "CUT OFF", tone: "bad" } : undefined;
-  return { cls: n.hot ? "hot" : "", sub, badge, pill };
+  // A station with no workers at all is stalled: news, even before a line forms.
+  const stalled = (s.kind === "server" || s.kind === "db") && !slots && !s.sink;
+  return { cls: n.hot ? "hot" : stalled ? "stalled" : "", sub, badge, pill };
 }

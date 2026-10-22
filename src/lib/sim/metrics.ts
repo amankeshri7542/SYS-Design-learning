@@ -35,6 +35,13 @@ export interface MetricSpec {
   hint?: string;
   /** Override which direction is good news (e.g. more of the bot's requests turned away). */
   better?: Better;
+  /**
+   * What the number is judged against, in its own unit (ms for times, 0–1 for shares). Response times default to the
+   * scene's latency target; other metrics have none unless a lesson gives one.
+   */
+  target?: number;
+  /** The number read as a sentence, for the row's explainer. Defaults to a sentence for the metric's kind. */
+  explain?: (v: number | null, sim: Sim) => string;
 }
 
 /** Which direction is good news. Neutral metrics (how many servers are in use) never get a verdict. */
@@ -101,8 +108,12 @@ export function measure(sim: Sim, m: MetricSpec): number | null {
       return share(sim, m, (r) => r === "rejected");
     case "fallback":
       return share(sim, m, (r) => r === "fallback");
-    case "answered":
-      return share(sim, m, (r) => r !== "error" && r !== "rejected");
+    case "answered": {
+      const s = share(sim, m, (r) => r !== "error" && r !== "rejected");
+      // Requests went out for a whole window and none came back: that is no answers at all, not "no data".
+      if (s === null && !m.tag && sim.t >= sim.windowMs * 2 && sim.logical.count(sim.t) > 0) return 0;
+      return s;
+    }
     case "stale":
       return share(sim, m, (r) => r === "stale", (r) => r === "ok" || r === "stale");
     case "throughput": {
@@ -225,6 +236,56 @@ export function isLatency(m: MetricSpec) {
   return m.id === "p50" || m.id === "p95";
 }
 
+/** What a metric is judged against, if anything: its own target, or for a response time the scene's latency target. */
+export function targetOf(m: MetricSpec, sloMs: number): number | null {
+  return m.target ?? (isLatency(m) ? sloMs : null);
+}
+
+/** "target ≤ 400 ms" or "target ≥ 99%", or null for a metric with no target. */
+export function formatTarget(m: MetricSpec, sloMs: number): string | null {
+  const t = targetOf(m, sloMs);
+  if (t === null) return null;
+  return `target ${betterIs(m) === "high" ? "≥" : "≤"} ${formatMetric(m, t)}`;
+}
+
+const SAYS: Record<MetricId, (v: string) => string> = {
+  p50: (v) => `Half of all requests are answered within ${v}.`,
+  p95: (v) => `The slowest 1 in 20 requests takes ${v} or longer; the rest are faster.`,
+  errors: (v) => `${v} of requests failed or gave up waiting.`,
+  rejected: (v) => `${v} of requests were turned away on purpose.`,
+  stale: (v) => `${v} of answers were out of date.`,
+  fallback: (v) => `${v} were answered at once with a fallback instead of waiting.`,
+  throughput: (v) => `${v}: answers coming back each second.`,
+  hit: (v) => `${v} of reads were answered by the cache, without asking further.`,
+  util: (v) => `${v} of the workers are busy. Past about 70%, a line starts to form.`,
+  peak: (v) => `The busiest machine is ${v} busy.`,
+  load: (v) => `${v} arriving each second.`,
+  inRotation: (v) => `${v} servers are getting traffic.`,
+  queue: (v) => `${v} waiting in line right now.`,
+  servers: (v) => `${v} servers are running, and costing money.`,
+  moved: (v) => `${v} of keys changed owner at the last change of members.`,
+  amplify: (v) => `${v} attempts for every real request. ×1.0 means retries add no load.`,
+  conflicts: (v) => `${v} keys were written on both sides while the link was down.`,
+  answered: (v) => `${v} of requests got a real answer in the end.`,
+  jobWait: (v) => `The slowest 1 in 20 jobs takes ${v} or longer to finish.`,
+  unsynced: (v) => `${v} writes are waiting to be copied across.`,
+};
+
+/**
+ * The number read as plain sentences: what it says right now, what it is judged against, and over how much time it is
+ * measured (which is why it lags the scene a little).
+ */
+export function explainMetric(m: MetricSpec, v: number | null, sim: Sim): string[] {
+  const now = v === null ? "Nothing has been measured yet." : (m.explain?.(v, sim) ?? SAYS[m.id](formatMetric(m, v)));
+  const target = targetOf(m, sim.spec.sloMs);
+  const onScreen = sim.windowMs / (sim.spec.timeScale ?? 0.1) / 1000;
+  return [
+    now,
+    ...(target === null ? [] : [`The target is ${formatMetric(m, target)} or ${betterIs(m) === "high" ? "more" : "less"}.`]),
+    `Averaged over the last ${sim.windowMs} ms, which is ${Number.isInteger(onScreen) ? onScreen : onScreen.toFixed(1)} s on screen at 1×.`,
+  ];
+}
+
 /** A plain signed difference in the metric's own unit ("−1", "+52 ms", "+64 pts"), with no verdict. */
 export function formatDiff(m: MetricSpec, d: number): string {
   const sign = d < 0 ? "−" : "+";
@@ -250,7 +311,8 @@ export function formatDiff(m: MetricSpec, d: number): string {
  * times up, "new" from zero.
  */
 export function formatChange(from: number, to: number): string {
-  if (from === 0) return "new";
+  // From nothing (or from so little that a ratio would mean nothing): "new".
+  if (Math.abs(from) < 1e-6 * Math.max(1, Math.abs(to))) return "new";
   if (to / from >= 9.95) return `×${Math.round(to / from)}`;
   const pct = Math.round((Math.abs(to - from) / from) * 100);
   return `${to < from ? "−" : "+"}${pct < 1 ? "<1" : pct}%`;
@@ -258,7 +320,7 @@ export function formatChange(from: number, to: number): string {
 
 /** How big a change is, from 0 to 1 (a doubling or more, or anything from zero, is 1): the length of its bar. */
 export function changeSize(from: number, to: number): number {
-  return from === 0 ? 1 : Math.min(1, Math.abs(to - from) / Math.abs(from));
+  return Math.abs(from) < 1e-6 * Math.max(1, Math.abs(to)) ? 1 : Math.min(1, Math.abs(to - from) / Math.abs(from));
 }
 
 /** How much simulated time one second of screen time shows: "1 s on screen = 100 ms". */

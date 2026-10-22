@@ -2,18 +2,28 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Sim } from "@/lib/sim/engine";
-import { betterIs, changeSize, formatChange, formatClock, formatDiff, formatMetric, isLatency, measure, toneOf, type MetricSpec } from "@/lib/sim/metrics";
+import { betterIs, changeSize, explainMetric, formatChange, formatClock, formatDiff, formatMetric, formatTarget, measure, toneOf, type MetricSpec } from "@/lib/sim/metrics";
+import { stepGrid } from "@/lib/lessons/beats";
 import type { SceneSpec } from "@/lib/sim/types";
 import { useMode, useReducedMotion, useVisible } from "./hooks";
 import type { DrawFn } from "./stage";
 
 const HISTORY = 40;
 
+/** Reduced motion opens on a settled still frame this far past the warm-up (simulated ms). */
+const STILL = 2600;
+
 /**
  * Runs one or more simulations in lockstep (a lesson's problem and fix see the same clock and traffic),
  * plus the animation loop and playback state. Nothing advances while the element is off screen.
+ *
+ * `onGrid` is called on a fixed grid of simulated time (the lesson's beats); returning true pauses every world there.
+ * `hold` keeps the clients quiet until `start()`, so a lesson can introduce its parts before any traffic runs.
  */
-export function useLiveSims(specs: SceneSpec[], opts: { onFrame?: (sims: Sim[], realDt: number) => void; warm?: number } = {}) {
+export function useLiveSims(
+  specs: SceneSpec[],
+  opts: { onFrame?: (sims: Sim[], realDt: number) => void; onGrid?: (sims: Sim[]) => boolean; warm?: number; hold?: boolean } = {},
+) {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [epoch, setEpoch] = useState(0);
@@ -26,6 +36,7 @@ export function useLiveSims(specs: SceneSpec[], opts: { onFrame?: (sims: Sim[], 
   const sims = useRef<{ list: Sim[]; epoch: number } | null>(null);
   if (!sims.current || sims.current.epoch !== epoch || sims.current.list.length !== specs.length) {
     const list = specs.map((s) => new Sim(s));
+    if (opts.hold) for (const s of list) s.hold();
     if (warm) for (const s of list) s.step(warm);
     sims.current = { list, epoch };
   }
@@ -50,14 +61,19 @@ export function useLiveSims(specs: SceneSpec[], opts: { onFrame?: (sims: Sim[], 
     if (!visible || started.current) return;
     started.current = true;
     if (reduced) {
-      for (const s of list) s.step(2600);
+      // A still frame is a settled scene: nothing is held back from it.
+      const still = specs[0]?.stillMs ?? STILL;
+      for (const s of list) {
+        s.start();
+        s.step(still);
+      }
       setTick((t) => t + 1);
     } else setPlaying(true);
   }, [visible, reduced, list]);
 
   const drawRef = useRef<DrawFn | null>(null);
-  const loop = useRef({ playing, speed, stepUntil: 0, list, onFrame: opts.onFrame });
-  loop.current = { ...loop.current, playing, speed, list, onFrame: opts.onFrame };
+  const loop = useRef({ playing, speed, stepUntil: 0, list, onFrame: opts.onFrame, onGrid: opts.onGrid });
+  loop.current = { ...loop.current, playing, speed, list, onFrame: opts.onFrame, onGrid: opts.onGrid };
   const timeScale = specs[0]?.timeScale ?? 0.1;
 
   // The loop only runs while the scene is on screen and the tab is showing: no frames, no wake-ups, otherwise.
@@ -73,7 +89,13 @@ export function useLiveSims(specs: SceneSpec[], opts: { onFrame?: (sims: Sim[], 
       const running = L.playing || now < L.stepUntil;
       if (running) {
         const ms = dt * timeScale * L.speed;
-        for (const s of L.list) s.step(ms);
+        if (stepGrid(L.list, ms, L.onGrid)) {
+          // A beat asked for a pause: every world holds still right where it fired.
+          L.playing = false;
+          L.stepUntil = 0;
+          setPlaying(false);
+          setTick((t) => t + 1);
+        }
         L.onFrame?.(L.list, dt * L.speed);
       }
       drawRef.current?.(dt);
@@ -112,6 +134,26 @@ export function useLiveSims(specs: SceneSpec[], opts: { onFrame?: (sims: Sim[], 
   };
   const toggle = () => setPlaying((p) => !p);
   const refresh = () => setTick((t) => t + 1);
+  const pause = () => {
+    loop.current.playing = false;
+    setPlaying(false);
+  };
+  const play = () => {
+    if (!reduced) setPlaying(true);
+  };
+  /**
+   * Fast-forward every world, on the grid, until `until` holds (or `capMs` of simulated time has passed). How the
+   * learner skips to the next beat, and how reduced motion steps from one still frame to the next. True if it held.
+   */
+  const advance = (until: (sims: Sim[]) => boolean, capMs = 30000) => {
+    const held = stepGrid(list, capMs, until);
+    setTick((t) => t + 1);
+    return held;
+  };
+  /** Let every world's clients send, from now (both worlds together, so the comparison stays fair). */
+  const start = () => {
+    for (const s of list) s.start();
+  };
 
   return {
     sims: list,
@@ -126,6 +168,10 @@ export function useLiveSims(specs: SceneSpec[], opts: { onFrame?: (sims: Sim[], 
     step,
     restart,
     refresh,
+    pause,
+    play,
+    advance,
+    start,
     rootRef,
     drawRef,
     clock: formatClock(timeScale, speed),
@@ -180,9 +226,10 @@ export function Clock({ live }: { live: Live }) {
   );
 }
 
-/** "target ≤ 400 ms" under a response-time label. */
+/** "target ≤ 400 ms" under a response-time label, or any metric that has a target of its own. */
 function Target({ m, sloMs }: { m: MetricSpec; sloMs: number }) {
-  return isLatency(m) ? <small className="target">target ≤ {sloMs} ms</small> : null;
+  const t = formatTarget(m, sloMs);
+  return t ? <small className="target">{t}</small> : null;
 }
 
 /**
@@ -214,7 +261,9 @@ function useSmoothed() {
     }
     if (m.id === "queue" || m.id === "servers" || m.id === "conflicts" || m.id === "inRotation" || m.id === "unsynced") return v;
     const p = prev.current.get(key);
-    const next = p === undefined ? v : p + (v - p) * 0.35;
+    // Glide toward the value, and land on it once the gap is too small to show (a share easing to 0 reaches 0).
+    const step = p === undefined ? v : p + (v - p) * 0.35;
+    const next = Math.abs(step - v) < 1e-4 * Math.max(1, Math.abs(v)) ? v : step;
     prev.current.set(key, next);
     return next;
   };
@@ -271,10 +320,30 @@ export interface Column {
 /**
  * The same metrics measured in every step's simulation, side by side: the lesson's argument in numbers.
  * `verdict` (a problem and its fix) marks changes better or worse; otherwise they are plain differences.
+ * `spot` is the row the narration points at. Tapping a row's name opens its explainer: the number read as sentences,
+ * its target, and (`why`) what made it move.
  */
-export function Compare({ metrics, columns, verdict }: { metrics: MetricSpec[]; columns: Column[]; verdict: boolean }) {
+export function Compare({ metrics, columns, verdict, spot, why = {} }: { metrics: MetricSpec[]; columns: Column[]; verdict: boolean; spot?: string; why?: Record<string, string> }) {
   const smooth = useSmoothed();
   const cue = useCues();
+  const [open, setOpen] = useState<{ m: MetricSpec; x: number; y: number } | null>(null);
+  const pop = useRef<HTMLDivElement>(null);
+  const opener = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    const el = pop.current;
+    if (!el) return;
+    const onToggle = (e: Event) => {
+      if ((e as ToggleEvent).newState === "closed") opener.current?.focus({ preventScroll: true });
+    };
+    el.addEventListener("toggle", onToggle);
+    return () => el.removeEventListener("toggle", onToggle);
+  }, []);
+  const explain = (m: MetricSpec, from: HTMLButtonElement) => {
+    const r = from.getBoundingClientRect();
+    opener.current = from;
+    setOpen({ m, x: Math.max(12, Math.min(r.left, innerWidth - 332)), y: innerHeight - r.top + 8 });
+    if (!pop.current?.matches(":popover-open")) pop.current?.showPopover();
+  };
   const activeIndex = Math.max(0, columns.findIndex((c) => c.active));
   const cells = metrics.map((m) => columns.map((c, j) => smooth(`${j}:${m.label}`, measure(c.sim, m), m)));
   const history = useHistory(
@@ -284,6 +353,7 @@ export function Compare({ metrics, columns, verdict }: { metrics: MetricSpec[]; 
   );
   const two = columns.length === 2;
   return (
+    <>
     <table className="compare" id="compare" tabIndex={-1}>
       <caption className="sr-only">Live metrics for each version of the scene</caption>
       <thead>
@@ -314,9 +384,11 @@ export function Compare({ metrics, columns, verdict }: { metrics: MetricSpec[]; 
           const best = known.length > 1 && differs && better !== "neutral" ? (better === "low" ? Math.min(...known) : Math.max(...known)) : null;
           const change = two ? changeOf(m, row[0], row[1], better !== "neutral") : null;
           return (
-            <tr key={m.label}>
+            <tr key={m.label} className={spot === m.label ? "spot" : undefined}>
               <th scope="row" title={m.hint}>
-                <span>{m.label}</span>
+                <button type="button" className="mx" aria-haspopup="dialog" onClick={(e) => explain(m, e.currentTarget)}>
+                  {m.label}
+                </button>
                 <Target m={m} sloMs={columns[0].sim.spec.sloMs} />
               </th>
               {row.map((v, j) => (
@@ -345,6 +417,33 @@ export function Compare({ metrics, columns, verdict }: { metrics: MetricSpec[]; 
         })}
       </tbody>
     </table>
+            <div ref={pop} id="metric-pop" className="metric-pop" popover="auto" role="dialog" aria-labelledby="metric-pop-h" style={open ? { left: open.x, bottom: open.y } : undefined}>
+              {open && (
+                <>
+                  <div className="term-head">
+                    <h2 id="metric-pop-h">{open.m.label}</h2>
+                    <button type="button" className="btn btn-icon key-close" popoverTarget="metric-pop" popoverTargetAction="hide" aria-label="Close">
+                      <svg viewBox="0 0 16 16" aria-hidden="true" className="stroke">
+                        <path d="M4 4l8 8M12 4l-8 8" />
+                      </svg>
+                    </button>
+                  </div>
+                  {open.m.hint && <p className="term-short">{open.m.hint}</p>}
+                  <p className="term-alias">{columns[activeIndex].label}, now:</p>
+                  {explainMetric(open.m, measure(columns[activeIndex].sim, open.m), columns[activeIndex].sim).map((l) => (
+                    <p key={l} className="metric-line">
+                      {l}
+                    </p>
+                  ))}
+                  {why[open.m.label] && (
+                    <p className="metric-why">
+                      <strong>Why it moved.</strong> {why[open.m.label]}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+    </>
   );
 }
 
@@ -391,7 +490,7 @@ export function MetricSummary({ metric, columns, verdict, onOpen }: { metric: Me
   return (
     <button type="button" className="summary" onClick={onOpen}>
       <span className="summary-label">{metric.label}</span>
-      {isLatency(metric) && <span className="sr-only"> (target ≤ {columns[0].sim.spec.sloMs} ms)</span>}
+      {formatTarget(metric, columns[0].sim.spec.sloMs) && <span className="sr-only"> ({formatTarget(metric, columns[0].sim.spec.sloMs)})</span>}
       <span className="summary-vals">
         {vals.map((v, j) => (
           <span key={columns[j].label} className={`num tone-${toneOf(metric, v, columns[j].sim.spec.sloMs)}${columns[j].active ? " on" : ""}`}>

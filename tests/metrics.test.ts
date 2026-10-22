@@ -28,6 +28,7 @@ test("a verdict row's change is a signed share of the first step, and its bar ne
   assert.equal(formatChange(100, 138), "+38%");
   assert.equal(formatChange(0.12, 0), "−100%");
   assert.equal(formatChange(2, 40), "×20", "ten times or more reads as a multiple");
+  assert.equal(formatChange(6e-30, 1), "new", "a share eased almost to zero counts as zero, not as ×1.5e+29");
   assert.equal(formatChange(0, 0.4), "new");
   assert.equal(formatChange(400, 401), "+<1%", "a visible change never reads as +0%");
   assert.equal(changeSize(360, 346), 14 / 360);

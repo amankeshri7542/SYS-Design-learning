@@ -9,7 +9,8 @@ import { formatMetric, measure } from "@/lib/sim/metrics";
 import { KeyPopover } from "./legend";
 import { ArrowIcon, Clock, MetricList, Transport, useLiveSims } from "./live";
 import { MarkVisited } from "./route-map";
-import { BeatStrip, Shell, usePlayerKeys } from "./shell";
+import { BeatStrip } from "./beats";
+import { Shell, usePlayerKeys } from "./shell";
 import { Stage } from "./stage";
 
 const P95 = CAP_METRICS[0];

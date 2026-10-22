@@ -162,6 +162,6 @@ test("R2: an open breaker slides its pill to open and breaks the payments rail",
   await expect(pill).toHaveAttribute("data-state", "open", { timeout: 20000 });
   await expect(page.locator(".theatre .break-mark")).toHaveCount(1);
   // The marker sits at the third place along the pill's foot.
-  const moved = await pill.locator(".pill-marker").evaluate((m) => new DOMMatrix(getComputedStyle(m).transform).m41);
-  expect(moved).toBeGreaterThan(0);
+  // (Its slide takes a moment.)
+  await expect.poll(() => pill.locator(".pill-marker").evaluate((m) => new DOMMatrix(getComputedStyle(m).transform).m41)).toBeGreaterThan(0);
 });

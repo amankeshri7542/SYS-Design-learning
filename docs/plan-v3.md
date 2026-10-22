@@ -1,6 +1,6 @@
 # System Lab v3 plan
 
-- **Status:** proposed, 2026-10-22. M0, M1, M2 and M3 built 2026-10-22.
+- **Status:** proposed, 2026-10-22. M0, M1, M2 and M3 built 2026-10-22. M4a built 2026-10-23; M4b not started.
 - **Planned with:** Claude Fable 5.1. **To be built with:** Claude Opus 5.5, one milestone per session.
 - **Research behind it:** `docs/research/` holds five reports. Read the one a milestone points to before starting it.
   - `design-audit.md`: visual and UX audit, art direction, home and player layouts, component inventory.
@@ -577,10 +577,28 @@ Every milestone ends with the full gate (§10), screenshots at 1440×900, 1280×
 | `tests/browser/site.spec.ts` | modified | Next walks beats then steps. Reduced motion shows the "What to watch" list and Step fires the first beat. Follow shows the flight strip. A wrong check answer spotlights the right node. |
 
 **Acceptance:**
-- [ ] On F1, a first-time viewer gets a callout pointing at Server's sockets within 3 s, and the scene pauses for the prediction.
-- [ ] On A3, pressing "Stall the service" in the beat fires the stall in both worlds at once, and the problem column shows the outage within 15 s of real time.
-- [ ] Under reduced motion, Next steps through the same beats on still frames.
-- [ ] Each beat is announced through the `aria-live` region exactly once.
+- [x] On F1, a first-time viewer gets a callout pointing at Server's sockets within 3 s (at 2.5 s, with the sockets outlined), and the scene pauses for the prediction.
+- [x] On A3, pressing "Stall the service" in the beat fires the stall in both worlds at once, and the problem column shows the outage within 15 s of real time (about 8 s of running scene).
+- [x] Under reduced motion, Next steps through the same beats on still frames; Step brings on the next beat too.
+- [x] Each beat is announced through the `aria-live` region exactly once.
+
+All four are browser tests in `tests/browser/beats.spec.ts`. Gates on 2026-10-23: typecheck, 94 unit tests, build, and the browser suite (431 passed, 5 skipped, frame budgets included) all green.
+
+**Decisions made while building M4a:**
+- **Beats fire on a 10 ms grid of simulated time.** `stepGrid` (in `beats.ts`) steps every world in lockstep and stops at each grid point for the runner, so the same beat fires at the same simulated moment at any speed or frame rate (`tests/beats.test.ts` checks four frame lengths). It gives exactly the run one big step gives.
+- **Beats fire in order.** A beat may fire once the one before has had `PACE.read` (3 s on screen at 1×) or the learner moved on. A paused beat holds both worlds. Next releases a paused beat, skips the question, or fast-forwards both worlds until the next beat's trigger really holds (so its words are never early); if it never holds within 30 s of simulated time, Next shows it anyway (`runner.skip`). Reduced motion uses the same path, and Step does what Next does until the step's beats are done.
+- **Triggers:** `at` counts from when the step's traffic began; `wait` from the previous beat; `fx` since the previous beat; `note` since the step began (or `since: "lesson"`), so an event that happens while the previous beat is still on screen isn't missed; `metric` with an optional `forMs`. Placeholders are filled in as a beat fires, so a beat's numbers never flicker and the live region announces it once.
+- **Build lines are the `parts` field** (`build` was taken by the scene builder). They are a tour with the spotlight while the clients are held (`sim.hold()`), not stations appearing one by one: the M3 intro already builds the scene along the flow, and this keeps its frame and its lesson-to-lesson continuity.
+- **Held clients keep their arrival clock and draws and send nothing,** so the traffic after `start()` is the same whenever the learner starts it. The first version re-seeded arrivals on `start()`, and clicking through the build lines changed the whole run (F1's line then came 16 s of simulated time late).
+- **Callouts:** on wide stages the beat's words sit in a card beside the station it names, with an ink leader, in the first clear spot (above, right, left, below) that keeps off every station and label, preferring spots over fewer rails. The strip then shows only the step's place in its beats. Phones, landscape phones, beats that point at the panel, and crowded stages carry the words in the strip, which grows to two lines on phones. A test checks a callout never covers a station or label.
+- **Touch layouts mark terms as words, not buttons,** and list the step's terms as 40 px chips in the panel: a 40 px target can't sit inside a sentence, and the 40 px rule stays whole. The table's row names (which open the explainer) are 40 px tall there too.
+- **The prediction can compare two worlds** (`track.afterWorld`), and a claim sentence can be read at a named beat (`headline.at`), for faults whose moment has passed by the Recap.
+- **Succeeded reads 0%, not "—", when requests went out for a whole window and none came back** (untagged `answered` only). Without it A3's outage showed as no data. The Change column's ratio now treats a value eased almost to zero as zero (it had shown "×1.5e+29").
+- **Copy changed from pedagogy §4 where the engine or the rules disagreed:** A3's answer is "never recover at this traffic" (the problem world stays at 0% for 30 s after one stall; a unit test holds it there for 20 s), and its fix step narrates the fix world recovering from the same stall rather than asking for a second one. C1's answer is "Well over half" (its hit rate runs 50–80%, not three quarters) and "Nothing fails yet" (its line fills and fails later). F1's build line says "works on 4 at once" so "worker" is named by its beat, and its traffic is a calm 20 a second with a rush to 44 that builds a line of 10 at 21 s on screen (seed 24, chosen by searching against the walk). Beats over 16 words and build lines over 9 were cut to fit.
+- **Following a request keeps the learner's speed** (no forced 0.5×): a C1 read waits about a second of system time, which would be 20 s on screen at half speed. The flight strip takes the beat strip's row, so the stage never resizes.
+- **`walk.ts`** walks a lesson as a learner would (reads each beat, answers, presses each break). The tests use it to prove every beat fires and every prediction holds; `npm run tune -- <slug> --beats` prints the timeline.
+
+**Left for M4b:** the other 15 lessons, the hero, the capstone, the rest of the glossary, captions ≤25 words everywhere (the validator in `tests/lessons.test.ts` runs only on lessons with beats until then), the `CLAUDE.md` conventions, and arming the looping faults (F2, F4, A2, D3, D4, R2). Arming D3 and R2 means `tests/lessons.test.ts`'s D3 test and `tests/browser/motion.spec.ts`'s R2 test must fire the fault themselves, as `stepFiring` does for the claims.
 
 ### M4b — Convert the remaining lessons (M)
 

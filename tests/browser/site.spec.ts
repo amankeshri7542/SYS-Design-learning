@@ -96,17 +96,6 @@ for (const lesson of LESSONS) {
   });
 }
 
-test("the Next button walks the steps and then leaves for the next stop", async ({ page }) => {
-  await page.goto("/learn/caching");
-  const next = page.locator(".dock .btn-next");
-  await next.click();
-  await expect(page.getByRole("tab", { name: /With cache/ })).toHaveAttribute("aria-selected", "true");
-  await next.click();
-  await expect(page.locator(".takeaways")).toBeVisible();
-  await next.click();
-  await expect(page).toHaveURL(/\/learn\/cdn$/);
-});
-
 test("a knob reshapes the running scene", async ({ page }) => {
   await page.goto("/learn/caching");
   await page.getByRole("tab").nth(1).click();
@@ -243,7 +232,7 @@ test("arrow keys, Home and End move between the step tabs, and only the selected
   await page.keyboard.press("ArrowRight");
   await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
   await expect(tabs.nth(1)).toBeFocused();
-  await expect(page.locator(".step-title")).toHaveText("A cache in front of the database");
+  await expect(page.locator(".step-title")).toHaveText(LESSONS.find((l) => l.slug === "caching")!.figures[1].title);
   await page.keyboard.press("End");
   await expect(tabs.last()).toBeFocused();
   await expect(page.locator(".takeaways")).toBeVisible();

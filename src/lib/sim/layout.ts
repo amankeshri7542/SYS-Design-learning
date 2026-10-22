@@ -467,10 +467,14 @@ export function badgeBox(chars: number, k: number, scale: number) {
   return { w: (chars * EM.mono * TEXT.badge + 12) / k, h: (TEXT.badge + 8) / k, inset: 6 * scale, dy: -2 * scale };
 }
 
-/** The longest state badge (DOWN, OPEN, TESTING, CUT OFF) and role badge (LEADER, FOLLOWER) a node can wear. */
+/**
+ * The longest state badge (DOWN, OPEN, TESTING, CUT OFF) and left-shoulder badge (LEADER, FOLLOWER, or the countdown to
+ * an armed event, "0.8 s") a node can wear.
+ */
 function badgeChars(n: NodeSpec, spec: SceneSpec) {
   const leads = spec.nodes.some((m) => m.leader === n.id);
-  const role = n.leader ? 8 : leads ? 6 : 0;
+  const armed = spec.script?.events.some((e) => e.armed && e.node === n.id);
+  const role = n.leader ? 8 : leads ? 6 : armed ? 5 : 0;
   const state = n.breaker || n.leader ? 7 : n.kind === "server" || n.kind === "db" || n.kind === "cache" ? 4 : 0;
   return { state, role };
 }

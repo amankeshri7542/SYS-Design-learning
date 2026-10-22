@@ -94,6 +94,15 @@ export function range(n: number) {
 export const wave = (lo: number, hi: number, period: number) => (t: number) =>
   lo + (hi - lo) * (0.5 - 0.5 * Math.cos((2 * Math.PI * t) / period));
 
+/**
+ * Steady traffic with a rush every `period` ms: starting `from` ms into each period, it swells smoothly to `peak` and
+ * back over `length` ms, then holds at `base`.
+ */
+export const rush = (base: number, peak: number, from: number, length: number, period: number) => (t: number) => {
+  const u = (((t - from) % period) + period) % period;
+  return u < length ? base + (peak - base) * Math.sin((Math.PI * u) / length) ** 2 : base;
+};
+
 /** Quiet traffic with a short burst every `every` ms. */
 export const bursts = (base: number, peak: number, every: number, length: number) => (t: number) =>
   t % every < length ? peak : base;
