@@ -138,6 +138,8 @@ const fixedFleet = (v: Values) =>
   );
 
 const servers = { id: "servers" as const, label: "Servers running", nodes: range(POOL).map((i) => `s${i + 1}`), hint: "Machines you're paying for right now." };
+// The autoscaler aims at a target, so a busier fleet at night is the point, not a regression.
+const avgBusy = M.busy(servers.nodes, "Average busy", { better: "neutral" });
 
 const autoscaling: Lesson = {
   slug: "autoscaling",
@@ -153,7 +155,7 @@ const autoscaling: Lesson = {
       caption:
         "Two servers cope at night and drown at the daily peak. Add more with the knob and the peak is fine, but now they sit idle most of the day.",
       knobs: [knob("n", "Servers", 1, 6, 1, 2)],
-      metrics: [M.p95(), servers, M.busy(servers.nodes, "Average busy")],
+      metrics: [M.p95(), servers, avgBusy],
       build: fixedFleet,
     },
     {
@@ -163,7 +165,7 @@ const autoscaling: Lesson = {
       caption:
         "Every quarter-second, the autoscaler compares how busy the servers are with the target. It starts more (dashed while booting) or drains spares.",
       knobs: [knob("target", "Target busy", 0.4, 0.9, 0.05, 0.6, (v) => `${Math.round(v * 100)}%`)],
-      metrics: [M.p95(), servers, M.busy(servers.nodes, "Average busy")],
+      metrics: [M.p95(), servers, avgBusy],
       build: (v) =>
         scene(
           [

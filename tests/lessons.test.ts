@@ -21,20 +21,23 @@ function average(spec: SceneSpec, metric: MetricSpec, ms = 7000) {
   return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-test("the course is 18 lessons plus a capstone, with unique slugs and codes", () => {
-  assert.equal(LESSONS.length, 19);
-  assert.equal(new Set(LESSONS.map((l) => l.slug)).size, 19);
-  assert.equal(new Set(LESSONS.map((l) => l.code)).size, 19);
+const lessons = LESSONS.filter((l) => l.line !== "capstone");
+const TONES = ["problem,fix", "problem,explore", "tradeoff,tradeoff", "problem,fix,fix", "problem,fix,tradeoff"];
+
+test("slugs and codes are unique, and the course runs from a first lesson to the capstone", () => {
+  assert.ok(lessons.length > 0);
+  assert.equal(new Set(LESSONS.map((l) => l.slug)).size, LESSONS.length);
+  assert.equal(new Set(LESSONS.map((l) => l.code)).size, LESSONS.length);
   assert.equal(neighbours(LESSONS[0].slug).prev, undefined);
   assert.equal(neighbours("capstone").next, undefined);
 });
 
 test("every lesson has a one-line why, a problem then a fix (or a trade-off pair), and short takeaways", () => {
-  for (const l of LESSONS.filter((x) => x.slug !== "capstone")) {
+  for (const l of lessons) {
     assert.ok(l.why.length < 220, `${l.slug} why is short`);
-    assert.equal(l.figures.length, 2, `${l.slug} has two scenes`);
+    assert.ok(l.figures.length >= 2, `${l.slug} has at least two scenes`);
     const tones = l.figures.map((f) => f.tone).join(",");
-    assert.ok(["problem,fix", "problem,explore", "tradeoff,tradeoff"].includes(tones), `${l.slug}: ${tones}`);
+    assert.ok(TONES.includes(tones), `${l.slug}: ${tones}`);
     assert.ok(l.figures.every((f) => f.short.length <= 16), `${l.slug} step names fit a tab`);
     for (const f of l.figures) {
       assert.ok((f.knobs ?? []).length <= 2, `${l.slug} keeps knobs to two`);
@@ -66,12 +69,53 @@ test("every scene builds and runs at every knob extreme without throwing", () =>
   }
 });
 
-// The teaching claim of each lesson: the second step measurably beats the first on the first metric shown.
+test("a fault offered in several steps is one fault: the same label always has the same id", () => {
+  for (const l of lessons) {
+    const ids = new Map<string, string>();
+    for (const f of l.figures) {
+      const own = (f.actions ?? []).map((a) => a.id);
+      assert.equal(new Set(own).size, own.length, `${l.slug}: action ids are unique within “${f.short}”`);
+      for (const a of f.actions ?? []) {
+        const id = ids.get(a.label) ?? a.id;
+        ids.set(a.label, id);
+        assert.equal(a.id, id, `${l.slug}: “${a.label}” has one id in every step`);
+      }
+    }
+  }
+});
+
+// Lockstep fairness: the problem and the fix (or both sides of a trade-off) share the clock and the targets,
+// and their clients send exactly the same requests at the same moments. Explore figures change the traffic
+// on purpose, so they are exempt.
+for (const lesson of lessons) {
+  const compared = lesson.figures.flatMap((f, i) => (i > 0 && f.tone !== "explore" ? [i] : []));
+  if (!compared.length) continue;
+  test(`${lesson.code} ${lesson.title}: every step sees the same clock, targets and traffic`, () => {
+    const specs = buildSteps(lesson.figures, lesson.figures.map(defaultsOf));
+    const trace = (spec: SceneSpec) => {
+      const sim = new Sim(spec, { trace: true });
+      sim.step(5000);
+      return sim.trace;
+    };
+    const first = trace(specs[0]);
+    assert.ok(first.length > 50, `${lesson.slug}: the first step has traffic`);
+    for (const i of compared) {
+      for (const k of ["sloMs", "timeoutMs", "timeScale", "windowMs"] as const)
+        assert.equal(specs[i][k], specs[0][k], `${lesson.slug}: “${lesson.figures[i].short}” has the same ${k}`);
+      assert.deepEqual(trace(specs[i]), first, `${lesson.slug}: “${lesson.figures[i].short}” sees the same arrivals`);
+    }
+  });
+}
+
+// The teaching claim of each lesson: the second step measurably beats the first on its headline metric.
 for (const lesson of LESSONS) {
   const [problem, fix] = lesson.figures;
   if (!fix || fix.tone === "explore") continue;
   test(`${lesson.code} ${lesson.title}: the fix beats the problem`, () => {
-    const metric = fix.metrics[0];
+    const label = fix.headline ?? fix.metrics[0].label;
+    const metric = fix.metrics.find((m) => m.label === label);
+    assert.ok(metric, `${lesson.slug}: the headline “${label}” is one of the fix's metrics`);
+    assert.notEqual(betterIs(metric), "neutral", `${lesson.slug}: the headline has a better direction`);
     const [without, withFix] = buildSteps([problem, fix], [defaultsOf(problem), defaultsOf(fix)]);
     const ms = lesson.slug === "consistent-hashing" || lesson.slug === "consistency-vs-availability" ? 9000 : 7000;
     const a = average(withFix, metric, ms);

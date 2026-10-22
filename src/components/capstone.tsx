@@ -7,7 +7,7 @@ import { CAP_METRICS, START, STAGES, TARGET, capstoneScene, monthlyCost, type Ar
 import type { Sim } from "@/lib/sim/engine";
 import { formatMetric, measure } from "@/lib/sim/metrics";
 import { Key } from "./legend";
-import { ArrowIcon, MetricList, Transport, freshNote, useLiveSims } from "./live";
+import { ArrowIcon, Clock, MetricList, Transport, freshNote, useLiveSims } from "./live";
 import { Shell, usePlayerKeys } from "./player";
 import { MarkVisited } from "./route-map";
 import { Stage } from "./stage";
@@ -178,7 +178,7 @@ export function CapstonePlayer() {
       dock={
         <>
           <Transport live={live} name="capstone" compact />
-          <span className="slowmo">{live.slowdown}× slow motion</span>
+          <Clock live={live} />
           <span className="dock-fill" />
           {done && stage < STAGES.length - 1 ? (
             <button type="button" className="btn-primary btn-next" onClick={() => go(stage + 1)}>

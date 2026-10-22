@@ -34,12 +34,15 @@ export interface MetricSpec {
   /** Explains the number in plain words (shown as a tooltip and to screen readers). */
   hint?: string;
   /** Override which direction is good news (e.g. more of the bot's requests turned away). */
-  better?: "low" | "high";
+  better?: Better;
 }
+
+/** Which direction is good news. Neutral metrics (how many servers are in use) never get a verdict. */
+export type Better = "low" | "high" | "neutral";
 
 type Unit = "ms" | "pct" | "rate" | "count" | "ratio";
 
-const META: Record<MetricId, { unit: Unit; better: "low" | "high" }> = {
+const META: Record<MetricId, { unit: Unit; better: Better }> = {
   p50: { unit: "ms", better: "low" },
   p95: { unit: "ms", better: "low" },
   errors: { unit: "pct", better: "low" },
@@ -51,9 +54,9 @@ const META: Record<MetricId, { unit: Unit; better: "low" | "high" }> = {
   util: { unit: "pct", better: "low" },
   peak: { unit: "pct", better: "low" },
   load: { unit: "rate", better: "low" },
-  inRotation: { unit: "count", better: "high" },
+  inRotation: { unit: "count", better: "neutral" },
   queue: { unit: "count", better: "low" },
-  servers: { unit: "count", better: "low" },
+  servers: { unit: "count", better: "neutral" },
   moved: { unit: "pct", better: "low" },
   amplify: { unit: "ratio", better: "low" },
   conflicts: { unit: "count", better: "low" },
@@ -213,6 +216,36 @@ export function toneOf(m: MetricSpec, v: number | null, sloMs: number): Tone {
   }
 }
 
-export function betterIs(m: MetricSpec) {
+export function betterIs(m: MetricSpec): Better {
   return m.better ?? META[m.id].better;
+}
+
+/** Response times, which are judged against the scene's latency target (`sloMs`). */
+export function isLatency(m: MetricSpec) {
+  return m.id === "p50" || m.id === "p95";
+}
+
+/** A plain signed difference in the metric's own unit ("−1", "+52 ms", "+64 pts"), with no verdict. */
+export function formatDiff(m: MetricSpec, d: number): string {
+  const sign = d < 0 ? "−" : "+";
+  const a = Math.abs(d);
+  switch (META[m.id].unit) {
+    case "ms":
+      return `${sign}${formatMetric(m, a)}`;
+    case "pct": {
+      const p = a * 100;
+      return `${sign}${p < 1 ? "<1" : Math.round(p)} pts`;
+    }
+    case "rate":
+      return `${sign}${Math.round(a)}/s`;
+    case "ratio":
+      return `${sign}${a.toFixed(1)}`;
+    default:
+      return `${sign}${Math.round(a)}`;
+  }
+}
+
+/** How much simulated time one second of screen time shows: "1 s on screen = 100 ms". */
+export function formatClock(timeScale: number, speed: number) {
+  return `1 s on screen = ${Math.round(1000 * timeScale * speed)} ms`;
 }

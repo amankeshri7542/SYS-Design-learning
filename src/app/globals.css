@@ -1323,6 +1323,16 @@ svg.stroke {
   display: block;
 }
 
+/* "target ≤ 400 ms" under a response-time label */
+.compare .target,
+.mrow .target {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font: 500 12px/1.2 var(--font-mono);
+  white-space: nowrap;
+}
+
 .compare .spark {
   display: block;
   width: 56px;

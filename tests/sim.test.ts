@@ -202,3 +202,26 @@ test("removing a node mid-flight fails its requests instead of leaking workers",
   assert.ok(app.held.length <= 6);
   assert.ok(app.held.every((r) => r.phase !== "gone"), "no worker is held by a request that no longer exists");
 });
+
+test("the trace is off by default and, when on, records first attempts only", () => {
+  const spec = scene([client("u", 60, "s", { timeoutMs: 150, retry: { mode: "now", max: 2 } }), server("s", { slots: 1, serviceMs: 100 })]);
+  assert.equal(run(spec, 2000).trace.length, 0);
+  const sim = new Sim(spec, { trace: true });
+  sim.step(2000);
+  assert.ok(sim.retries.count(sim.t) > 0, "the overloaded server makes clients retry");
+  const t = sim.trace;
+  assert.ok(t.length > 60);
+  assert.ok(t.every((s, i) => s.client === "u" && (i === 0 || s.t >= t[i - 1].t)));
+  assert.deepEqual(new Sim(spec, { trace: true }).trace, [], "nothing is recorded before the first step");
+});
+
+test("arrivals do not depend on what happens downstream", () => {
+  const traced = (spec: SceneSpec) => {
+    const sim = new Sim(spec, { trace: true });
+    sim.step(3000);
+    return sim.trace;
+  };
+  const fast = traced(scene([client("u", 50, "s"), server("s", { slots: 8, serviceMs: 20 })]));
+  const swamped = traced(scene([client("u", 50, "s", { retry: { mode: "now", max: 3 } }), server("s", { slots: 1, serviceMs: 400, queueMax: 2 })]));
+  assert.deepEqual(swamped, fast);
+});

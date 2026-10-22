@@ -42,6 +42,8 @@ export interface FigureDef {
   knobs?: Knob[];
   actions?: Action[];
   metrics: MetricSpec[];
+  /** Label of the metric the lesson's claim is about. Defaults to the fix figure's first metric. */
+  headline?: string;
   build: (v: Values) => SceneSpec;
 }
 

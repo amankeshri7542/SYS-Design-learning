@@ -6,3 +6,4 @@ node_modules/
 .aws-sam/
 test-results/
 .vercel/
+.playwright-mcp/
