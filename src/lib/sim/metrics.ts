@@ -245,6 +245,22 @@ export function formatDiff(m: MetricSpec, d: number): string {
   }
 }
 
+/**
+ * A verdict row's change, relative to the first step: "−62%", "+38%", "−<1%" under half a percent, "×20" from ten
+ * times up, "new" from zero.
+ */
+export function formatChange(from: number, to: number): string {
+  if (from === 0) return "new";
+  if (to / from >= 9.95) return `×${Math.round(to / from)}`;
+  const pct = Math.round((Math.abs(to - from) / from) * 100);
+  return `${to < from ? "−" : "+"}${pct < 1 ? "<1" : pct}%`;
+}
+
+/** How big a change is, from 0 to 1 (a doubling or more, or anything from zero, is 1): the length of its bar. */
+export function changeSize(from: number, to: number): number {
+  return from === 0 ? 1 : Math.min(1, Math.abs(to - from) / Math.abs(from));
+}
+
 /** How much simulated time one second of screen time shows: "1 s on screen = 100 ms". */
 export function formatClock(timeScale: number, speed: number) {
   return `1 s on screen = ${Math.round(1000 * timeScale * speed)} ms`;

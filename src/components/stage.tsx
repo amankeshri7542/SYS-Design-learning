@@ -22,6 +22,9 @@ import {
   type Pt,
   type Rect,
   type Scene,
+  labelSpot,
+  railSpan,
+  subCurve,
   type Side,
   type Size,
 } from "@/lib/sim/layout";
@@ -41,6 +44,8 @@ interface Box {
   side: Side;
   /** Free room to the left of the node (where its waiting line forms), in viewBox units. */
   room: number;
+  /** The label's block, when a rail runs under it and it needs a plate (viewBox units). */
+  plate?: Rect;
 }
 
 interface Layout {
@@ -72,6 +77,7 @@ function layoutIn(spec: SceneSpec, frame: Frame): Layout {
       h: p.h,
       glyph,
       side: p.side,
+      plate: p.plate ? p.label : undefined,
       room: Math.max(0, Math.min(p.x - p.w / 2, ...left.filter((d) => d > -p.w))),
       spots: slotSpots(glyph, size.w, size.h, n.slots ?? 0).map((q) => ({ x: p.x + q.x * s, y: p.y + q.y * s, r: q.r * s })),
     });
@@ -297,13 +303,11 @@ export function Stage({
           if (!a || !b) return null;
           const c = curve(a, b, mode);
           const len = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y) * 1.05);
-          // On phones a label below a node sits in the path of traffic leaving downward: start and end beneath it.
-          const under = (n: Box, other: Box) => mode === "tall" && n.side === "below" && other.y > n.y + 4;
-          const below = (TEXT.gap + TEXT.label * TEXT.line + TEXT.sub * TEXT.line + 4) / k;
-          const ra = under(a, b) ? a.h / 2 + below : Math.min(a.w, a.h) / 2 + 3;
-          const rb = under(b, a) ? b.h / 2 + below : Math.min(b.w, b.h) / 2 + 3;
-          const tA = Math.min(0.4, ra / len);
-          const tB = Math.max(0.6, 1 - rb / len);
+          // Traffic runs on the rail's own stretch (on phones it starts and ends beneath a label below a node), and
+          // otherwise starts just outside the station.
+          const [s0, s1] = railSpan(a, b, mode, k);
+          const tA = s0 > 0 ? s0 : Math.min(0.4, (Math.min(a.w, a.h) / 2 + 3) / len);
+          const tB = s1 < 1 ? s1 : Math.max(0.6, 1 - (Math.min(b.w, b.h) / 2 + 3) / len);
           e = { c, tA, tB };
           s.paths.set(key, e);
         }
@@ -517,7 +521,8 @@ function StageSvg({
           const mid = bezier(c, 0.5);
           const text = spec.linkLabels?.[`${e.a}>${e.b}`] ?? spec.linkLabels?.[`${e.b}>${e.a}`];
           const upright = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
-          const d = pathD(c);
+          const [t0, t1] = railSpan(a, b, frame.mode, k);
+          const d = pathD(subCurve(c, t0, t1));
           return (
             <g key={`${e.a}~${e.b}`} className={`link-g ${e.style}${cut ? " cut" : ""}`}>
               {e.style === "flow" ? (
@@ -563,8 +568,10 @@ function StageSvg({
           // In the compact phone layout, secondary labels appear only when they carry news.
           const sub = frame.mode !== "compact" || cls || rt.queue.length || n.kind === "cache" || n.kind === "queue" ? detail : "";
           const block = TEXT.label * TEXT.line + (sub ? TEXT.sub * TEXT.line : 0);
-          const top = b.side === "below" ? size.h / 2 + TEXT.gap * u : (-block / 2) * u;
-          const x = b.side === "right" ? size.w / 2 + TEXT.side * u : b.side === "left" ? -size.w / 2 - TEXT.side * u : 0;
+          // The layout's spot, in viewBox units, brought into the node's own (scaled) units.
+          const spot = labelSpot(b.side, size.w * s, size.h * s, block / k, k);
+          const top = spot.top / s;
+          const x = spot.x / s;
           return (
             // Outer group glides between positions; inner group plays the one-time entrance.
             <g key={n.id} className="node-pos" style={{ transform: `translate(${b.x}px, ${b.y}px) scale(${s})`, "--ns": s } as CSSProperties}>
@@ -572,11 +579,22 @@ function StageSvg({
                 {fresh(n.id) && <rect className="fresh-ring" x={-size.w / 2 - 8} y={-size.h / 2 - 8} width={size.w + 16} height={size.h + 16} rx="16" />}
                 <Body glyph={b.glyph} w={size.w} h={size.h} slots={rt.spec.slots ?? 0} />
                 {meter(rt, size.w, size.h)}
-                <text className="node-label" x={x} y={top + TEXT.label * u} textAnchor={ANCHOR[b.side]}>
+                {b.plate && (
+                  // A sign over the track: the rail it could not avoid passes under the label.
+                  <rect
+                    className="label-plate"
+                    x={(b.plate.x - b.x) / s - 3 * u}
+                    y={(b.plate.y - b.y) / s - 2 * u}
+                    width={b.plate.w / s + 6 * u}
+                    height={b.plate.h / s + 4 * u}
+                    rx={4 * u}
+                  />
+                )}
+                <text className="node-label" x={x} y={top + TEXT.label * u} textAnchor={spot.anchor}>
                   {n.label}
                 </text>
                 {sub && (
-                  <text className="node-sub" x={x} y={top + (TEXT.label * TEXT.line + TEXT.sub) * u} textAnchor={ANCHOR[b.side]}>
+                  <text className="node-sub" x={x} y={top + (TEXT.label * TEXT.line + TEXT.sub) * u} textAnchor={spot.anchor}>
                     {sub}
                   </text>
                 )}
@@ -591,7 +609,6 @@ function StageSvg({
   );
 }
 
-const ANCHOR = { below: "middle", right: "start", left: "end" } as const;
 
 /** A small uppercase tag on a node's shoulder: state on the right (DOWN, OPEN), role on the left (LEADER). */
 function Badge({ text, tone, x, y, k, s, dir }: { text: string; tone: string; x: number; y: number; k: number; s: number; dir: 1 | -1 }) {

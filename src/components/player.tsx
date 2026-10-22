@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { getLesson, lessonsOn, lineOf, neighbours } from "@/lib/lessons";
-import { buildSteps, defaultsOf, isChoice, type FigureDef, type Knob, type Values } from "@/lib/lessons/types";
+import { buildSteps, defaultsOf, headlineOf, isChoice, type FigureDef, type Knob, type Values } from "@/lib/lessons/types";
 import type { MetricSpec } from "@/lib/sim/metrics";
-import { Brand } from "./brand";
-import { Key } from "./legend";
-import { ArrowIcon, BoltIcon, Clock, Compare, Transport, freshNote, useLiveSims, type Live } from "./live";
+import { KeyPopover } from "./legend";
+import { ArrowIcon, BoltIcon, Clock, Compare, MetricSummary, Transport, useLiveSims } from "./live";
 import { MarkVisited } from "./route-map";
+import { BeatStrip, Shell, usePlayerKeys } from "./shell";
 import { Stage } from "./stage";
 
 const TONE: Record<FigureDef["tone"], string> = {
@@ -18,64 +18,9 @@ const TONE: Record<FigureDef["tone"], string> = {
   explore: "Explore",
 };
 
-/** Space toggles playback; arrow keys move between steps. Ignored while a control has focus. */
-export function usePlayerKeys(live: Live, onStep?: (delta: number) => void) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (t && t.closest("input, select, textarea, button, summary, a, [contenteditable]")) return;
-      if (e.key === " " || e.key === "k") {
-        e.preventDefault();
-        live.toggle();
-      } else if (onStep && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
-        e.preventDefault();
-        onStep(e.key === "ArrowRight" ? 1 : -1);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [live, onStep]);
-}
-
-/** The shared shell: bar on top, the live stage, a reading panel, and a dock with playback and the way forward. */
-export function Shell({
-  className,
-  rootRef,
-  bar,
-  stage,
-  panel,
-  dock,
-  simTime,
-}: {
-  className: string;
-  simTime: number;
-  rootRef: React.Ref<HTMLDivElement>;
-  bar: ReactNode;
-  stage: ReactNode;
-  panel: ReactNode;
-  dock: ReactNode;
-}) {
-  return (
-    <div className={`shell ${className}`} ref={rootRef}>
-      <header className="bar">
-        <Brand compact />
-        {bar}
-      </header>
-      <section className="theatre" aria-label="Simulation" data-sim-time={Math.round(simTime)}>
-        {stage}
-      </section>
-      <aside className="panel" aria-label="Lesson">
-        {panel}
-      </aside>
-      <footer className="dock">{dock}</footer>
-    </div>
-  );
-}
-
 /**
  * A lesson on one screen. The scene stays in view while you read, switch between the problem and the fix,
- * turn knobs and compare numbers. Only the panel scrolls, and only if it must.
+ * turn knobs and compare numbers. Only the reading part of the panel scrolls, and only if it must.
  */
 export function LessonPlayer({ slug }: { slug: string }) {
   const lesson = getLesson(slug)!;
@@ -91,20 +36,39 @@ export function LessonPlayer({ slug }: { slug: string }) {
   const shown = Math.min(step, figs.length - 1);
   const fig = figs[shown];
   const sim = live.sims[shown];
-  const note = freshNote(sim);
   const go = (s: number) => setStep(Math.max(0, Math.min(last, s)));
   usePlayerKeys(live, (d) => setStep((s) => Math.max(0, Math.min(last, s + d))));
+  const [tabsRef, tight] = useTightTabs();
+  // The tabs pattern: arrow keys (wrapping), Home and End move between steps; Tab leaves the row.
+  const onTabKey = (e: KeyboardEvent) => {
+    const to = { ArrowRight: step + 1, ArrowLeft: step - 1, Home: 0, End: last }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    const i = (to + last + 1) % (last + 1);
+    go(i);
+    document.getElementById(`tab-${i}`)?.focus();
+  };
 
   const metrics = useMemo(() => {
     const seen = new Map<string, MetricSpec>();
     for (const f of figs) for (const m of f.metrics) if (!seen.has(m.label)) seen.set(m.label, m);
     return [...seen.values()].slice(0, 5);
   }, [figs]);
+  const headline = useMemo(() => {
+    const label = headlineOf(figs);
+    return figs.flatMap((f) => f.metrics).find((m) => m.label === label)!;
+  }, [figs]);
 
   const setKnob = (k: Knob, v: number) => setValues((all) => all.map((vals, i) => (i === shown ? { ...vals, [k.id]: v } : vals)));
   const nextLabel = step < last - 1 ? figs[step + 1].short : "Recap";
   // Only a problem and its fix earn a better/worse verdict; explore and trade-off steps just differ.
   const verdict = figs.map((f) => f.tone).join(",") === "problem,fix";
+  const columns = figs.map((f, i) => ({ label: f.short, sim: live.sims[i], active: i === shown }));
+  const showTable = () => {
+    const table = document.getElementById("compare");
+    table?.scrollIntoView({ block: "nearest", behavior: live.reduced ? "auto" : "smooth" });
+    table?.focus({ preventScroll: true });
+  };
 
   return (
     <Shell
@@ -128,10 +92,11 @@ export function LessonPlayer({ slug }: { slug: string }) {
               ))}
             </ol>
           </nav>
-          <h1 className="bar-title">
+          <h1 className="bar-title" title={lesson.why}>
             <span className="bar-code">{lesson.code}</span>
             <span className="bar-name">{lesson.title}</span>
           </h1>
+          <KeyPopover />
           <span className="bar-arrows">
             {prev ? (
               <Link href={`/learn/${prev.slug}`} className="icon-link" aria-label={`Previous lesson: ${prev.title}`} title={`${prev.code} ${prev.title}`}>
@@ -148,44 +113,47 @@ export function LessonPlayer({ slug }: { slug: string }) {
           </span>
         </>
       }
-      stage={
-        <>
-          <Stage sim={sim} spec={specs[shown]} frameSpecs={specs} mode={live.mode} reduced={live.reduced} label={`${fig.title}. ${fig.caption}`} drawRef={live.drawRef} />
-          <p className={`note${note ? " on" : ""}`} aria-live="polite">
-            {note}
-          </p>
-          <span key={fig.short} className={`stage-tag tone-${fig.tone}`}>
-            {fig.short}
-          </span>
-          <Key />
-        </>
+      beat={
+        <BeatStrip
+          sim={sim}
+          lead={
+            <span key={fig.short} className={`beat-tone tone-${fig.tone}`}>
+              {TONE[fig.tone]}
+            </span>
+          }
+          clock={<Clock live={live} />}
+        />
       }
+      stage={<Stage sim={sim} spec={specs[shown]} frameSpecs={specs} mode={live.mode} reduced={live.reduced} label={`${fig.title}. ${fig.caption}`} drawRef={live.drawRef} />}
+      summary={<MetricSummary metric={headline} columns={columns} verdict={verdict} onOpen={showTable} />}
       panel={
         <>
-          <p className="why">{lesson.why}</p>
-          <div className="tabs" role="tablist" aria-label="Steps">
-            {[...figs.map((f) => f.short), "Recap"].map((name, i) => (
-              <button
-                key={name}
-                type="button"
-                role="tab"
-                id={`tab-${i}`}
-                aria-selected={step === i}
-                aria-controls="step-panel"
-                className={`tab${i < last ? ` tone-${figs[i].tone}` : ""}`}
-                onClick={() => go(i)}
-              >
-                <span className="tab-n" aria-hidden="true">
-                  {i < last ? i + 1 : "✓"}
-                </span>
-                {name}
-              </button>
-            ))}
+          <div className="panel-head">
+            <div ref={tabsRef} className={`tabs${tight ? " tight" : ""}`} role="tablist" aria-label="Steps" onKeyDown={onTabKey}>
+              {[...figs.map((f) => f.short), "Recap"].map((name, i) => (
+                <button
+                  key={name}
+                  type="button"
+                  role="tab"
+                  id={`tab-${i}`}
+                  aria-selected={step === i}
+                  aria-controls="step-panel"
+                  tabIndex={step === i ? 0 : -1}
+                  className={`tab${i < last ? ` tone-${figs[i].tone}` : ""}`}
+                  onClick={() => go(i)}
+                >
+                  {/* The number is the visible label of a squeezed tab, so it is part of the tab's name; the tick is not. */}
+                  <span className="tab-n" aria-hidden={i < last ? undefined : true}>
+                    {i < last ? i + 1 : "✓"}
+                  </span>
+                  <span className="tab-name">{name}</span>
+                </button>
+              ))}
+            </div>
           </div>
           <div id="step-panel" role="tabpanel" aria-labelledby={`tab-${step}`} className="step" key={step}>
             {step < last ? (
               <>
-                <p className={`step-tag tone-${fig.tone}`}>{TONE[fig.tone]}</p>
                 <h2 className="step-title">{fig.title}</h2>
                 <p className="step-text">{fig.caption}</p>
                 {!!(fig.knobs?.length || fig.actions?.length) && (
@@ -218,15 +186,15 @@ export function LessonPlayer({ slug }: { slug: string }) {
                 )}
               </>
             ) : (
-              <Takeaways takeaways={lesson.takeaways} />
+              <Recap why={lesson.why} takeaways={lesson.takeaways} />
             )}
           </div>
-          <Compare metrics={metrics} verdict={verdict} columns={figs.map((f, i) => ({ label: f.short, sim: live.sims[i], active: i === shown }))} />
         </>
       }
+      pinned={<Compare metrics={metrics} verdict={verdict} columns={columns} />}
       dock={
         <>
-          <Transport live={live} name={slug} compact />
+          <Transport live={live} />
           <Clock live={live} />
           <span className="dock-fill" />
           <span className="dock-progress" aria-hidden="true">
@@ -268,22 +236,55 @@ export function LessonPlayer({ slug }: { slug: string }) {
   );
 }
 
-function Takeaways({ takeaways }: { takeaways: { use: string; catch: string; seen: string } }) {
+/**
+ * True when the step tabs can't all show their names on one row; the other tabs then shrink to their numbers.
+ * A squeezed tab's name wraps out of sight inside it but keeps its natural width, so the row can always be re-measured.
+ */
+function useTightTabs() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [tight, setTight] = useState(false);
+  useEffect(() => {
+    const row = ref.current;
+    if (!row) return;
+    const check = () => {
+      // Padding and gap come from the selected tab, which never shrinks.
+      const on = getComputedStyle(row.querySelector('[aria-selected="true"]') ?? row.querySelector(".tab")!);
+      const pad = parseFloat(on.paddingLeft) + parseFloat(on.paddingRight) + parseFloat(on.columnGap);
+      const names = [...row.querySelectorAll(".tab-name")].map((n) => n.getBoundingClientRect().width);
+      const numbers = [...row.querySelectorAll(".tab-n")].map((n) => n.getBoundingClientRect().width);
+      const rs = getComputedStyle(row);
+      const need = names.reduce((sum, w, i) => sum + w + numbers[i] + pad, (names.length - 1) * parseFloat(rs.columnGap));
+      setTight(need > row.clientWidth - parseFloat(rs.paddingLeft) - parseFloat(rs.paddingRight) + 0.05);
+    };
+    // The row's width, and each name's (the web font arriving widens them without resizing the row).
+    const ro = new ResizeObserver(check);
+    ro.observe(row);
+    row.querySelectorAll(".tab-name").forEach((n) => ro.observe(n));
+    return () => ro.disconnect();
+  }, []);
+  return [ref, tight] as const;
+}
+
+function Recap({ why, takeaways }: { why: string; takeaways: { use: string; catch: string; seen: string } }) {
   return (
-    <dl className="takeaways">
-      <div>
-        <dt>Use it when</dt>
-        <dd>{takeaways.use}</dd>
-      </div>
-      <div>
-        <dt>The catch</dt>
-        <dd>{takeaways.catch}</dd>
-      </div>
-      <div>
-        <dt>Seen in</dt>
-        <dd>{takeaways.seen}</dd>
-      </div>
-    </dl>
+    <>
+      <h2 className="step-title">What to remember</h2>
+      <p className="step-text recap-why">{why}</p>
+      <dl className="takeaways">
+        <div>
+          <dt>Use it when</dt>
+          <dd>{takeaways.use}</dd>
+        </div>
+        <div>
+          <dt>The catch</dt>
+          <dd>{takeaways.catch}</dd>
+        </div>
+        <div>
+          <dt>Seen in</dt>
+          <dd>{takeaways.seen}</dd>
+        </div>
+      </dl>
+    </>
   );
 }
 

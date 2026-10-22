@@ -443,7 +443,7 @@ svg.stroke {
   padding: 0;
 }
 
-.transport.compact .btn-play {
+.transport .btn-play {
   width: 44px;
   padding: 0;
 }
@@ -567,11 +567,12 @@ svg.stroke {
 }
 
 .speed-cycle {
-  display: none;
+  width: 44px;
   font: 600 var(--fs-meta)/1 var(--font-mono);
 }
 
 .slowmo {
+  flex: none;
   color: var(--muted);
   font: 500 var(--fs-caption) var(--font-mono);
   white-space: nowrap;
@@ -739,52 +740,60 @@ svg.stroke {
   stroke-width: 1.6;
 }
 
-.key {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 3;
-}
-
-.key summary {
-  display: inline-flex;
-  align-items: center;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--rule);
+/* The Key: a button in the bar opens a native popover under it, on top of everything and clear of the bar. */
+.key-btn {
+  flex: none;
+  height: 36px;
+  margin-left: auto;
   border-radius: var(--r-round);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
   color: var(--ink-2);
-  font: 600 var(--fs-meta)/1 var(--font-body);
-  list-style: none;
-  cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+  font-size: var(--fs-meta);
 }
 
-.key summary::-webkit-details-marker {
-  display: none;
-}
-
-.key summary:hover,
-.key[open] summary {
+.key-btn:hover,
+.key-btn:has(+ .key-pop:popover-open) {
   border-color: var(--ink);
   color: var(--ink);
 }
 
 .key-pop {
-  position: absolute;
-  top: 40px;
-  right: 0;
-  width: min(300px, calc(100vw - 40px));
-  max-height: min(420px, 60svh);
+  position: fixed;
+  inset: calc(var(--bar-h, 56px) + 8px) 12px auto auto;
+  width: min(320px, calc(100vw - 24px));
+  max-height: calc(100svh - var(--bar-h, 56px) - 24px);
+  margin: 0;
   overflow-y: auto;
-  padding: 10px 12px;
+  padding: 8px 14px 14px;
   border: 1px solid var(--rule);
   border-radius: var(--r-card);
   background: var(--surface);
+  color: var(--ink);
   box-shadow: var(--e-raised);
-  animation: pop-in var(--dur-base) var(--ease-out) both;
   transform-origin: top right;
+}
+
+.key-pop:popover-open {
+  animation: pop-in var(--dur-base) var(--ease-out) both;
+}
+
+.key-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin: 0 -6px 6px 0;
+}
+
+.key-head h2 {
+  margin: 0;
+  font: 700 var(--fs-ui)/1.2 var(--font-display);
+  letter-spacing: 0;
+}
+
+.key-close {
+  width: 36px;
+  height: 36px;
+  border-color: transparent;
 }
 
 .key-pop ul {
@@ -1025,13 +1034,15 @@ svg.stroke {
   font: 700 16px/1.25 var(--font-display);
 }
 
-/* ------------------------------------------------------------------ lesson shell: bar · stage | panel · dock */
+/* ------------------------------------------------------------------ lesson shell: bar · theatre | panel · dock */
 
 .shell {
+  --bar-h: 56px;
+  --dock-h: 60px;
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(340px, 30vw, 430px);
-  grid-template-rows: 54px minmax(0, 1fr) 62px;
+  grid-template-columns: minmax(0, 1fr) clamp(368px, 31vw, 440px);
+  grid-template-rows: var(--bar-h) minmax(0, 1fr) var(--dock-h);
   grid-template-areas:
     "bar bar"
     "theatre panel"
@@ -1049,7 +1060,7 @@ svg.stroke {
   align-items: center;
   gap: 14px;
   min-width: 0;
-  padding: 0 14px 0 16px;
+  padding: 0 12px 0 16px;
   border-bottom: 1px solid var(--rule);
   background: var(--surface);
 }
@@ -1138,40 +1149,127 @@ svg.stroke {
 
 .bar-arrows {
   display: flex;
+  flex: none;
   gap: 2px;
-  margin-left: auto;
 }
 
+/* The theatre holds one sheet: the beat strip along its top edge, the stage, and (later) the flight strip. */
 .theatre {
   grid-area: theatre;
-  position: relative;
+  display: grid;
+  min-width: 0;
   min-height: 0;
   padding: 14px;
 }
 
-.theatre .stage,
-.hero-stage .stage {
-  position: absolute;
-  inset: 0;
+.sheet {
+  display: grid;
+  grid-template-rows: 36px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sheet);
+  background: var(--stage);
+  box-shadow: var(--e-sheet);
 }
 
-.theatre .stage {
-  inset: 14px;
+/* The beat strip: what the scene shows, and the events as they happen. Its own row; nothing floats on the stage. */
+.beat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface);
 }
 
+.beat-tone {
+  flex: none;
+  color: var(--tone-text);
+  font: 700 var(--fs-meta)/1.2 var(--font-body);
+  animation: fade-in var(--dur-base) var(--ease-out) both;
+}
+
+.beat-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font: 600 var(--fs-meta)/1.2 var(--font-body);
+}
+
+.beat-text:not(:empty) {
+  padding-left: 12px;
+  border-left: 1px solid var(--rule);
+}
+
+.beat-text span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: beat-in var(--dur-base) var(--ease-out) both;
+}
+
+.beat.fresh .beat-text {
+  color: var(--ink);
+}
+
+@keyframes beat-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* The clock sits in the dock; only phones, whose dock has no room for it, show it on the strip. */
+.beat .slowmo {
+  display: none;
+}
+
+/* The panel: a reading part that scrolls if it must, and the numbers pinned under it. */
 .panel {
   grid-area: panel;
-  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  border-left: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.panel-scroll {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 16px 20px 22px;
-  border-left: 1px solid var(--rule);
-  background: var(--surface);
+  padding: 0 20px 16px;
   scrollbar-gutter: stable;
+}
+
+.panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 14px 0 2px;
+  background: var(--surface);
+}
+
+.panel-pin {
+  container-type: inline-size;
+  padding: 10px 20px 12px;
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.summary-row {
+  grid-area: summary;
+  display: none;
+  min-width: 0;
 }
 
 .dock {
@@ -1190,26 +1288,42 @@ svg.stroke {
   flex: 1;
 }
 
+/* Progress: the lesson's steps as stations on a short rail. */
 .dock-progress {
+  position: relative;
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 14px;
+  isolation: isolate;
+}
+
+.dock-progress::before {
+  content: "";
+  position: absolute;
+  inset: 50% 4px auto;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--track);
+  z-index: -1;
 }
 
 .dock-progress i {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: var(--r-round);
-  background: var(--track);
-  transition: background-color var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--rail);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 .dock-progress i.past {
-  background: color-mix(in srgb, var(--lc) 55%, var(--track));
+  box-shadow: inset 0 0 0 5px color-mix(in srgb, var(--lc) 55%, var(--track));
 }
 
 .dock-progress i.on {
-  background: var(--lc);
-  transform: scale(1.3);
+  box-shadow: inset 0 0 0 5px var(--lc);
+  transform: scale(1.25);
 }
 
 .btn-back svg {
@@ -1241,13 +1355,8 @@ svg.stroke {
 
 /* panel content */
 
-.why {
-  margin: 0;
-  color: var(--ink-2);
-  font-size: var(--fs-body);
-  line-height: 1.5;
-}
-
+/* Step tabs size to their content. When the row runs out of room, the other tabs shrink to their number: the name
+   wraps to a second line inside the tab and is clipped, so it stays the tab's accessible name. */
 .tabs {
   display: flex;
   gap: 3px;
@@ -1260,17 +1369,21 @@ svg.stroke {
 }
 
 .tab {
-  display: inline-flex;
-  flex: 1 1 0;
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-content: flex-start;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  min-height: 40px;
-  padding: 6px 8px;
+  column-gap: 7px;
+  min-width: 44px;
+  height: 40px;
+  overflow: hidden;
+  padding: 0 11px 0 9px;
   border-radius: calc(var(--r-card) - 3px);
   color: var(--ink-2);
-  font: 600 var(--fs-ui)/1.15 var(--font-body);
+  font: 600 var(--fs-ui)/40px var(--font-body);
+  white-space: nowrap;
   transition:
     background-color var(--dur-fast) var(--ease-out),
     color var(--dur-fast) var(--ease-out),
@@ -1284,6 +1397,7 @@ svg.stroke {
 
 .tab[aria-selected="true"],
 .tab.current {
+  flex-shrink: 0;
   background: var(--surface);
   color: var(--ink);
   box-shadow: 0 0 0 1px var(--rule);
@@ -1293,12 +1407,20 @@ svg.stroke {
   opacity: 0.45;
 }
 
+/* When the names don't all fit (measured in player.tsx), the other tabs are just their numbers. */
+.tabs.tight .tab:not([aria-selected="true"]) {
+  flex: none;
+  width: 44px;
+  padding: 0;
+}
+
 .tab-n {
   display: inline-grid;
   place-items: center;
   flex: none;
   width: 20px;
   height: 20px;
+  margin-block: 10px;
   border-radius: var(--r-round);
   background: var(--track);
   color: var(--ink-2);
@@ -1318,6 +1440,9 @@ svg.stroke {
 }
 
 .step {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   animation: step-in var(--dur-base) var(--ease-out) both;
 }
 
@@ -1328,20 +1453,8 @@ svg.stroke {
   }
 }
 
-.step-tag {
-  display: inline-block;
-  margin: 0;
-  padding: 3px 8px;
-  border-radius: var(--r-chip);
-  background: color-mix(in srgb, var(--tone) 12%, transparent);
-  color: var(--tone-text);
-  font: 600 var(--fs-caption)/1.3 var(--font-mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .step-title {
-  margin: 10px 0 6px;
+  margin: 2px 0 0;
   font: 600 var(--fs-step)/1.15 var(--font-guide), Georgia, serif;
   letter-spacing: -0.01em;
 }
@@ -1355,13 +1468,14 @@ svg.stroke {
 
 .tone-problem { --tone: var(--bad); --on-tone: var(--on-bad); --tone-text: var(--t-bad); }
 .tone-fix { --tone: var(--good); --on-tone: var(--on-good); --tone-text: var(--t-ok); }
-.tone-tradeoff { --tone: var(--stale); --on-tone: var(--on-stale); --tone-text: var(--t-stale); }
+/* A trade-off has no better side, so it takes no colour: violet means a stale answer on the stage. */
+.tone-tradeoff { --tone: var(--ink); --on-tone: var(--paper); --tone-text: var(--ink-2); }
 .tone-explore { --tone: var(--accent); --on-tone: var(--on-accent); --tone-text: var(--t-req); }
 
 .controls {
   display: grid;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 2px;
   padding: 10px 12px;
   border-radius: var(--r-card);
   background: var(--paper);
@@ -1388,7 +1502,7 @@ svg.stroke {
 .knob-range input {
   grid-column: 1 / -1;
   width: 100%;
-  height: 30px;
+  height: 24px;
   margin: 0;
   accent-color: var(--accent);
   cursor: pointer;
@@ -1407,7 +1521,7 @@ svg.stroke {
 .takeaways {
   display: grid;
   gap: 14px;
-  margin: 0;
+  margin: 4px 0 0;
 }
 
 .takeaways dt {
@@ -1422,7 +1536,7 @@ svg.stroke {
   line-height: 1.5;
 }
 
-/* comparison table */
+/* comparison table: both columns at full strength; a 2px line-colour rule marks the step on screen */
 
 .compare {
   width: 100%;
@@ -1430,27 +1544,38 @@ svg.stroke {
   font-variant-numeric: tabular-nums;
 }
 
+.compare:focus-visible {
+  outline-offset: 4px;
+}
+
 .compare th,
 .compare td {
-  padding: 7px 6px;
+  padding: 5px 4px;
   border-bottom: 1px solid var(--rule);
   text-align: right;
   white-space: nowrap;
 }
 
+.compare tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
 .compare thead th {
   padding-top: 0;
+  padding-bottom: 4px;
   color: var(--muted);
-  font: 600 var(--fs-caption)/1.2 var(--font-body);
+  font: 600 var(--fs-caption)/1.15 var(--font-body);
+  white-space: normal;
   vertical-align: bottom;
-  transition: color var(--dur-fast) var(--ease-out);
 }
 
 .compare thead th.on {
   color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--lc);
 }
 
 .compare tbody th {
+  padding-left: 0;
   color: var(--ink-2);
   font: 700 var(--fs-meta)/1.2 var(--font-body);
   text-align: left;
@@ -1472,40 +1597,124 @@ svg.stroke {
   white-space: nowrap;
 }
 
-.compare .spark {
-  display: block;
-  width: 56px;
-  height: 14px;
-  margin-top: 3px;
-  color: var(--muted);
-}
-
 .compare td.num {
+  padding-left: 8px;
   color: var(--ink);
-  font: 600 15px/1.2 var(--font-mono);
-  opacity: 0.5;
-  transition: opacity var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out);
+  font: 600 var(--fs-ui)/1.2 var(--font-mono);
 }
 
-.compare td.num.on {
-  opacity: 1;
-}
+.compare td.tone-good,
+.summary .num.tone-good { color: var(--t-ok); }
+.compare td.tone-warn,
+.summary .num.tone-warn { color: var(--t-warn); }
+.compare td.tone-bad,
+.summary .num.tone-bad { color: var(--t-bad); }
 
-.compare td.tone-good { color: var(--t-ok); }
-.compare td.tone-warn { color: var(--t-warn); }
-.compare td.tone-bad { color: var(--t-bad); }
-
-.compare td.delta {
+.compare td.delta,
+.summary .delta {
   color: var(--muted);
   font: 600 var(--fs-meta)/1.2 var(--font-mono);
 }
 
-.compare td.delta.up {
+.compare td.delta.up,
+.summary .delta.up {
   color: var(--t-ok);
 }
 
-.compare td.delta.down {
+.compare td.delta.down,
+.summary .delta.down {
   color: var(--t-bad);
+}
+
+/* The change's size as a thin bar under it: full width at a doubling (or from nothing), never longer. */
+.delta-bar {
+  display: block;
+  width: 36px;
+  height: 2px;
+  margin: 3px 0 0 auto;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.75;
+  transform-origin: right;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.compare td.trend {
+  width: 44px;
+  padding-right: 0;
+}
+
+.compare .spark {
+  display: block;
+  width: 40px;
+  height: 14px;
+  margin-left: auto;
+}
+
+/* A narrow panel drops the trend column rather than let the numbers run past its edge. */
+@container (max-width: 349px) {
+  .compare .trend,
+  .compare .trend-h {
+    display: none;
+  }
+}
+
+/* Phones: the headline number in one pinned row. Tapping it brings the full table into view. */
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  padding: 0 16px;
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+  text-align: left;
+}
+
+/* Up to two lines, so a narrow row shortens the label's line, not the label. */
+.summary-label {
+  display: -webkit-box;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font: 700 var(--fs-meta)/1.15 var(--font-body);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.summary-vals {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 15px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.summary-vals .num {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 3px;
+  color: var(--ink);
+}
+
+.summary-vals .num.on {
+  box-shadow: inset 0 -2px 0 var(--lc);
+}
+
+.summary-vals svg {
+  width: 13px;
+  height: 13px;
+  color: var(--muted);
+}
+
+.summary .delta {
+  min-width: 44px;
+  text-align: right;
 }
 
 /* metric list (hero, capstone) */
@@ -1560,12 +1769,12 @@ svg.stroke {
 
 /* ------------------------------------------------------------------ stage: a paper sheet; only the dots are saturated */
 
+/* The stage fills its row of the sheet; the sheet draws the paper, the edge and the corners. */
 .stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--rule);
-  border-radius: var(--r-sheet);
-  background: var(--stage);
-  box-shadow: var(--e-sheet);
 }
 
 .stage-svg,
@@ -1597,31 +1806,6 @@ svg.stroke {
 .stage[data-mode="compact"] .stage-compact,
 .stage[data-mode="tall"] .stage-tall {
   display: block;
-}
-
-.stage-tag {
-  position: absolute;
-  left: 26px;
-  top: 26px;
-  z-index: 2;
-  padding: 5px 11px;
-  border-radius: var(--r-round);
-  background: color-mix(in srgb, var(--tone) 12%, var(--surface));
-  color: var(--tone-text);
-  font: 700 var(--fs-meta)/1.2 var(--font-body);
-  pointer-events: none;
-  animation: tag-in var(--dur-base) var(--ease-out) both;
-}
-
-@keyframes tag-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-
-.hero-stage .stage-tag {
-  display: none;
 }
 
 .link-g {
@@ -1798,6 +1982,11 @@ svg.stroke {
   stroke-linejoin: round;
 }
 
+/* A label that has to lie across a rail sits on a plate in the sheet's colour; the rail runs under it. */
+.label-plate {
+  fill: var(--stage);
+}
+
 .link-label {
   paint-order: stroke;
   stroke: var(--stage);
@@ -1893,50 +2082,6 @@ svg.stroke {
   fill: var(--ink);
 }
 
-.note {
-  position: absolute;
-  top: 26px;
-  left: 50%;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: calc(100% - 140px);
-  margin: 0;
-  padding: 7px 13px 7px 11px;
-  border-radius: var(--r-round);
-  background: var(--ink);
-  color: var(--paper);
-  font: 700 var(--fs-meta)/1.2 var(--font-body);
-  opacity: 0;
-  transform: translate(-50%, -6px);
-  transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-base) var(--ease-out);
-  pointer-events: none;
-}
-
-.hero-stage .note {
-  top: 12px;
-}
-
-.note::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: var(--r-round);
-  background: var(--dot-slow);
-  flex: none;
-}
-
-.note.on {
-  opacity: 1;
-  transform: translate(-50%, 0);
-}
-
-.theatre .key {
-  top: 26px;
-  right: 26px;
-}
-
 /* ------------------------------------------------------------------ capstone */
 
 .cap-stages {
@@ -1944,15 +2089,21 @@ svg.stroke {
   grid-template-columns: 1fr 1fr;
 }
 
+/* Stage names are longer than step names: they wrap inside a two-by-two grid instead of shrinking to numbers. */
 .cap-stages .tab {
+  flex-wrap: nowrap;
   justify-content: flex-start;
   width: 100%;
   height: 100%;
+  min-height: 44px;
+  padding-block: 6px;
+  line-height: 1.2;
   text-align: left;
+  white-space: normal;
 }
 
-.cap-hint {
-  margin-top: 10px;
+.cap-stages .tab-n {
+  margin-block: 0;
 }
 
 .cap-hint summary {
@@ -1970,8 +2121,7 @@ svg.stroke {
 
 .cap-build {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 16px;
+  gap: 10px;
   padding: 12px 14px;
   border-radius: var(--r-card);
   background: var(--paper);
@@ -2085,35 +2235,58 @@ svg.stroke {
   gap: 8px;
 }
 
+/* The target as two cells: each live value beside the line it must stay under. Neutral until there is data. */
 .cap-target {
-  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.cap-cell {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-ctl);
+  background: var(--paper);
+}
+
+.cap-cell-label {
   color: var(--ink-2);
-  font: 600 var(--fs-meta)/1.4 var(--font-mono);
+  font: 700 var(--fs-meta)/1.2 var(--font-body);
 }
 
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.cap-cell .num {
+  color: var(--muted);
+  font: 700 19px/1.15 var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
-.chip {
-  padding: 5px 10px;
-  border-radius: var(--r-chip);
-  font: 600 var(--fs-meta)/1.2 var(--font-mono);
-}
-
-.chip.pass {
-  background: color-mix(in srgb, var(--good) 14%, transparent);
+.cap-cell.pass .num {
   color: var(--t-ok);
 }
 
-.chip.fail {
-  background: color-mix(in srgb, var(--bad) 11%, transparent);
+.cap-cell.fail {
+  border-color: color-mix(in srgb, var(--bad) 45%, var(--rule));
+}
+
+.cap-cell.fail .num {
   color: var(--t-bad);
 }
 
+.cap-cell .target {
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1.2 var(--font-mono);
+}
+
+.hold-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .hold {
+  flex: 1;
   height: 10px;
   overflow: hidden;
   border-radius: var(--r-round);
@@ -2129,8 +2302,10 @@ svg.stroke {
 }
 
 .hold-text {
+  flex: none;
   margin: 0;
   font: 600 var(--fs-meta) var(--font-mono);
+  white-space: nowrap;
 }
 
 .cap-win {
@@ -2156,16 +2331,25 @@ svg.stroke {
 
 @media (max-width: 1180px) {
   .shell {
-    grid-template-columns: minmax(0, 1fr) 340px;
-  }
-  .slowmo {
-    display: none;
+    grid-template-columns: minmax(0, 1fr) 368px;
   }
 }
 
 @media (max-width: 1000px) {
   .bar-stops {
     display: none;
+  }
+}
+
+/* Short laptop screens (1280×720): a slimmer bar and dock and a smaller step title keep every problem and fix
+   panel from scrolling. */
+@media (max-height: 760px) and (min-width: 761px) {
+  .shell {
+    --bar-h: 52px;
+    --dock-h: 56px;
+  }
+  .step-title {
+    font-size: 22px;
   }
 }
 
@@ -2185,11 +2369,25 @@ svg.stroke {
   }
 }
 
-/* Phones (portrait): bar, stage, the scrolling panel, then the dock. The document itself never scrolls. */
-@media (max-width: 760px) {
+/* Phones and narrow windows (portrait): bar, stage, the headline number, the panel, then the dock. The panel
+   scrolls as one (its tabs stay put); the document itself never scrolls. The theatre gets 46svh so that, after the
+   beat strip, a phone's stage is still at least 0.85 as tall as it is wide: the stage's portrait layouts need that.
+   Small phones held sideways are narrow too; they take the landscape layout below instead. */
+@media (max-width: 760px) and (orientation: portrait), (max-width: 760px) and (min-height: 521px) {
   .shell {
+    --bar-h: 48px;
+    --dock-h: 56px;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 50px clamp(220px, 44svh, 440px) minmax(0, 1fr) auto;
+    grid-template-rows: var(--bar-h) 46svh 44px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "bar"
+      "theatre"
+      "summary"
+      "panel"
+      "dock";
+  }
+  .shell:not(:has(> .summary-row)) {
+    grid-template-rows: var(--bar-h) 46svh minmax(0, 1fr) auto;
     grid-template-areas:
       "bar"
       "theatre"
@@ -2197,8 +2395,8 @@ svg.stroke {
       "dock";
   }
   .bar {
-    gap: 10px;
-    padding: 0 6px 0 12px;
+    gap: 8px;
+    padding: 0 4px 0 12px;
   }
   .bar .brand-name,
   .bar-line {
@@ -2210,64 +2408,69 @@ svg.stroke {
   .theatre {
     padding: 8px 8px 6px;
   }
-  .theatre .stage {
-    inset: 8px 8px 6px;
+  /* The beat strip moves to the sheet's bottom edge and carries the clock. */
+  .sheet {
+    grid-template-rows: minmax(0, 1fr) 32px;
     border-radius: var(--r-card);
   }
-  .note {
-    top: 16px;
-    left: 16px;
-    max-width: calc(100% - 100px);
-    font-size: var(--fs-caption);
-    transform: translate(0, -6px);
+  .beat {
+    order: 1;
+    gap: 10px;
+    padding: 0 12px;
+    border-top: 1px solid var(--rule);
+    border-bottom: 0;
   }
-  .note.on {
-    transform: none;
-  }
-  .theatre .key {
-    top: 16px;
-    right: 16px;
-  }
-  .stage-tag {
+  .beat:has(.beat-text:not(:empty)) .beat-tone {
     display: none;
   }
-  .panel {
-    gap: 14px;
-    padding: 14px 16px 18px;
+  .beat-text:not(:empty) {
+    padding-left: 0;
     border-left: 0;
-    border-top: 1px solid var(--rule);
+  }
+  .beat .slowmo {
+    display: block;
+    margin-left: auto;
+  }
+  .summary-row {
+    display: block;
+  }
+  .summary {
+    border-bottom: 1px solid var(--rule);
+  }
+  .panel {
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-left: 0;
+  }
+  .panel-scroll {
+    overflow: visible;
+    padding: 0 16px 16px;
     scrollbar-gutter: auto;
+  }
+  .panel-head {
+    padding-top: 10px;
+    box-shadow: 0 8px 10px -10px rgb(21 23 28 / 0.3);
+  }
+  .panel-pin {
+    padding: 4px 16px 18px;
+    border-top: 0;
   }
   .dock {
     gap: 8px;
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
   }
-  .seg-speed,
+  .dock .slowmo,
   .dock-progress,
   .btn-back,
   .when-wide {
     display: none;
   }
-  .speed-cycle {
-    display: inline-flex;
-  }
   .btn-next {
     padding: 0 16px;
   }
-  .capstone .why {
-    display: none;
-  }
-  .panel > .tabs {
-    position: sticky;
-    top: -14px;
-    z-index: 2;
-    box-shadow: 0 6px 12px -8px rgb(21 23 28 / 0.25);
-  }
   .step-title {
-    font-size: 22px;
-  }
-  .cap-build {
-    grid-template-columns: 1fr;
+    font-size: 21px;
   }
   .hero-fig {
     padding: 6px;
@@ -2278,30 +2481,109 @@ svg.stroke {
   }
 }
 
-/* Phones held sideways: the side-by-side layout, with a wider panel. */
+/* Phones held sideways: stage and panel side by side, the headline number pinned above the panel, and the
+   controls above the caption so the thing to press is in reach without scrolling. */
 @media (orientation: landscape) and (max-height: 520px) {
   .shell {
+    --bar-h: 44px;
+    --dock-h: 48px;
     grid-template-columns: minmax(0, 1fr) 44%;
-    grid-template-rows: 44px minmax(0, 1fr) 52px;
+    grid-template-rows: var(--bar-h) 44px minmax(0, 1fr) var(--dock-h);
+    grid-template-areas:
+      "bar bar"
+      "theatre summary"
+      "theatre panel"
+      "dock dock";
+  }
+  .shell:not(:has(> .summary-row)) {
+    grid-template-rows: var(--bar-h) minmax(0, 1fr) var(--dock-h);
     grid-template-areas:
       "bar bar"
       "theatre panel"
       "dock dock";
   }
+  .bar {
+    padding: 0 4px 0 12px;
+  }
   .bar-line,
-  .slowmo,
   .dock-progress {
     display: none;
   }
+  .bar-title {
+    font-size: 17px;
+  }
+  .theatre {
+    padding: 6px;
+  }
+  .sheet {
+    grid-template-rows: 30px minmax(0, 1fr);
+    border-radius: var(--r-card);
+  }
+  .beat {
+    padding: 0 12px;
+  }
+  .summary-row {
+    display: block;
+    border-left: 1px solid var(--rule);
+  }
+  .summary {
+    padding: 0 14px;
+    border-top: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .panel {
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .panel-scroll {
+    overflow: visible;
+    padding: 0 14px 14px;
+    scrollbar-gutter: auto;
+  }
+  .panel-head {
+    padding-top: 8px;
+  }
+  .panel-pin {
+    padding: 4px 14px 14px;
+    border-top: 0;
+  }
+  .step-title {
+    font-size: 19px;
+  }
+  .step > * {
+    order: 2;
+  }
+  .step > .step-title {
+    order: 0;
+  }
+  .step > .controls {
+    order: 1;
+  }
+  .dock {
+    padding: 0 12px;
+  }
+  .when-wide {
+    display: none;
+  }
+  .btn-next {
+    height: 40px;
+  }
 }
 
-/* Touch: every control is at least 40px square, without changing how it looks. */
+/* Touch: every control is at least 40px square (44px for the ones used most), without changing how it looks. */
 @media (pointer: coarse), (max-width: 760px), (orientation: landscape) and (max-height: 520px) {
   .bar .brand {
     justify-content: center;
-    min-width: 40px;
+    min-width: 44px;
+    min-height: 40px;
   }
-  .key summary {
+  .key-btn {
+    height: 40px;
+    min-width: 52px;
+  }
+  .key-close {
+    width: 40px;
     height: 40px;
   }
   .seg span {
@@ -2326,7 +2608,7 @@ svg.stroke {
   }
   .icon-link {
     width: 44px;
-    height: 44px;
+    height: 40px;
   }
 }
 

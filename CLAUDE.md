@@ -16,10 +16,12 @@ An animated system-design course. It's built with Next.js 16 App Router, React 1
 - `src/lib/sim/engine.ts`: the deterministic simulator. All randomness comes from seeded per-node streams.
   - Keep arrivals independent of downstream behaviour, so a problem scene and its fix see the same traffic.
 - `src/lib/lessons/*.ts`: lessons, as pure `build(values) => SceneSpec`.
-  - `tests/lessons.test.ts` asserts the fix beats the problem on its headline metric (`FigureDef.headline`, by default the fix's first metric).
-- `src/components/player.tsx`: the one-screen lesson player.
-  - `Shell` lays out bar · stage | panel · dock. The document never scrolls; only the panel does.
-  - Every step's world runs in lockstep (`useLiveSims`) for the Without/With/Change table.
+  - `tests/lessons.test.ts` asserts the fix beats the problem on its headline metric (`headlineOf`: `FigureDef.headline`, by default the fix's first metric).
+- `src/components/shell.tsx`: the one-screen layout shared by lessons and the capstone.
+  - `Shell` lays out bar · theatre | panel · dock. The theatre is one sheet: the `BeatStrip` row, then the stage. The panel is a reading part (`.panel-scroll`) over the pinned comparison table (`.panel-pin`). Phones add a summary row of the headline number, and their panel scrolls as one.
+  - Nothing floats over the stage. The Key is a popover from the bar (`legend.tsx`); scripted event notes go on the beat strip.
+  - The document never scrolls; only the panel does, and only if it must.
+- `src/components/player.tsx`: the lesson player. Every step's world runs in lockstep (`useLiveSims`) for the Without/With/Change table.
 - `src/components/stage.tsx`: the renderer. SVG nodes go in the React layer; dots, effects and queue formations go on the canvas.
   - Layout coordinates are `[along, across]`, each from 0 to 100.
   - The stage measures its box and picks a layout: `wide` (desktop), `compact` (tighter, for landscape phones) or `tall` (transposed, for portrait phones). Portrait boxes only use `compact` for scenes of at most two lanes and three columns; landscape boxes never use `tall`.
@@ -40,5 +42,8 @@ An animated system-design course. It's built with Next.js 16 App Router, React 1
 - **Fault buttons.** Each action reads its on/off state from the simulation (`isOn`), so scripted faults and buttons stay in sync.
 - **Reduced motion.** Must keep working: no autoplay, a settled still frame, and CSS animations disabled.
 - **Motion.** Use ease-out for things entering, linear travel for requests, and no decorative loops. Animate only transform and opacity, except one-time SVG strokes.
-- **Screen fit.** Lesson pages must fit the viewport at 1440×900, 1280×720, a 390×844 phone and an 844×390 landscape phone (the four Playwright projects). `npm run test:browser` asserts that the document doesn't scroll, and `tests/browser/stage-fit.spec.ts` that every stage label is inside the stage, at full size and clear of other labels, and that phone controls are at least 40px square.
+- **Screen fit.** Lesson pages must fit the viewport at 1440×900, 1280×720, a 390×844 phone and an 844×390 landscape phone (the four Playwright projects).
+  - `npm run test:browser` asserts that the document doesn't scroll, that the panel's reading part doesn't scroll on any problem or fix step at 1440×900 and 1280×720, and that phones show the headline number without scrolling.
+  - `tests/browser/stage-fit.spec.ts` asserts that every stage label is inside the stage, at full size and clear of other labels, that nothing covers a station, and that phone controls are at least 40px square.
+  - A longer caption or an extra knob has to fit 1280×720. Shorten the copy rather than letting the panel scroll.
 - **Out of scope.** No cloud, accounts or backend. Progress is a localStorage list of visited lessons and nothing more.

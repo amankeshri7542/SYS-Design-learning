@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { betterIs, formatClock, formatDiff, isLatency, type MetricSpec } from "../src/lib/sim/metrics";
+import { betterIs, changeSize, formatChange, formatClock, formatDiff, isLatency, type MetricSpec } from "../src/lib/sim/metrics";
 
 const m = (id: MetricSpec["id"], extra: Partial<MetricSpec> = {}): MetricSpec => ({ id, label: id, ...extra });
 
@@ -21,6 +21,18 @@ test("a plain difference is signed and keeps the metric's unit", () => {
   assert.equal(formatDiff(m("answered"), -0.004), "−<1 pts");
   assert.equal(formatDiff(m("throughput"), -10.2), "−10/s");
   assert.equal(formatDiff(m("amplify"), -2.26), "−2.3");
+});
+
+test("a verdict row's change is a signed share of the first step, and its bar never overstates it", () => {
+  assert.equal(formatChange(360, 346), "−4%");
+  assert.equal(formatChange(100, 138), "+38%");
+  assert.equal(formatChange(0.12, 0), "−100%");
+  assert.equal(formatChange(2, 40), "×20", "ten times or more reads as a multiple");
+  assert.equal(formatChange(0, 0.4), "new");
+  assert.equal(formatChange(400, 401), "+<1%", "a visible change never reads as +0%");
+  assert.equal(changeSize(360, 346), 14 / 360);
+  assert.equal(changeSize(2, 40), 1);
+  assert.equal(changeSize(0, 0.4), 1);
 });
 
 test("response times are the latency rows that show the target", () => {
