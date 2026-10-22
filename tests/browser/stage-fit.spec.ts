@@ -3,7 +3,8 @@ import { LESSONS } from "../../src/lib/lessons";
 import { buildSteps, defaultsOf, type Lesson } from "../../src/lib/lessons/types";
 
 // Every lesson, every step, on every project: stage text is legible and inside the stage, labels never collide,
-// phone controls are big enough to tap, and a single row of stations doesn't float in an empty desktop stage.
+// nothing floats over the stage, phone controls are big enough to tap, and a single row of stations doesn't float in
+// an empty desktop stage.
 // Reduced motion makes each measurement a settled still frame (no entrances or glides in flight).
 test.use({ reducedMotion: "reduce" });
 
@@ -27,8 +28,10 @@ interface Measured {
   texts: (Box & { kind: string; owner: string; text: string; px: number })[];
   fill: number;
   small: { what: string; w: number; h: number }[];
-  /** Stations under the Key button, which floats over the stage until the player gives it a place in the bar. */
+  /** Stations with something else on top of them: nothing may float over the stage. */
   covered: string[];
+  /** How far the beat strip and the stage overlap, in px (they are separate rows of the sheet). */
+  stripOverlap: number;
 }
 
 /** Read the stage once: every SVG text box (relative to the stage), its rendered size, station fill, and small tap targets. */
@@ -52,15 +55,16 @@ const measure = (page: Page) =>
       };
     });
     const nodes = [...svg.querySelectorAll(".node")].map((n) => n.getBoundingClientRect());
-    const key = document.querySelector(".theatre .key summary")?.getBoundingClientRect();
-    const covered = key
-      ? [...svg.querySelectorAll(".node")]
-          .filter((n) => {
-            const r = n.getBoundingClientRect();
-            return r.left < key.right && key.left < r.right && r.top < key.bottom && key.top < r.bottom;
-          })
-          .map((n) => n.querySelector(".node-label")?.textContent ?? "?")
-      : [];
+    // The top-most element at each station's centre must be the stage itself (the canvas lets clicks through).
+    const covered = [...svg.querySelectorAll(".node .body")]
+      .filter((b) => {
+        const r = b.getBoundingClientRect();
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !top || !stage.contains(top);
+      })
+      .map((b) => b.closest(".node")!.querySelector(".node-label")?.textContent ?? "?");
+    const strip = document.querySelector(".theatre .beat")!.getBoundingClientRect();
+    const stripOverlap = Math.max(0, Math.min(strip.bottom, sr.bottom) - Math.max(strip.top, sr.top));
     const fill = (Math.max(...nodes.map((r) => r.bottom)) - Math.min(...nodes.map((r) => r.top))) / sr.height;
     const small = [...document.querySelectorAll<HTMLElement>("a[href], button, summary, input:not([type=radio]):not([type=checkbox]), [role=tab], .seg label, label.toggle")]
       .filter((e) => e.getClientRects().length && !e.classList.contains("skip") && getComputedStyle(e).visibility !== "hidden")
@@ -69,7 +73,7 @@ const measure = (page: Page) =>
         return { what: (e.getAttribute("aria-label") || e.textContent || e.className).trim().slice(0, 30), w: r.width, h: r.height };
       })
       .filter((x) => x.w < 40 || x.h < 40);
-    return { stage: { w: sr.width, h: sr.height }, texts, fill, small, covered };
+    return { stage: { w: sr.width, h: sr.height }, texts, fill, small, covered: [...new Set(covered)], stripOverlap };
   });
 
 const overlap = (a: Box, b: Box) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 0.5;
@@ -106,7 +110,8 @@ for (const lesson of LESSONS) {
       const collisions = labels.flatMap((a, j) => labels.slice(j + 1).filter((b) => a.owner !== b.owner && overlap(a, b)).map((b) => `“${a.text}” × “${b.text}”`));
       expect.soft(collisions, "no two stations' labels overlap").toEqual([]);
 
-      expect.soft(m.covered, "the Key button covers no station").toEqual([]);
+      expect.soft(m.covered, "nothing floats over a station").toEqual([]);
+      expect.soft(m.stripOverlap, "the beat strip has its own row").toBeLessThanOrEqual(0.5);
       if (isMobile) expect.soft(m.small, "every control is at least 40×40").toEqual([]);
 
       if (!isMobile && shape?.lanes === 1 && info.project.name.startsWith("desktop")) {

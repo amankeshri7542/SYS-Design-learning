@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { LESSONS, getLesson, neighbours } from "../src/lib/lessons";
 import { STAGES, START, TARGET, capstoneScene, type Arch } from "../src/lib/lessons/capstone";
 import { HERO } from "../src/lib/lessons/hero";
-import { buildSteps, defaultsOf, type FigureDef } from "../src/lib/lessons/types";
+import { buildSteps, defaultsOf, headlineOf, type FigureDef } from "../src/lib/lessons/types";
 import { Sim } from "../src/lib/sim/engine";
 import { betterIs, measure, type MetricSpec } from "../src/lib/sim/metrics";
 import type { SceneSpec } from "../src/lib/sim/types";
@@ -112,7 +112,7 @@ for (const lesson of LESSONS) {
   const [problem, fix] = lesson.figures;
   if (!fix || fix.tone === "explore") continue;
   test(`${lesson.code} ${lesson.title}: the fix beats the problem`, () => {
-    const label = fix.headline ?? fix.metrics[0].label;
+    const label = headlineOf(lesson.figures);
     const metric = fix.metrics.find((m) => m.label === label);
     assert.ok(metric, `${lesson.slug}: the headline “${label}” is one of the fix's metrics`);
     assert.notEqual(betterIs(metric), "neutral", `${lesson.slug}: the headline has a better direction`);

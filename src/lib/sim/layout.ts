@@ -37,7 +37,7 @@ export const SIZES: Record<Glyph, Size> = {
  * Stage text in CSS pixels. Labels keep these sizes on every screen; the frame grows to make room for them instead.
  * `globals.css` sets the same numbers as `--label-px`, `--sub-px` and `--badge-px`.
  */
-export const TEXT = { label: 13, sub: 12, badge: 11, line: 1.25, gap: 10, side: 10, gutter: 16, top: 56 } as const;
+export const TEXT = { label: 13, sub: 12, badge: 11, line: 1.25, gap: 10, side: 10, gutter: 16 } as const;
 /**
  * Average advance per character, in em: Atkinson Hyperlegible Next bold for labels (measured 0.48–0.5, with a margin)
  * and Overpass Mono for subs and badges. The browser stage-fit test fails if an estimate is ever too small.
@@ -231,13 +231,10 @@ export function frameFor(scene: Scene, mode: Mode, fit?: Fit): Frame {
   }
   const all = bounds(rects);
   const g = TEXT.gutter / k;
-  // The Key, the stage tag and event notes float over the top of the stage (until the player gives them a row):
-  // keep the scene below them.
-  const top = TEXT.top / k;
   const W = Math.max(base.W, all.w + 2 * g);
-  const H = Math.max(base.H, all.h + top + g);
+  const H = Math.max(base.H, all.h + 2 * g);
   const dx = (W - all.w) / 2 - all.x;
-  const dy = top + (H - top - g - all.h) / 2 - all.y;
+  const dy = (H - all.h) / 2 - all.y;
   const sides = new Map([...placed].map(([key, p]) => [key, p.side]));
   const pos = base.pos;
   return { ...base, W, H, k, spare: 0, sides, hits, pos: (at) => { const p = pos(at); return { x: p.x + dx, y: p.y + dy }; } };

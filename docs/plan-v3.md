@@ -1,6 +1,6 @@
 # System Lab v3 plan
 
-- **Status:** proposed, 2026-10-22. M0 and M1 built 2026-10-22.
+- **Status:** proposed, 2026-10-22. M0, M1 and M2 built 2026-10-22.
 - **Planned with:** Claude Fable 5.1. **To be built with:** Claude Opus 5.5, one milestone per session.
 - **Research behind it:** `docs/research/` holds five reports. Read the one a milestone points to before starting it.
   - `design-audit.md`: visual and UX audit, art direction, home and player layouts, component inventory.
@@ -445,12 +445,51 @@ Every milestone ends with the full gate (§10), screenshots at 1440×900, 1280×
 | `src/components/capstone.tsx` | modified | Uses `Shell`. Single-column build controls; the target as a two-cell row with live values (design-audit D20). |
 | `src/app/globals.css` | modified | Shell grid for desktop, ≤1180 px, ≤760 px portrait (bar 48 / stage 42svh / summary 44 / panel 1fr / dock 56) and landscape phones (bar 40 / stage 56% · panel 44% / dock 48). Two-row panel grid. Remove the `.stage-tag`, on-stage `.key` and `.note` styles. 44 px targets on touch. |
 | `tests/browser/site.spec.ts` | modified | New selectors. No page scroll on all four projects. On the desktop projects, `.panel-scroll` does not scroll on Problem and Fix for every lesson. On phones, the summary row is visible without scrolling. The Key opens from the bar and closes with Esc. |
+| `src/components/hero.tsx` | modified | *Added during M2.* The home scene uses the same sheet and `BeatStrip` ("Live · Server 2 crashed"), so the `.note` toast no longer covers its Users node. |
+| `src/lib/sim/layout.ts` | modified | *Added during M2.* `TEXT.top`, M1's 56 px band kept clear for the floating Key, tag and notes, is gone. Frames keep the 16 px gutter on every side. |
+| `src/lib/sim/metrics.ts` | modified | *Added during M2.* `formatChange` and `changeSize` for the Change column, unit-tested in `tests/metrics.test.ts`. |
+| `src/lib/lessons/types.ts` | modified | *Added during M2.* `headlineOf(figures)`, shared by the phone summary and the fix-beats-problem test. |
+| `tests/browser/stage-fit.spec.ts` | modified | *Added during M2.* "The Key covers no station" becomes "nothing covers a station": the top-most element at every station's centre belongs to the stage. The beat strip and the stage never overlap. |
 
 **Acceptance:**
-- [ ] At 1280×720 no lesson's Problem or Fix panel scrolls (today 11 do).
-- [ ] On a 390×844 phone the headline number is visible without scrolling on every lesson.
-- [ ] Nothing floats over the stage except the beat strip's own row.
-- [ ] Keyboard: Tab order is logical and Esc closes the Key.
+- [x] At 1280×720 no lesson's Problem or Fix panel scrolls. Before M2, 23 of the 36 Problem and Fix steps did; the plan's "11" was counted before M1's larger type. The tightest is D1's Replicas step, with 17 px to spare; every other step has 57 px or more.
+- [x] On a 390×844 phone the headline number is visible without scrolling on every lesson, and tapping it brings the full table into view. Landscape phones show it above the panel.
+- [x] Nothing floats over the stage except the beat strip's own row. The stage-fit spec checks every station on every step and project.
+- [x] Keyboard: Tab visits the bar, the summary, the panel and the dock in that order, and Esc or the close button shuts the Key and hands focus back to its button.
+
+**Decisions made while building M2:**
+- **The phone theatre is 46svh, not 42svh.** The 32 px beat strip sits inside the sheet. At 42svh a 390×844 phone's stage is 372×308, a ratio of 0.83. That is below M1's 0.85 portrait threshold, so wide scenes would be squeezed into the compact layout, which the stage-fit test forbids. 46svh, the figure in pedagogy §3's sketch, gives 0.91.
+- **The tone word moved from the panel to the beat strip.** "The problem" or "The fix" opens the strip, where the stage tag used to float. The tab carries the step's name, and the panel heading stands alone with no eyebrow. This answers D13 (one label three times) and saves 32 px of panel height.
+- **Until beats exist, the strip shows the scene's events.** A fresh one is in ink; the latest one stays, muted, until the next. Before the first event, only the tone word shows. Only a fresh event is announced to screen readers, through a separate live region, so switching steps doesn't re-announce an old one.
+- **On portrait phones the clock is on the beat strip.** There, the transport and the Next button fill the dock. Everywhere else the clock sits in the dock beside the speed button. Exactly one clock is visible on every screen, and a test checks it.
+- **The Key is a native popover** (`popover="auto"`) with the dialog role.
+  - Opening it moves focus to its close button.
+  - The browser handles Esc, a click outside, and returning focus to the Key button.
+  - It is fixed under the bar, on top of everything.
+- **Tabs collapse to their numbers when the names don't fit.**
+  - `player.tsx` measures each name's natural width; when the row runs short, the other tabs become 44 px number pills and the selected tab keeps its name.
+  - A squeezed tab's name wraps out of sight inside it, so it stays the tab's accessible name.
+  - The number is part of that name too ("2 With cache"), because it is the squeezed tab's visible label.
+  - At the test sizes this happens to 2 lessons at 1280×720 and 3 on the 844×390 phone.
+  - A test fails any tab taller than one line, any name cut part-way, and any nameless tab wider than its number.
+- **Tabs follow the tabs pattern.** Arrow keys (wrapping), Home and End move between steps. Only the selected tab is a Tab stop.
+- **Change-column text.** "−4%" and "+38%"; "×20" from ten times up (a true ratio, so 2 → 40 now reads ×20, not 19×); "new" from zero. Each sits over a bar as long as the change, capped at a doubling. Plain differences keep M0's units.
+- **The sparkline has its own narrow column**, so each row is one or two lines.
+  - A container query drops that column when the panel has under 350 px for the table, rather than let the numbers run past its edge.
+  - Screen readers skip it; it pictures the numbers they already hear.
+  - Tables keep up to five rows: D1 and A1 need five, and five fit at 1280×720.
+- **The panel is 31vw (368–440 px).** Its grid column is `minmax(0, 1fr)`: an `auto` column grew to the table's width and pushed the panel's right edge off screen at 1280×720. A test now fails anything in the panel that runs past its padding.
+- **Short screens get a slimmer frame.** At 760 px tall or less (1280×720), the bar is 52 px, the dock 56 px and step titles 22 px. Sliders are 24 px tall for a mouse and 40 px for touch. The tightest step, D1's Replicas (a 29-word caption, two knobs and five table rows), has 13 px to spare; every other step has 95 px or more. M4b's 25-word captions will widen that.
+- **The Recap gets the `why`**, under the heading "What to remember". The Recap is not a Problem or Fix step, and 18 of them scroll at 1280×720, by 8 to 126 px.
+- **The phone summary row collapses where a page has none.** The capstone shows its numbers as the target cells and the hold bar instead.
+- **The capstone pins only the target and the hold bar.** The busy meters moved into the scroller, so the build controls and the running cost stay in view at 1280×720.
+- **Landscape phones put the controls above the caption**, using CSS order, so the knob or fault is in reach without scrolling.
+  - Their bar is 44 px, not 40, because the controls in it are 40 px tall.
+  - The summary sits above the panel, where it comes in the Tab order.
+- **Small phones held sideways take the landscape layout.** A 667×375 phone is both 760 px or narrower and landscape, so the portrait rules now apply only in portrait or at heights over 520 px. Without that, the stage fell into the strip's row. A test at 667×375 covers it.
+- **Only transform and opacity animate.** The active column's rule, the progress stations and the strip's text change state at once. The Play button keeps one name, "Play", and `aria-pressed` says whether it is playing.
+- **Found, not fixed: the trade-off tone is violet,** the stale dot's text tone, and the strip now shows it ("Trade-off"). This predates M2 and should be settled with the catalog colours in M5.
+- **Found, not fixed: a label can sit on a rail.** M1's placement avoids stations and other labels but not links. The capstone at 844×390 shows "Server 1" on the rail to the database. M3, which reworks the stage, should add rails as obstacles.
 
 ### M3 — Motion that teaches (L)
 

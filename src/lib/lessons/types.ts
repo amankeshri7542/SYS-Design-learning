@@ -70,6 +70,12 @@ export function isChoice(k: Knob): k is ChoiceKnob {
   return "options" in k;
 }
 
+/** The metric a lesson's claim is about: the second figure's `headline`, or that figure's first metric. */
+export function headlineOf(figures: FigureDef[]): string {
+  const f = figures[1] ?? figures[0];
+  return f.headline ?? f.metrics[0].label;
+}
+
 export function defaultsOf(f: FigureDef): Values {
   return Object.fromEntries((f.knobs ?? []).map((k) => [k.id, k.value]));
 }

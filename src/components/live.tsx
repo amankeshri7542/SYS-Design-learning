@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Sim } from "@/lib/sim/engine";
-import { betterIs, formatClock, formatDiff, formatMetric, isLatency, measure, toneOf, type MetricSpec } from "@/lib/sim/metrics";
+import { betterIs, changeSize, formatChange, formatClock, formatDiff, formatMetric, isLatency, measure, toneOf, type MetricSpec } from "@/lib/sim/metrics";
 import type { SceneSpec } from "@/lib/sim/types";
 import { useMode, useReducedMotion, useVisible } from "./hooks";
 import type { DrawFn } from "./stage";
@@ -129,12 +129,12 @@ export function freshNote(sim: Sim) {
 
 const SPEEDS = [0.5, 1, 2];
 
-export function Transport({ live, name, compact = false }: { live: Live; name: string; compact?: boolean }) {
+/** Play or pause, step a moment, restart, and one button that cycles the speed. */
+export function Transport({ live }: { live: Live }) {
   return (
-    <div className={`transport${compact ? " compact" : ""}`}>
-      <button type="button" className="btn btn-play" onClick={live.toggle} aria-pressed={live.playing} aria-label={live.playing ? "Pause" : "Play"}>
+    <div className="transport">
+      <button type="button" className="btn btn-play" onClick={live.toggle} aria-pressed={live.playing} aria-label="Play" title={live.playing ? "Pause" : "Play"}>
         {live.playing ? <PauseIcon /> : <PlayIcon />}
-        {!compact && <span>{live.playing ? "Pause" : "Play"}</span>}
       </button>
       <button type="button" className="btn btn-icon" onClick={live.step} title="Step forward a moment" aria-label="Step forward a moment">
         <StepIcon />
@@ -142,35 +142,25 @@ export function Transport({ live, name, compact = false }: { live: Live; name: s
       <button type="button" className="btn btn-icon" onClick={live.restart} title="Restart from the beginning" aria-label="Restart from the beginning">
         <RestartIcon />
       </button>
-      {compact && (
-        <button
-          type="button"
-          className="btn btn-icon speed-cycle"
-          onClick={() => live.setSpeed(SPEEDS[(SPEEDS.indexOf(live.speed) + 1) % SPEEDS.length])}
-          aria-label={`Playback speed ${live.speed}× (${live.clock}), tap to change`}
-          title={live.clock}
-        >
-          {live.speed}×
-        </button>
-      )}
-      <fieldset className="seg seg-speed" title={live.clock}>
-        <legend className="sr-only">Playback speed ({live.clock})</legend>
-        {SPEEDS.map((s) => (
-          <label key={s}>
-            <input type="radio" name={`speed-${name}`} checked={live.speed === s} onChange={() => live.setSpeed(s)} />
-            <span>{s}×</span>
-          </label>
-        ))}
-      </fieldset>
-      {!compact && <Clock live={live} />}
+      <button
+        type="button"
+        className="btn btn-icon speed-cycle"
+        onClick={() => live.setSpeed(SPEEDS[(SPEEDS.indexOf(live.speed) + 1) % SPEEDS.length])}
+        aria-label={`${live.speed}× speed: ${live.clock}. Change speed`}
+        title="Change speed"
+      >
+        {live.speed}×
+      </button>
     </div>
   );
 }
 
+const CLOCK_HINT = "The scene plays in slow motion so you can follow each request. The numbers show the times the system really takes.";
+
 /** States the slow-motion clock in plain words, so the numbers on screen can be read against it. */
 export function Clock({ live }: { live: Live }) {
   return (
-    <span className="slowmo" title="The scene plays in slow motion so you can follow each request. The numbers show the times the system really takes.">
+    <span className="slowmo" title={CLOCK_HINT}>
       {live.clock}
     </span>
   );
@@ -258,8 +248,9 @@ export function Compare({ metrics, columns, verdict }: { metrics: MetricSpec[]; 
     metrics,
     cells.map((row) => row[activeIndex]),
   );
+  const two = columns.length === 2;
   return (
-    <table className="compare">
+    <table className="compare" id="compare" tabIndex={-1}>
       <caption className="sr-only">Live metrics for each version of the scene</caption>
       <thead>
         <tr>
@@ -271,11 +262,13 @@ export function Compare({ metrics, columns, verdict }: { metrics: MetricSpec[]; 
               {c.label}
             </th>
           ))}
-          {columns.length === 2 && (
+          {two && (
             <th scope="col" className="delta-h">
               Change
             </th>
           )}
+          {/* The sparkline is a picture of the recent past; screen readers get the numbers instead. */}
+          <th scope="col" className="trend-h" aria-hidden="true" />
         </tr>
       </thead>
       <tbody>
@@ -285,12 +278,12 @@ export function Compare({ metrics, columns, verdict }: { metrics: MetricSpec[]; 
           const differs = new Set(known.map((v) => formatMetric(m, v))).size > 1;
           const better = verdict ? betterIs(m) : "neutral";
           const best = known.length > 1 && differs && better !== "neutral" ? (better === "low" ? Math.min(...known) : Math.max(...known)) : null;
+          const change = two ? changeOf(m, row[0], row[1], better !== "neutral") : null;
           return (
             <tr key={m.label}>
               <th scope="row" title={m.hint}>
                 <span>{m.label}</span>
                 <Target m={m} sloMs={columns[0].sim.spec.sloMs} />
-                <Spark data={history[m.label] ?? []} />
               </th>
               {row.map((v, j) => (
                 <td
@@ -300,7 +293,14 @@ export function Compare({ metrics, columns, verdict }: { metrics: MetricSpec[]; 
                   {formatMetric(m, v)}
                 </td>
               ))}
-              {columns.length === 2 && <Delta m={m} from={row[0]} to={row[1]} verdict={better !== "neutral"} />}
+              {two && (
+                <td className={`delta${change?.cls ?? ""}`}>
+                  <ChangeText change={change} />
+                </td>
+              )}
+              <td className="trend" aria-hidden="true">
+                <Spark data={history[m.label] ?? []} />
+              </td>
             </tr>
           );
         })}
@@ -309,18 +309,66 @@ export function Compare({ metrics, columns, verdict }: { metrics: MetricSpec[]; 
   );
 }
 
-/** Change from the first step to the second: relative and marked better or worse, or a plain signed difference. */
-function Delta({ m, from, to, verdict }: { m: MetricSpec; from: number | null; to: number | null; verdict: boolean }) {
-  if (from === null || to === null || formatMetric(m, from) === formatMetric(m, to)) return <td className="delta">—</td>;
-  if (!verdict) return <td className="delta">{formatDiff(m, to - from)}</td>;
+interface Change {
+  /** " up" (better), " down" (worse), or "" for a plain difference. */
+  cls: string;
+  text: string;
+  verdict: string;
+  size: number;
+}
+
+/**
+ * Change from the first step to the second: relative and marked better or worse when `verdict`, otherwise a plain
+ * signed difference in the metric's unit. Null when there is nothing to compare yet, or no visible change.
+ */
+function changeOf(m: MetricSpec, from: number | null, to: number | null, verdict: boolean): Change | null {
+  if (from === null || to === null || formatMetric(m, from) === formatMetric(m, to)) return null;
+  const size = changeSize(from, to);
+  if (!verdict) return { cls: "", text: formatDiff(m, to - from), verdict: "", size };
   const better = betterIs(m) === "low" ? to < from : to > from;
-  const pct = from === 0 ? null : Math.abs((to - from) / from);
-  const text = pct === null ? "new" : pct >= 9.95 ? `${Math.round(pct)}×` : `${Math.round(pct * 100)}%`;
+  return { cls: better ? " up" : " down", text: formatChange(from, to), verdict: better ? "better: " : "worse: ", size };
+}
+
+/** A signed number over a thin bar as long as the change. "—" when nothing changed. */
+function ChangeText({ change }: { change: Change | null }) {
+  if (!change) return "—";
   return (
-    <td className={`delta ${better ? "up" : "down"}`}>
-      <span aria-hidden="true">{to < from ? "▼" : "▲"}</span>
-      <span className="sr-only">{better ? "better by" : "worse by"}</span> {text}
-    </td>
+    <>
+      {change.verdict && <span className="sr-only">{change.verdict}</span>}
+      {change.text}
+      <i className="delta-bar" style={{ transform: `scaleX(${Math.max(0.12, change.size)})` }} aria-hidden="true" />
+    </>
+  );
+}
+
+/**
+ * Phones: the lesson's headline metric in every step, and its change, pinned in one row so the number stays in view
+ * while you read. Tapping it brings the full table into view.
+ */
+export function MetricSummary({ metric, columns, verdict, onOpen }: { metric: MetricSpec; columns: Column[]; verdict: boolean; onOpen: () => void }) {
+  const smooth = useSmoothed();
+  const vals = columns.map((c, j) => smooth(`${j}`, measure(c.sim, metric), metric));
+  const change = columns.length === 2 ? changeOf(metric, vals[0], vals[1], verdict && betterIs(metric) !== "neutral") : null;
+  return (
+    <button type="button" className="summary" onClick={onOpen}>
+      <span className="summary-label">{metric.label}</span>
+      {isLatency(metric) && <span className="sr-only"> (target ≤ {columns[0].sim.spec.sloMs} ms)</span>}
+      <span className="summary-vals">
+        {vals.map((v, j) => (
+          <span key={columns[j].label} className={`num tone-${toneOf(metric, v, columns[j].sim.spec.sloMs)}${columns[j].active ? " on" : ""}`}>
+            {j > 0 && <ArrowIcon />}
+            <span className="sr-only">{columns[j].label}: </span>
+            {formatMetric(metric, v)}
+          </span>
+        ))}
+      </span>
+      {change && (
+        <span className={`delta${change.cls}`}>
+          <ChangeText change={change} />
+        </span>
+      )}
+      <span className="sr-only">. Show all numbers</span>
+    </button>
   );
 }
 

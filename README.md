@@ -21,14 +21,14 @@ There are 18 lessons on five "lines", ending in a capstone:
 
 Every lesson fits on one screen, so you never scroll to find the simulation and then scroll back to read about it:
 
-- **Stage.** The live scene fills most of the screen.
-- **Side panel.** It holds a one-line **why**, then the steps as tabs:
+- **Stage.** The live scene fills most of the screen. A strip along its edge says whether you're watching the problem or the fix, and names events as they happen: a crash, a stall, a broken link.
+- **Side panel.** It holds the steps as tabs:
   - **The problem**: the scene without the idea.
   - **The fix**: the same scene and the same random seed, with the idea added.
-  - **Recap**: when to use it, the catch, and where you'll see it.
-- **Comparison table.** Under the steps, a live **Without | With | Change** table measures both worlds side by side. They run in lockstep, and a fault button hits both.
-- **Dock.** Playback controls and the single **Next** button.
-- **Phones.** The stage stays fixed on top, the panel is the only part that scrolls, and the dock sits at the bottom.
+  - **Recap**: why it matters, when to use it, the catch, and where you'll see it.
+- **Comparison table.** Pinned under the steps, a live **Without | With | Change** table measures both worlds side by side. They run in lockstep, and a fault button hits both.
+- **Dock.** Playback controls, the speed and what it means ("1 s on screen = 100 ms"), and the single **Next** button. The dot **Key** opens from the top bar.
+- **Phones.** The stage stays fixed on top with the lesson's headline number under it. The panel is the only part that scrolls, and the dock sits at the bottom.
 
 ![The caching lesson on one screen: scene, steps, knob and Without/With/Change table](docs/screenshots/lesson-caching.png)
 
@@ -82,11 +82,12 @@ npm run tune           # print each figure's metrics over a simulated run
 src/
   app/                    Next.js App Router: home, /learn/[slug] (static), 404
   components/
-    player.tsx            the one-screen lesson player (bar · stage | panel · dock)
+    shell.tsx             the one-screen layout (bar · stage | panel · dock) and the beat strip
+    player.tsx            the lesson player
     capstone.tsx          the stage-by-stage capstone, in the same shell
     stage.tsx             SVG nodes underneath, a canvas of moving requests on top;
                           picks a wide, compact (phone) or tall layout to fit its box
-    live.tsx              useLiveSims (lockstep worlds + animation loop), Compare, Transport
+    live.tsx              useLiveSims (lockstep worlds + animation loop), Compare, MetricSummary, Transport
     glyph.tsx, legend.tsx node shapes, icons, the dot key
     hero.tsx, brand.tsx   home page scene, header and footer
     route-map.tsx         the transit map (SVG on desktop, a strip list on phones)
