@@ -1,0 +1,762 @@
+# System Lab v3 plan
+
+- **Status:** proposed, 2026-10-22.
+- **Planned with:** Claude Fable 5.1. **To be built with:** Claude Opus 5.5, one milestone per session.
+- **Research behind it:** `docs/research/` holds five reports. Read the one a milestone points to before starting it.
+  - `design-audit.md`: visual and UX audit, art direction, home and player layouts, component inventory.
+  - `motion-audit.md`: motion inventory, motion that teaches, motion tokens, measured frame budgets.
+  - `pedagogy.md`: how the best explainers teach, a first-time-learner audit, the beat-based lesson structure, copy rules, three rewritten lessons.
+  - `architecture.md`: engine capability matrix, four engine extension batches (including networking), the beats runtime, the catalog model, build and test strategy, Next 16 facts.
+  - `curriculum.md`: the expanded catalog by level and line, the networking line, real-world stories, learning paths.
+- `docs/plan.md` stays as the record of v1 and v2.
+
+---
+
+## 1. Problem
+
+System Lab already does the hard part. Every lesson is a live, deterministic simulation on one screen, the problem and the fix run in lockstep, and a test proves each fix beats its problem. The research found six gaps between that foundation and "understand system design just by watching".
+
+1. **The eye is not guided.** Captions describe outcomes in a paragraph. Nothing points at the node, dot or queue being talked about, and the interesting moment often arrives 10 to 50 seconds in with no warning.
+2. **Some numbers teach something false.** The Change column paints a verdict on explore and trade-off figures, marks "Servers in use 3 → 2" as worse in the health-check fix, and never shows the latency target the colours are judged against.
+3. **The stage is hard to read.** Phone labels render at 7 to 10 px and are clipped on 7 lessons. On desktop the nodes fill 8 to 12% of the stage height. Links are at 1.2:1 contrast and almost vanish at night.
+4. **Motion shows requests but not mechanisms.** Cache fills and evictions, key remapping, replication copies and breaker states are invisible or carried by identical rings.
+5. **The catalog stops early.** There is no networking line (request, response, acknowledgement, loss, flow control, connections), no beginner on-ramp, few advanced topics, and one real-world story.
+6. **The look is generic around a good idea.** The transit identity is strong, but the chrome around it (dot grid, six radii, pills everywhere, a stock hero) is not.
+
+When v3 ships, a learner picks a level and rides a line. Each lesson builds its scene part by part, then walks through it in short beats: a callout points at the exact thing, the scene pauses so they can predict, they cause the failure, switch on the fix, and read one sentence comparing the numbers. "Follow one request" traces a single request's whole life.
+
+The catalog grows from 18 to 57 lessons on seven lines in three levels. That includes a 16-lesson networking line built around request, response and acknowledgement. Eight new real-world stories join the URL shortener. Everything sits on a paper-and-ink "field guide" look that stays legible at 390 px and in dark mode.
+
+## 2. Scope
+
+**Asked for by the owner:**
+- A better overall look, designed as a UI/UX and front-end expert would.
+- Concept delivery that makes system design understandable by watching.
+- More motion, as motion design that teaches.
+- More examples, and a bigger catalog with beginner, intermediate and advanced concepts.
+- Networking concepts: request, response, acknowledgement and beyond, at all three levels.
+- Real-world system designs told as animated stories.
+- Mobile and desktop parity.
+
+**Inferred, and treated as requirements:**
+- Every rule in `CLAUDE.md` stays: no runtime dependencies beyond Next and React, plain CSS, the deterministic engine, the fixed dot vocabulary, reduced motion, and the one-screen fit.
+- The transit identity evolves rather than being replaced.
+- "The fix beats the problem" stays the hard quality gate, and every new teaching claim gets a test.
+- Existing lesson URLs keep working.
+
+**Out of scope:** accounts, a backend, analytics, cloud services, AI features, and user-generated content.
+
+## 3. Assumptions
+
+| # | Assumption | Status | If wrong |
+|---|---|---|---|
+| A1 | No new runtime dependencies (`CLAUDE.md`). | confirmed | Motion would move to a library; the plan avoids that on purpose. |
+| A2 | Learner storage stays "a localStorage list of visited lessons and nothing more" (`CLAUDE.md`). Predictions and check answers live in component state only. | confirmed as today's rule | If the owner wants a learning record (prediction accuracy, chosen path), build milestone M11 and change the `CLAUDE.md` rule first. |
+| A3 | Overpass, Overpass Mono, Atkinson Hyperlegible Next and Newsreader are all variable on Google Fonts. | confirmed (`next/font` font data) | Keep weight arrays; font payload stays at 13 files. |
+| A4 | Next 16.3.7, React 19.3.0, Playwright 1.63.0 are installed; Node 22+ in CI. | confirmed | Re-read `node_modules/next/dist/docs/` for the installed version. |
+| A5 | The target viewports are 1440×900, 1280×720, 390×844 and a landscape phone at 844×390. | confirmed (`CLAUDE.md`, `playwright.config.ts`, design audit) | Add or drop Playwright projects. |
+| A6 | Every existing slug stays as it is. Slugs are the identity (URLs, the visited list). Codes are display labels: M5 assigns every lesson, built or planned, its final code in level order, and after that codes are frozen. | confirmed by this plan | Renaming a slug needs an alias and a redirect (M5 adds the mechanism). |
+| A7 | Each milestone lands as one branch and one pull request. Vercel builds a preview per PR and production from `main`. | unconfirmed | If the owner prefers direct commits to `main`, keep the same milestone order and gates. |
+| A8 | Lesson timing stays at `timeScale` 0.1 (10× slow motion) unless a lesson needs otherwise, and then all of that lesson's steps share one value. | confirmed (engine, `live.tsx` reads `specs[0].timeScale`) | Per-step time scales would break lockstep. |
+
+## 4. What the research found
+
+The top findings, in the order the plan acts on them. Each report has the evidence.
+
+| Finding | Source |
+|---|---|
+| Change column verdicts are wrong for explore and trade-off figures and for "Servers in use"; no latency target is shown; the hidden 10× clock confuses. | pedagogy §2 |
+| Phone labels are 7–10 px rendered and clipped on 7 lessons; frames ignore label extents; the layout picker ignores aspect ratio. | design-audit D1, D5, D6 |
+| Dark-mode primary button is 3.13:1; amber badge text 2.17:1; line-colour code chips 3.5:1. | design-audit D2 |
+| Single-row scenes fill 8–12% of the desktop stage; links are 1.2:1. | design-audit D3, D9 |
+| At 1280×720 the Fix step's panel scrolls on 11 of 18 lessons; at 1440×900 it wastes 155–333 px. | design-audit D4 |
+| Outcome rings are the loudest thing on stage and carry the least meaning; one tab switch fires seven different durations. | motion-audit §0 |
+| Consistent hashing, replication and eviction are invisible; the breaker badge snaps between states. | motion-audit §0, §2 |
+| Frame budget has large headroom: 120 dots cost 0.9 ms p95 natively and 2.1 ms at 6× CPU throttle. | motion-audit §4 |
+| Learners need pre-training (parts before motion), segmenting (learner-paced beats), cueing (point at the thing), prediction before the break, and a check with feedback. | pedagogy §1 |
+| Retries & backoff and consistency vs availability show their story only after about a minute; scripted loops fight the fault buttons. | pedagogy §2 |
+| The engine expresses about half the candidate concepts today; additive batches unlock the rest, including the networking line (this plan cuts them into five, D8). | architecture §1, §2 |
+| Loss must be decided by a hash of what crosses which link, not by draw order, or the problem and fix worlds lose different packets. | architecture §2.3.0 |
+| All lessons ship in one shared chunk loaded by the home page; split catalog metadata from scene modules before the catalog passes ~30. | architecture §5.2 |
+| `cacheComponents` must stay off; `params` is a Promise; fonts should load as variable files. | architecture §5.5 |
+| Every curriculum opens with the same six ideas, and System Lab has all six. The gap is before them (the anatomy of a request) and after them (delivery guarantees, quorums, consensus, locks, streams). | curriculum §1.1 |
+| Transport ideas (acks, retransmission, windows, congestion, handshakes) are the most dot-shaped topics in the field and are missing from interview courses, so a networking line is a differentiator. | curriculum §1.1, §1.4 |
+| Queue acks with dead letters plus idempotency keys appear in six of the eight new stories; deadline propagation in four; locks and leases in two. | curriculum §4 |
+
+## 5. Architecture decisions
+
+### D1. Art direction: "Field Guide, set in signage"
+- **Options:** dark-tech control room; paper-and-ink field guide; full transit signage system.
+- **Chosen:** the field guide, with the transit system as its bones (design-audit §3).
+- **Why:** it is literally what the product says it is. Ink on paper is the clearest ground for six saturated dot colours, so the dots, which are the content, are the only saturated things on the stage. Line colour becomes an identifier (roundels, code chips, rules, rails), never a surface behind small text.
+- **Cost:** dark mode needs a designed "night edition", not an inversion. It adds a fourth typeface.
+
+### D2. Typefaces
+- **Chosen:** Overpass for signage (≥16 px only), Newsreader for lesson and step titles and the recap, Atkinson Hyperlegible Next for body and stage labels, Overpass Mono for every number. All four load as variable fonts with no weight arrays.
+- **Why:** the serif gives the guide its voice. Variable files cut the font payload from 13 files and 300 KB to about 5 files.
+- **Cost:** one more family. If it does not survive review in M1, fall back to Overpass 600 for titles and keep three faces.
+
+### D3. Stage text: counter-scaled SVG with label-aware frames
+- **Options:** an HTML overlay for labels; SVG text counter-scaled by the fit factor.
+- **Chosen:** keep labels in the SVG, set `font-size: calc(var(--label-px) / var(--k))` where `--k` is rendered px per viewBox unit, and make `frameFor` reserve gutters for label extents.
+- **Why:** one coordinate system means labels glide with their nodes during the step-switch tween with no sync work, and the SVG keeps its accessible name. The fit is a two-pass calculation (estimate k, add label gutters, recompute k), memoised per box size.
+- **Cost:** label extents are estimated from character counts, not measured. A Playwright containment test catches any estimate that is too small.
+
+### D4. Concept delivery: beats evaluated on simulation time
+- **Options:** keep free-running captions; a scroll story; data-driven beats on each figure.
+- **Chosen:** beats as data on `FigureDef`, fired by a deterministic `BeatRunner` that reads only simulation time and simulation events (architecture §3), wrapped in the lesson structure from pedagogy §3: hook, build, watch, predict, break, fix, compare, check, takeaways.
+- **Why:** beats point at the thing at the moment it happens and can pause both worlds, which is what the learning science says works. Because triggers read only the seeded simulation, the same beat fires at the same moment on every machine and at every speed, and a test can prove each beat really happens.
+- **Cost:** every lesson needs authoring (hook, build lines, 3–6 beats, a prediction, 1–2 checks). The dock's Next button now advances beats before steps, so the existing browser test for Next changes.
+
+### D5. Faults: armed, one-shot scripts for lessons
+- **Options:** keep looping scripts; armed scripts the learner fires.
+- **Chosen:** `ScriptEvent.armed` events do not run from the loop. The break beat, or the fault button, fires them with `sim.fire(label)` in both worlds. Hero and story scenes keep loops.
+- **Why:** the learner causes the failure at a known moment (samwho, Secret Lives of Data), and the 52–70 s loops that hid the retries and consistency-vs-availability lessons go away.
+- **Cost:** tests must fire armed events themselves. `tests/lessons.test.ts` gets an `autoFire(sim)` helper that fires each armed event at its nominal `at`, so claims stay measurable.
+
+### D6. Learner state stays minimal
+- **Chosen:** keep the visited list as the only stored progress. Predictions, checks and the follow toggle are component state. "Next stop" follows the fixed recommended path (D7), so it needs no stored choice. The map's level filter is UI state. The lesson-to-lesson intro continuity in M3 uses a module-level variable, which survives client navigation without storage.
+- **Why:** it is a written project rule, and nothing in v3 needs more.
+- **Cost:** no "you predicted 7 of 9" history across visits. That is the optional M11, and only with the owner's agreement.
+
+### D7. Catalog shape: lines × zones, metadata split from scenes
+- **Chosen:**
+  - Lines stay as topics (rows on the map). Levels become fare zones (column bands): Zone 1 Beginner, Zone 2 Intermediate, Zone 3 Advanced. Real-world stories become journeys that ride several lines.
+  - `catalog.ts` holds metadata for every lesson. Each lesson's figures, beats and claims live in `scenes/<slug>.ts`, loaded on the lesson page through a literal `import()` map.
+  - One recommended path (`PATH` in the catalog, curriculum §5) interleaves the lines. "Next stop" follows it, skipping lessons that are not live yet. The line strip in the bar still shows a lesson's line neighbours.
+  - Prerequisites dim a station on the map until they are visited. Nothing is locked.
+- **Why:** the home page and route map need only metadata, and each lesson page needs only its own scene code (architecture §5.2). The map scales because a station's column comes from its level, not its index. An interleaved path puts N2 acknowledgements right before A3 retries, where it does its work.
+- **Cost:** one-time move of 18 lessons into per-lesson files, and a test that the import map covers every slug.
+
+### D8. Engine growth: five additive batches, no second engine
+- **Options:** a separate network simulator; extend the one engine.
+- **Chosen:** extend `src/lib/sim/engine.ts` in five batches, each behind spec fields whose defaults reproduce today's behaviour exactly. They follow architecture §2, with its transport batch split in two so the delivery features most stories need land first (curriculum §4, §8):
+  - **B1 small hooks** (M6): links with loss, bandwidth, jitter and buffers; deadlines; shedding and priority; bulkheads; batching; canary weights; drain; overload crash; stale-on-error; nearest region; cached addresses; negative caching; per-op service time; session stores; SLO metrics; a per-request time breakdown.
+  - **B2a messages and delivery** (M7): explicit acks, idempotency keys, queue acks with visibility timeout and dead letters, back-pressure, outbox, partitioned logs.
+  - **B2b connections and real time** (M8): windows and AIMD, handshakes, keep-alive and pools, head-of-line blocking vs multiplexing, L4 vs L7, held connections with push, heartbeats, replica promotion.
+  - **B3 coordination** (M9): fan-out-and-wait (scatter-gather, hedging), quorums, elections and log replication, locks and leases with compare-and-set, sagas.
+  - **B4 streams and durability** (M10): event-time windows and lateness, write-behind with lost writes on crash.
+- **Why:** one engine keeps one dot vocabulary, one test harness, and lockstep for free.
+- **Rules that come with it:**
+  - Link fate is a hash of link, logical id, attempt and hop, so both worlds lose the same packets.
+  - `NodeRt.holds()` becomes the one list of every request a node holds, used by `reconfigure` and `setUp`.
+  - Every new message kind (ack, handshake, push, heartbeat, hedge twin) is `detached`, so accounting is unchanged.
+  - New meanings get size, outline, dashes, rings, badges and meters, never a new dot colour (architecture §2.3.10).
+- **Cost:** `engine.ts` grows from about 1,100 to 2,500 lines. M6 splits it into modules before adding B1.
+
+### D9. Stories: one player, data-driven
+- **Chosen:** generalise the capstone into `StoryDef` (controls, cost, scene builder, stages, targets) and one `StoryPlayer`. The URL-shortener capstone becomes the first story.
+- **Why:** the capstone already is a story in disguise (architecture §4.4), and every new story then costs data, not a component.
+
+### D10. Branching and parallel work
+- **Chosen:**
+  - M0 to M5 run strictly in order. They all touch `stage.tsx`, `player.tsx` and `globals.css`.
+  - After M5, each engine batch lands first as its own PR.
+  - Lesson authoring for that batch can then run in parallel sessions, one per line, because lessons live in separate scene files.
+  - Each parallel session appends its catalog entries inside its own line's block in `catalog.ts`, and its glossary terms in its own block of `glossary.ts`.
+
+---
+
+## 6. Catalog v3
+
+The full specification of every lesson is in `docs/research/curriculum.md` §3: its why, problem scene, fix scene, headline metric, knobs, fault, prerequisites and the engine features it needs. Its NC capability IDs are mapped to engine batches in §6.4 below. The tables here fix what is in scope, its level, and the milestone that builds it.
+
+Codes in these tables are the working codes from the curriculum report, so they match its detailed rows. M5 assigns final codes in each table's row order (A6), so a finished line reads N1, N2, N3… on the map. Slugs are the stable key between the two.
+
+### 6.1 Lines
+
+| Letter | Line | Lessons in scope | New | Colour |
+|---|---|---|---|---|
+| N | Networking | 16 | 16 | new identifier colour, chosen in M1 |
+| F | Foundations | 6 | 2 | `--l-foundations` |
+| C | Caching | 6 | 2 | `--l-caching` |
+| D | Data | 10 | 6 | `--l-data` |
+| A | Async | 9 | 6 | `--l-async` |
+| R | Resilience | 8 | 5 | `--l-resilience` |
+| O | Operating | 2 | 2 | new identifier colour, chosen in M1 |
+| ★ | Stories | 9 | 8 | ink |
+
+**Total: 57 lessons** (18 existing, 23 new must-haves, 16 new should-haves) and 9 stories.
+
+The two new line colours must differ clearly from the six dot hues and from the other lines. Each needs an ink variant at ≥4.5:1 on paper in day and night, enforced by `tests/tokens.test.ts`.
+
+### 6.2 Lessons in scope
+
+Level: B beginner, I intermediate, A advanced. Priority: P1 must, P2 should. "Existing" lessons keep their slug; the old code is in brackets.
+
+**N · Networking**
+
+| Code | Slug | Title | Level | Pri | Built in |
+|---|---|---|---|---|---|
+| N1 | request-and-response | A request and a response | B | P1 | M6 |
+| N2 | acknowledgements | Acknowledgements | B | P1 | M7 |
+| N4 | latency-vs-bandwidth | Latency vs bandwidth | B | P1 | M6 |
+| N7 | handshakes-and-keep-alive | Handshakes and keep-alive | B | P1 | M8 |
+| N9 | dns | DNS: finding the server | B | P1 | M6 |
+| N5 | windows-and-flow-control | Windows and flow control | I | P1 | M8 |
+| N11 | push-vs-poll | Long polling, SSE and WebSockets | I | P1 | M8 |
+| N13 | timeouts-and-deadlines | Timeouts and deadline propagation | I | P1 | M6 |
+| N6 | congestion-control | Congestion control | I | P2 | M8 |
+| N8 | head-of-line-blocking | Head-of-line blocking and multiplexing | I | P2 | M8 |
+| N10 | l4-vs-l7 | L4 vs L7: balancers, proxies, gateways | I | P2 | M8 |
+| N12 | heartbeats | Heartbeats and keepalives | I | P2 | M8 |
+| N16 | pipelining-and-batching | Pipelining and batching | I | P2 | M6 |
+| N15 | delivery-guarantees | At-most-once, at-least-once, exactly-once | A | P1 | M7 |
+| N17 | backpressure | Backpressure | A | P1 | M7 |
+| N18 | nearest-region-and-failover | Nearest region and failover | A | P2 | M6 |
+
+**F · Foundations**
+
+| Code | Slug | Title | Level | Pri | Built in |
+|---|---|---|---|---|---|
+| F1 | latency-and-throughput | Latency & throughput | B | P1 | existing |
+| F2 | scaling-up-vs-out | Scaling up vs scaling out | B | P1 | existing |
+| F3 | load-balancing | Load balancing | B | P1 | existing |
+| F4 | health-checks | Health checks & failover | B | P1 | existing |
+| F5 | stateless-vs-stateful | Stateless servers and sessions | B | P1 | M6 |
+| F6 | nines-and-error-budgets | Nines, SLOs and error budgets | B | P2 | M6 |
+
+**C · Caching**
+
+| Code | Slug | Title | Level | Pri | Built in |
+|---|---|---|---|---|---|
+| C1 | caching | Caching | B | P1 | existing |
+| C2 | cdn | Content delivery networks | B | P1 | existing |
+| C3 | stale-data | Expiry & stale data | I | P1 | existing |
+| C4 | cache-stampede | Cache stampede | I | P1 | existing |
+| C7 | negative-caching | Misses that never hit | I | P2 | M6 |
+| C5 | cache-write-strategies | Write-through, write-behind, cache-aside | I | P2 | M10 |
+
+**D · Data**
+
+| Code | Slug | Title | Level | Pri | Built in |
+|---|---|---|---|---|---|
+| D1 | indexes | Indexes | B | P1 | M6 |
+| D2 (D1) | read-replicas | Read replicas | I | P1 | existing |
+| D3 (D2) | sharding | Sharding | I | P1 | existing |
+| D4 (D3) | consistent-hashing | Consistent hashing | I | P1 | existing |
+| D6 | connection-pools | Connection pools | I | P2 | M8 |
+| D7 | failover | Primary failover | I | P1 | M8 |
+| D5 (D4) | consistency-vs-availability | Consistency vs availability | A | P1 | existing |
+| D8 | quorums | Quorum reads and writes | A | P1 | M9 |
+| D9 | leader-election | Leader election (Raft) | A | P1 | M9 |
+| D10 | locks-and-double-booking | Locks and double booking | A | P1 | M9 |
+
+**A · Async**
+
+| Code | Slug | Title | Level | Pri | Built in |
+|---|---|---|---|---|---|
+| A1 | message-queues | Message queues | B | P1 | existing |
+| A2 | publish-subscribe | Publish / subscribe | I | P1 | existing |
+| A3 | retries-and-backoff | Retries & backoff | I | P1 | existing |
+| A4 | idempotency | Idempotency keys | I | P1 | M7 |
+| A5 | dead-letter-queues | Poison messages and dead-letter queues | I | P1 | M7 |
+| A6 | outbox | The outbox pattern | A | P2 | M7 |
+| A7 | partitioned-logs | Partitions, ordering and consumer groups | A | P2 | M7 |
+| A8 | stream-windows | Windows and aggregation | A | P2 | M10 |
+| A9 | sagas | Sagas: multi-step work that fails halfway | A | P2 | M9 |
+
+**R · Resilience**
+
+| Code | Slug | Title | Level | Pri | Built in |
+|---|---|---|---|---|---|
+| R1 | rate-limiting | Rate limiting | I | P1 | existing |
+| R2 | circuit-breakers | Circuit breakers | I | P1 | existing |
+| R3 | autoscaling | Autoscaling | I | P1 | existing |
+| R4 | load-shedding | Load shedding and priority | I | P1 | M6 |
+| R5 | bulkheads | Bulkheads | I | P1 | M6 |
+| R7 | cascading-failures | Cascading failures | A | P1 | M6 |
+| R8 | cold-caches-and-herds | Cold caches and thundering herds | A | P2 | M8 |
+| R9 | hedged-requests | Hedged requests: beating tail latency | A | P2 | M9 |
+
+**O · Operating**
+
+| Code | Slug | Title | Level | Pri | Built in |
+|---|---|---|---|---|---|
+| O1 | canary-rollouts | Canary rollouts | I | P1 | M6 |
+| O2 | graceful-shutdown | Graceful shutdown and draining | I | P1 | M6 |
+
+**Count by milestone:** M6 builds 15 lessons, M7 builds 7, M8 builds 10, M9 builds 5, M10 builds 2.
+
+### 6.3 Stories (journeys)
+
+Each story is a `StoryDef` on the story player (D9). Stage-by-stage design is in curriculum §4.
+
+| Code | Slug | Story | Built in | Needs batches |
+|---|---|---|---|---|
+| S0 | capstone | Keep a URL shortener alive (existing) | M5 (moved to the story player). M8 can add a fifth stage, "the primary dies". | today; B2b for stage 5 |
+| S8 | web-crawler | Crawl the web politely | M7 | B1, B2a |
+| S7 | video-premiere | Serve a premiere to the world | M8 | B1, B2b |
+| S2 | chat | Deliver every message once | M8 | B1, B2a, B2b |
+| S1 | flash-sale | Sell 1,000 seats to 100,000 people | M9 | B1, B2a, B3 |
+| S5 | ride-matching | Match a rider to the nearest driver | M9 | B1, B2a, B3 |
+| S3 | news-feed | Build a news feed | M9 | B1, B2a, B2b, B3 |
+| S6 | payments | Charge exactly once | M9 | B1, B2a, B3 |
+| S4 | click-counting | Count a billion clicks | M10 | B2a, B3, B4 |
+
+### 6.4 Curriculum capability IDs by engine batch
+
+| Batch | Capability IDs (curriculum §2) |
+|---|---|
+| B1 (M6) | NC1 link model, NC6 cached addresses, NC10 deadlines, NC13 batching, NC15 geo routing, NC16 session state, NC17 index cost, NC18 SLO metrics, NC22 negative cache and existence check, NC32 priority and shedding, NC33 bulkheads, NC34 overload crash and cold ramp, NC36 versions and canary, NC37 drain, NC38 stale-on-error and refresh-ahead, plus N1's per-request time breakdown |
+| B2a (M7) | NC2 explicit acks, NC11 queue acks and dead letters, NC12 idempotency keys, NC14 back-pressure, NC28 outbox, NC29 partitioned log |
+| B2b (M8) | NC3 windows and AIMD, NC4 connection setup and pools, NC5 connection modes, NC7 L7 gateway and L4 pinning, NC8 held connections and push, NC9 heartbeats, NC24 replica promotion |
+| B3 (M9) | NC25 quorum, NC26 consensus, NC27 lock, lease and compare-and-set, NC31 saga, NC35 scatter-gather and hedging |
+| B4 (M10) | NC20 cache write modes and write-behind, NC30 stream windows |
+
+The architecture report's API sketches (§2.1–§2.5) are the starting design for each. Where the two reports name the same idea differently, the architecture report's field names win.
+
+### 6.5 The recommended path
+
+`PATH` follows curriculum §5, with optional and out-of-scope lessons removed.
+
+1. **Band 1, beginner (about 70 minutes):** N1, N4, F1, N7, N9, F2, F3, F4, F5, C1, C2, D1, A1, N2, F6.
+2. **Band 2, intermediate (about 2.5 hours):** N13, N5, N17, C3, C4, D2, D3, D4, A2, N11, A3, N15, A4, A5, R1, R2, R3, D6, D7, N12, R4, R5, O1, O2. Then the URL shortener story.
+3. **Band 3, advanced (about 2.5 hours):** N10, N8, N16, C5, C7, N6, A7, A8, A6, D5, D8, D9, D10, R8, R9, N18, A9, R7. Then the other stories in the order S8, S7, S1, S6, S2, S3, S5, S4.
+
+The home page also lists the curriculum's "interview fast lane" as a plain ordered list of links.
+
+**Prerequisites** come from curriculum §3. M5's tests check that every prerequisite exists, comes earlier in `PATH`, and forms no cycle.
+
+### 6.6 Backlog (P3, not scheduled)
+
+These are specified in curriculum §3 and can be added after M10 without design changes:
+- N3, N14, F7, C6, C8, C9, D11, D12, D13, D14, A10, R6, R10, R11, O3, O4.
+
+Three of them are cheaper as a third option on an existing knob than as a lesson:
+- C9 refresh-ahead on C4's knob.
+- R6 fallbacks on R2.
+- R10 limiter algorithms on R1.
+
+### 6.7 Search terms
+
+The phone route board's search matches titles, tags and these aliases (curriculum §7). Every lesson's `tags` includes the aliases that point to it.
+
+- Load balancer, round robin, L4/L7, reverse proxy, API gateway
+- Cache, Redis, Memcached, cache-aside, write-through, TTL, eviction, LRU
+- CDN, edge, anycast
+- Rate limiting, token bucket, sliding window, throttling, 429
+- Message queue, Kafka, RabbitMQ, SQS, pub/sub, consumer group, dead-letter queue
+- Sharding, partitioning, hot key, celebrity problem
+- Consistent hashing, hash ring, virtual nodes
+- Replication, read replica, failover, replication lag, leader election, Raft, quorum
+- CAP, eventual consistency, strong consistency, PACELC
+- Circuit breaker, timeout, retry, exponential backoff, jitter, idempotency, cascading failure
+- WebSockets, SSE, long polling, TCP handshake, keep-alive, DNS, ack, at-least-once, exactly-once, backpressure, thundering herd, distributed lock, double booking, autoscaling, canary, SLO, error budget, outbox, saga
+
+---
+
+## 7. Milestones
+
+Effort: S ≈ half a day, M ≈ 1–2 days, L ≈ 3+ days of agent work. Each milestone is one PR. "Skills" names the installed skills to load with the Skill tool at the start of that milestone.
+
+Every milestone ends with the full gate (§10), screenshots at 1440×900, 1280×720, 390×844 and 844×390 in light and dark, checked by eye, and a short note in the PR description of what was verified and what was not.
+
+### M0 — Truthful baseline (S)
+
+**Goal:** nothing on screen teaches something false, and the tests describe structure instead of counts.
+**Read first:** pedagogy §2 (audit), architecture §4.3 and §7.2.
+**Done when:** the Change column only passes a verdict where one is meaningful, latency rows show their target, the dock states the clock in plain words, faults pair by id, and the test suite no longer hard-codes 19 lessons.
+
+| Path | Change | What |
+|---|---|---|
+| `.gitignore` | modified | Add `.playwright-mcp/`. |
+| `src/lib/sim/metrics.ts` | modified | `MetricSpec.better` gains `"neutral"` (no verdict colour). `inRotation` and `servers` default to neutral. Export `isLatency(m)`. |
+| `src/lib/lessons/types.ts` | modified | `FigureDef.headline?: string` names the metric label the lesson's claim is about. It defaults to the fix figure's first metric. |
+| `src/components/live.tsx` | modified | `Compare` takes `verdict: boolean`. It is true only when the lesson's tones are `problem,fix`. Otherwise `Delta` shows a signed difference in neutral grey. Neutral metrics never colour. Latency rows show "target ≤ {sloMs} ms" under the label. `Transport` shows "1 s on screen = {1000·timeScale·speed} ms" in place of "10× slow motion". |
+| `src/components/player.tsx` | modified | Fault actions pair across figures by `id`, not array index: `figs.forEach((f, j) => f.actions?.find(x => x.id === a.id)?.run(live.sims[j], !on))`. Passes `verdict` to `Compare`. |
+| `src/lib/sim/engine.ts` | modified | Optional constructor flag `new Sim(spec, { trace: true })` records first-attempt spawns `(t, client, key, op, cost)` in `sim.trace`. Tests only; off by default. |
+| `tests/lessons.test.ts` | modified | Drop the exact count of 19. Assert unique slugs and codes, allowed tone sequences, at least two figures, and actions with the same label in two figures sharing an id. Add a fairness test: for every `problem,fix` and `tradeoff,tradeoff` pair, `sloMs`, `timeoutMs`, `timeScale`, `windowMs` match, and `sim.trace` of both worlds is identical after 5,000 ms. `problem,explore` lessons are exempt because the explore figure changes the traffic on purpose. |
+| `tests/browser/site.spec.ts` | modified | F4 Fix: the "Servers in use" change cell has no `up`/`down` class. F1 explore: no verdict classes. |
+| `CLAUDE.md` | modified | Note that faults pair by action id, and that problem/fix pairs must produce identical first-attempt arrival traces. |
+
+**Tests:** the fairness test passes for every problem/fix and trade-off pair. A scratch check on 2026-10-22 found all 17 pairs already identical over 5,000 ms; F1's explore figure differs by design and is exempt. Unit tests cover neutral metrics and the clock text.
+**Acceptance:**
+- [ ] F4 Fix shows "Servers in use 3 | 2" with a grey "−1" and no red.
+- [ ] F1's explore step and the consistency-vs-availability trade-off pair show neutral differences.
+- [ ] Every latency row in every lesson shows its target.
+- [ ] The dock reads "1 s on screen = 100 ms" at 1× and "= 200 ms" at 2×.
+- [ ] `npm test` passes with no lesson count in it.
+
+### M1 — Design system v3 and a legible stage (L)
+
+**Goal:** the field-guide look in day and night, with every stage label at least 12 px and inside the stage on all four viewports, visible rails, larger dots, and every text pair at WCAG AA.
+**Read first:** design-audit §2 (D1–D3, D5, D6, D9–D11, D18) and §3; motion-audit §3 (tokens) and §2.14.
+**Skills:** `impeccable`, `frontend-design`, `taste-design-review`, `web-design-guidelines`.
+**Done when:** the stage-fit and token tests pass on all four Playwright projects, and screenshots match the direction in design-audit §3.
+
+| Path | Change | What |
+|---|---|---|
+| `src/app/globals.css` | modified | Rewrite the token block per design-audit §3: paper, surface, stage, ink, rails, cards, `--accent` and `--on-accent`, text-safe `--t-*` including `--t-stale` and `--t-req`, `--l-*-ink` for every line, and the night edition. Add the type scale, the 4-base space scale, the radius scale (4/8/12/20/999), three elevations, and the motion tokens (motion-audit §3). Remove the dot grid. Draw links as rails (two lines with a core). Restyle node cards. Badges and fault buttons use `--on-accent`; no hard-coded `#fff`. Station-dot hover uses `transform`. Remove `scroll-behavior: smooth` from `html`. Stage text sizes use `calc(var(--label-px) / var(--k))`. |
+| `src/app/layout.tsx` | modified | Load all fonts as variable (no `weight` arrays). Add Newsreader as `--font-guide` with the `opsz` axis. Update `themeColor` to the new paper tones. |
+| `src/lib/motion.ts` | new | `DUR`, easing functions, frame-rate-independent `smooth()`, `TAU`, `INTRO` (motion-audit §3). |
+| `src/lib/sim/layout.ts` | modified | `frameFor(spec, mode, { k, labelPx })` reserves gutters for each node's label and sub-label: about 0.56 em per character for Atkinson and 0.6 em for mono, converted to viewBox units with k. Wide and compact frames grow W and H. The tall frame's width comes from the widest label. Export `labelExtent()` for side placement. |
+| `src/components/stage.tsx` | modified | Two-pass fit (box → k0 → label-aware frame → k), memoised per box. Set `--k` on `.stage`. `pickMode` adds an aspect penalty: portrait never picks compact unless the scene has ≤2 lanes and ≤3 columns; landscape never picks tall. Zoom ceiling 1.45 for ≤2-lane scenes. Dot radius `6.4 × max(.9, scale)` with a 4.2 px rendered floor. Meters animate `scaleX`. No fresh ring under reduced motion. Read the measured box, not `clientWidth`, every frame. Shorter subs in compact and tall ("3 nodes", "ring"). |
+| `src/components/glyph.tsx` | modified | Ink line-art bodies (1.5 px stroke, radius 10), embossed sockets, a short platform rule, node fill one step lighter than the stage. Shoulder badges for roles (LEADER, FOLLOWER) next to DOWN and OPEN. |
+| `src/components/legend.tsx` | modified | Dot sizes and tokens follow the new scale. |
+| `src/components/brand.tsx` | modified | Header and footer on the new tokens; 44 px touch targets. |
+| `src/components/route-map.tsx` | modified | New tokens only (the structural rebuild is M5). Station codes use `--l-*-ink`. |
+| `src/lib/lessons/data.ts` | modified | In consistency-vs-availability, node labels drop "· leader" and "· follower"; roles become badges. |
+| `playwright.config.ts` | modified | Add `desktop-short` (1280×720) and `phone-landscape` (Pixel 7 at 844×390) projects. |
+| `tests/browser/stage-fit.spec.ts` | new | For every lesson × step × project: every `.stage-svg text` box lies inside `.stage`; rendered label size ≥ 12 px and sub ≥ 11 px; no two `.node-label` boxes overlap; on phone projects every interactive element is ≥ 40×40. On desktop, single-row scenes' node union is ≥ 20% of stage height. |
+| `tests/tokens.test.ts` | new | Parse the light and dark token blocks in `globals.css` and assert contrast: body text pairs ≥ 4.5:1, display text ≥ 18.66 px bold ≥ 3:1, `--on-accent` on `--accent` ≥ 4.5:1, badge text on its tone ≥ 4.5:1, `--l-*-ink` on paper ≥ 4.5:1, rails on stage ≥ 2:1. |
+| `docs/screenshots/*` | modified | Refreshed home, lesson, phone and capstone captures. |
+
+**Acceptance:**
+- [ ] No label is clipped or below 12 px on any lesson, step or viewport (stage-fit spec).
+- [ ] The token contrast test passes in light and dark.
+- [ ] In dark mode, rails are clearly visible and the primary button passes 4.5:1.
+- [ ] The landscape phone never shows a vertical stack, and portrait phones never squeeze a wide scene.
+- [ ] Reduced motion still opens on a settled still frame.
+
+### M2 — Lesson player shell v2 (M)
+
+**Goal:** a layout that gives narration a home, keeps the numbers in view, and fits 1280×720 without panel scrolling.
+**Read first:** design-audit §5 and §6; pedagogy §3 (the layout sketch).
+**Skills:** `impeccable`, `ui-ux-pro-max`, `taste-accessibility`.
+**Done when:** the theatre has a beat-strip row, the compare table is pinned, the Key lives in the bar, and the panel does not scroll on Problem and Fix steps at 1440×900 or 1280×720.
+
+| Path | Change | What |
+|---|---|---|
+| `src/components/shell.tsx` | new | `Shell` moves out of `player.tsx`. Its slots are bar, beat strip, stage, flight strip (hidden until M4), panel scroller, pinned panel and dock. Until M4, `BeatStrip` shows the scripted event note and replaces the floating `.note` toast. |
+| `src/components/player.tsx` | modified | Uses `Shell`. Removes the stage tag, which duplicated the selected tab. `why` moves to the Recap and the bar title's `title`. Step tabs are content-sized and collapse to numbers when narrow. The dock gets a speed-cycle button, Back, a progress rail and Next. A phone `MetricSummary` row shows the headline metric and its change. |
+| `src/components/live.tsx` | modified | `Transport` uses one cycling speed button everywhere. In `Compare`, both columns render at full strength, a 2 px line-colour rule marks the active column, and the change is a signed number with a thin bar (M0 semantics kept). New `MetricSummary`. |
+| `src/components/legend.tsx` | modified | `KeyPopover`: a bar button and panel with a close button, Esc to close and focus return. No longer floats over the stage. |
+| `src/components/capstone.tsx` | modified | Uses `Shell`. Single-column build controls; the target as a two-cell row with live values (design-audit D20). |
+| `src/app/globals.css` | modified | Shell grid for desktop, ≤1180 px, ≤760 px portrait (bar 48 / stage 42svh / summary 44 / panel 1fr / dock 56) and landscape phones (bar 40 / stage 56% · panel 44% / dock 48). Two-row panel grid. Remove the `.stage-tag`, on-stage `.key` and `.note` styles. 44 px targets on touch. |
+| `tests/browser/site.spec.ts` | modified | New selectors. No page scroll on all four projects. On the desktop projects, `.panel-scroll` does not scroll on Problem and Fix for every lesson. On phones, the summary row is visible without scrolling. The Key opens from the bar and closes with Esc. |
+
+**Acceptance:**
+- [ ] At 1280×720 no lesson's Problem or Fix panel scrolls (today 11 do).
+- [ ] On a 390×844 phone the headline number is visible without scrolling on every lesson.
+- [ ] Nothing floats over the stage except the beat strip's own row.
+- [ ] Keyboard: Tab order is logical and Esc closes the Key.
+
+### M3 — Motion that teaches (L)
+
+**Goal:** the stage alone shows the mechanism: where load flows, what a hit, miss and eviction are, queues as pressure, copies on their way, breaker states, and parts entering and leaving.
+**Read first:** motion-audit §1, §2, §4, §5 in full.
+**Skills:** `design-motion-principles`, `animate`, `taste-motion`, `animation-performance`; audit the result with `improve-animations` (or `review-animations` if the Skill tool lists it).
+**Done when:** every item in motion-audit §2.1–§2.13 except the tracer (M4) is implemented with its reduced-motion fallback, and the frame-budget test passes.
+
+| Path | Change | What |
+|---|---|---|
+| `src/lib/sim/types.ts` | modified | `FxKind` adds `evict`, `fill` and `hot`. `Fx.slot?` holds the queue index for drops. |
+| `src/lib/sim/engine.ts` | modified | Emit `evict` in `evict()`, `fill` where a cache entry is written, and `hot` on entering the hot condition. Record the queue index on `drop`. Expose `breaker.trialId`. These are output only and change no simulation result. |
+| `src/lib/sim/metrics.ts` | modified | `flowOf(sim, a, b)`: EWMA rate and error share per link. |
+| `src/components/stage-draw.ts` | new | Canvas helpers moved out of `stage.tsx`: dots batched by style, trails, the effect renderer and per-node ring budget, queue pressure wedge, cache fill and evict squares, replication copies. |
+| `src/components/stage.tsx` | modified | Rings only for state changes (outcome rings removed). Hit pop at the cache. Queue spacing compresses as it grows. Drops leave from the queue tail. Link-flow overlay on rails. Three-state breaker pill with a sliding marker. Scene intro builds in along the flow with a one-time stroke draw. Step switches render the union of nodes, so absent ones exit. Crash body drop. Rings on entering a state. React re-renders only when a cheap stage signature changes. Memoised `NodeView` and `LinkView`. |
+| `src/components/live.tsx` | modified | Cancel rAF when hidden or off screen. Tick on change. Metric change cue in `Compare` (flash and arrow nudge). |
+| `src/components/player.tsx` | modified | `KnobControl` keeps a local value and commits at most once per frame. Lesson-to-lesson continuity uses a module-level variable (survives client navigation, no storage), so the next lesson's intro skips nodes it shares with the previous one. |
+| `src/app/globals.css` | modified | Keyframes `node-intro`, `link-draw`, `node-leave`, `node-drop`, the pill marker, `.link-flow`, metric flash, all on the motion tokens. |
+| `tests/sim.test.ts` | modified | New fx kinds fire in the right conditions. `done` arrays are identical whether or not anything reads `fx`. |
+| `tests/browser/motion.spec.ts` | new | On `/learn/rate-limiting` at 2× and the built-out capstone, with 4× CPU throttling on desktop and mobile: rAF gap p95 ≤ 17 ms, no gap > 34 ms, app callback p95 ≤ 4 ms. Under reduced motion: sim time does not move, no intro runs, and no fresh ring element exists. |
+
+**Acceptance:**
+- [ ] In C1 Fix, a miss visibly fills the cache bar and an eviction drops a slate square.
+- [ ] In R2, the breaker pill slides closed → open → testing → closed, and the payments rail empties while open.
+- [ ] In consistent-hashing, keys visibly change owner when cache 4 joins: the hit rate dips and the database rail brightens.
+- [ ] One tab switch uses two beats of one duration family, not seven clocks.
+- [ ] Frame-budget and reduced-motion tests pass.
+
+### M4a — Concept delivery runtime and three reference lessons (L)
+
+**Goal:** the beat system works end to end on F1, C1 and A3, written exactly as pedagogy §4's rewrites.
+**Read first:** pedagogy §3, §4 and §6; architecture §3.
+**Skills:** `taste-ux-copy`, `impeccable`, `taste-accessibility`, `testing`.
+**Done when:** F1, C1 and A3 run with hook, build, beats, prediction, armed break, compare sentence, checks and rule, including the reduced-motion path.
+
+| Path | Change | What |
+|---|---|---|
+| `src/lib/lessons/beats.ts` | new | Types `Beat`, `BeatTrigger` (`at`, `fx`, `note`, `metric`, `step`), `Focus`, `Prediction`, `Check`, `TraceSpec`. `BeatRunner` evaluates triggers against simulation time and events only. A template formatter resolves `{p95:fix}`, `{util:db:problem}`, `{queue:app}` from `measure()`. |
+| `src/lib/lessons/types.ts` | modified | `Lesson` gains `level`, `minutes`, `hook`, `dots`, `checks`, `takeaways.rule`, `takeaways.interview?`. `FigureDef` gains `build`, `beats`, `predict`, `break`, `headline` (now `{ metric, sentence }`), `invite`, `key`. All optional, so unconverted lessons still run. |
+| `src/lib/sim/types.ts`, `src/lib/sim/engine.ts` | modified | `ScriptEvent.armed?: true`. `sim.fire(label)`. Armed events never loop. `sim.hold()` and `sim.start()` gate arrivals for the build phase, applied to both worlds together. |
+| `src/lib/glossary.ts` | new | Terms: key, name, alias, a short definition of ≤20 words, and "show me" (lesson and focus). |
+| `src/components/term.tsx` | new | Renders `[[key|plain words]]` with a dotted underline. Tap opens the definition and "Show me". |
+| `src/components/beats.tsx` | new | `useBeats(live, figure)`, `BeatStrip`, `Callout` anchored to a node box, the beat list for the panel, `PredictCard`, `CheckCard`. |
+| `src/components/follow.tsx` | new | Follow one request: picks the next request at a tick boundary, narrates each hop, and draws the flight strip timeline (wait, service, travel) with the result held for 2 s. |
+| `src/components/stage.tsx` | modified | `focus` prop dims everything not in focus (opacity only). `anchorFor(id)` returns CSS px. Follow halo and path. Countdown chip on armed nodes. Visible-node set for the build phase. |
+| `src/components/live.tsx` | modified | `pause()`, `play()`, a temporary rate multiplier, `stepTo(simMs)` for reduced-motion beat stepping. Tap a compare row to open its explainer: a sentence with the target and "why it moved". |
+| `src/components/player.tsx` | modified | Next advances the current step's beats, then the step. The hook question sits at the top of the panel; the why stays on the Recap, where M2 moved it. Local key from `lesson.dots`. The Recap gets checks and the rule. Keys: `[`/`]` beats, `f` follow, `1`–`3` steps. |
+| `src/lib/sim/metrics.ts` | modified | `MetricSpec.explain` and `MetricSpec.target`. |
+| `src/app/glossary/page.tsx` | new | Static glossary page with each term's first lesson. |
+| `src/lib/lessons/foundations.ts`, `caching.ts`, `async.ts` | modified | F1, C1 and A3 converted with pedagogy §4's text. A3's stall becomes armed. |
+| `tests/lessons.test.ts` | modified | Beats validation: every beat fires within the run, focus ids exist, placeholders resolve, prediction answers hold in the engine, checks have 2–3 options, beat text ≤ 16 words. `autoFire(sim)` for armed events in claim tests. |
+| `tests/browser/site.spec.ts` | modified | Next walks beats then steps. Reduced motion shows the "What to watch" list and Step fires the first beat. Follow shows the flight strip. A wrong check answer spotlights the right node. |
+
+**Acceptance:**
+- [ ] On F1, a first-time viewer gets a callout pointing at Server's sockets within 3 s, and the scene pauses for the prediction.
+- [ ] On A3, pressing "Stall the service" in the beat fires the stall in both worlds at once, and the problem column shows the outage within 15 s of real time.
+- [ ] Under reduced motion, Next steps through the same beats on still frames.
+- [ ] Each beat is announced through the `aria-live` region exactly once.
+
+### M4b — Convert the remaining lessons (M)
+
+**Goal:** all 18 lessons, the hero and the capstone stages use the beat structure.
+**Read first:** pedagogy §4 (copy rules) and the three converted lessons.
+**Skills:** `taste-ux-copy`.
+
+| Path | Change | What |
+|---|---|---|
+| `src/lib/lessons/*.ts` | modified | Hooks, build lines, beats, predictions, checks and rules for the 15 remaining lessons. Outage and event loops in scaling-up-vs-out, health-checks, publish-subscribe, consistent-hashing, consistency-vs-availability and circuit-breakers become armed breaks. F1's wave shortens so the peak arrives within 25 s. |
+| `src/lib/lessons/hero.ts`, `src/components/hero.tsx` | modified | The hero gets three looping beats in its strip; it keeps its loop. |
+| `src/lib/lessons/capstone.ts`, `src/components/capstone.tsx` | modified | Each stage opens with two beats pointing at the box to watch. |
+| `src/lib/glossary.ts` | modified | All terms the 18 lessons name. |
+
+**Acceptance:**
+- [ ] Every lesson passes beats validation.
+- [ ] No caption is over 25 words.
+- [ ] No term is used before the beat that names it (a test greps the `[[` order).
+
+### M5 — Catalog v2, route map and home, story player (L)
+
+**Goal:** the course structure scales to about 60 entries: levels, lines, prerequisites, a home page and map with three zones and journeys, per-lesson code loading, and one player for every story.
+**Read first:** architecture §4 and §5; design-audit §4; curriculum report (catalog and paths).
+**Skills:** `impeccable`, `vercel-react-best-practices`, `find-docs` (Next 16 lazy loading and `generateStaticParams`).
+**Done when:** the 18 lessons and the capstone come from the new registry, each lesson page loads only its own scene module, the map draws zones from data, and the capstone runs on `StoryPlayer`.
+
+| Path | Change | What |
+|---|---|---|
+| `src/lib/lessons/catalog.ts` | new | Metadata for every lesson: slug, code, line, title, why, level, minutes, tags, requires, kind, status, aliases. |
+| `src/lib/lessons/scenes/index.ts` | new | `SCENES`: a literal `import()` map from slug to scene module. |
+| `src/lib/lessons/scenes/<slug>.ts` | new (moved) | One file per lesson, moved from the five line modules: figures, takeaways, beats, checks, claims. |
+| `src/lib/lessons/foundations.ts`, `caching.ts`, `data.ts`, `async.ts`, `resilience.ts` | deleted | Content now lives in `scenes/`. Shared helpers such as `outage` move to `kit.ts`. |
+| `src/lib/lessons/index.ts` | modified | `LINES` with level and order. Registry exports `LESSONS`, `getLesson`, `lineOf`, `lessonsOn`, `neighbours`, `nextFor(slug, visited)`, `lessonsAt(level)`, `storyList()`, `prerequisitesOf(slug)`. |
+| `src/lib/lessons/story.ts` | new | `StoryDef`, `StoryStage`, `Target`. The capstone becomes the first story. |
+| `src/lib/lessons/capstone.ts` | modified | Rewritten as a `StoryDef`. |
+| `src/components/story-player.tsx` | new | Generic stage-by-stage player on `Shell`, `useLiveSims` and the hold logic. Controls render from `StoryDef.controls`. |
+| `src/components/capstone.tsx` | deleted | Replaced by `story-player.tsx`. |
+| `src/components/player.tsx` | modified | Loads `SCENES[slug]()` with `React.lazy` inside `Suspense` (fallback: the shell with an empty stage). Prefetches the next lesson's module when idle. |
+| `src/app/learn/[slug]/page.tsx` | modified | Chooses the player by `kind`. Metadata from the catalog. |
+| `src/components/route-map.tsx` | modified | Geometry generated from the registry: rows are lines, column bands are zones, sticky line heads, a pannable frame, a journey overlay. Station hover or focus opens `StationPreview`. On phones, `RouteBoard`: collapsible lines with counts, a level filter, and search. |
+| `src/components/station-preview.tsx` | new | A warmed mini-scene card. One mounted at a time; a still frame under reduced motion. |
+| `src/components/journeys.tsx` | new | Journey cards: title, roundel stops, stage count, and a live final architecture for the card in view. |
+| `src/app/page.tsx` | modified | Masthead at about 58vh with counts read from the catalog. A continue card from the visited list. The map, journeys, and a live one-rail "how to read a scene" demo. |
+| `src/components/hero.tsx` | modified | Phone hero becomes a compact 200 px ticker scene. |
+| `next.config.ts` | modified | `redirects()` from catalog aliases. Empty today; the mechanism exists for later. |
+| `scripts/new-lesson.ts` | new | Scaffolds a scene file and a catalog entry. |
+| `scripts/tune.ts` | modified | `--line`, `--level`, `--json`, `--beats`. |
+| `tests/lessons.test.ts` | modified | Catalog invariants: every `requires` exists, appears earlier in `PATH` and forms no cycle; minutes 3–12; at least one tag; codes unique; `PATH` lists every live lesson exactly once; `SCENES` covers every slug; the capstone test becomes a per-story test. |
+| `tests/catalog.snapshot.json` | new | Committed slug → code map. A test compares it with the catalog, so any code change shows up in review. |
+| `tests/browser/site.spec.ts` | modified | Home lists every station. The phone level filter works. "Next stop" follows `PATH`. Every story passes the capstone checks. |
+
+**Also in M5:**
+- **Final codes, once** (A6). Number each line in its §6.2 row order (N1, N2, N3… in level order), including codes for lessons that are not built yet, and record them in the snapshot. Existing lessons move to their final codes now (the Data line shifts by one so Indexes can be D1). After M5, codes never change. A line can show a gap until its missing lessons land. The capstone's code becomes S0.
+- **Working codes vs final codes.** This plan and `curriculum.md` name lessons by their working codes. The slug is the stable key; look a lesson up by slug.
+- **`PATH`** from §6.5, filtered to live lessons. `neighbours()` and the dock's "Next stop" follow it. The home page's start button points at the first live lesson in `PATH`, which is F1 until N1 exists in M6.
+- **Line colours** for N and O join the tokens now, with their ink variants, even though those lines are empty until M6.
+
+**Acceptance:**
+- [ ] The home page's JavaScript no longer includes any lesson's `build` code (check with `npx next experimental-analyze -o`).
+- [ ] Every existing URL still loads.
+- [ ] The map shows three zone bands at 1440 px and a collapsible board at 390 px.
+- [ ] The capstone behaves exactly as before on `StoryPlayer` (its test is unchanged).
+
+### How M6–M10 run
+
+Each of these milestones has the same internal order:
+
+1. **Engine PR first.** The batch's spec fields, behaviour, metrics, effects and rendering, with one unit test per hook and the catalog-wide property tests. Every existing lesson's numbers must be unchanged: compare `npm run tune -- --json` before and after.
+2. **Lesson PRs next,** 4–6 lessons each, one line per PR. These may run in parallel sessions (D10).
+3. **Story PRs last,** once every batch a story needs has landed (§6.3).
+
+Every new lesson follows §8 and its curriculum §3 row. Add a `requires` entry only once both lessons are in the catalog, so the prerequisite test never points at a missing slug. When a new lesson is the prerequisite of an existing one (N2 before A3, N13 before R2), add that edge in the same PR.
+
+### M6 — Engine B1 (small hooks) and 15 lessons (L)
+
+**Goal:** the small engine hooks land, then the lessons they unlock. This includes the first beginner networking lessons, so the course can start at N1.
+**Read first:** architecture §2.0, §2.1, §2.3.0, §2.3.1, §2.3.8, §6.1, §7.2; curriculum §2 for NC1, NC6, NC10, NC13, NC15–NC18, NC22, NC32–NC34, NC36–NC38; the M6 rows of §6.2.
+**Skills:** `testing`, `safe-refactor` (for the engine split), `taste-ux-copy` (lessons).
+**Lessons:** N1, N4, N9, N13, N16, N18, F5, F6, C7, D1, R4, R5, R7, O1, O2.
+
+| Path | Change | What |
+|---|---|---|
+| `src/lib/sim/engine.ts` | modified | Becomes a re-export of `engine/` so existing imports keep working. |
+| `src/lib/sim/engine/*.ts` | new (split) | Split by concern (core, routing, cache, data, transport) with no behaviour change, then the B1 hooks: `LinkSpec` (ms, jitter, loss, parallel, perCostMs, label), hash-based link fate, `logicalId` and `hop`, `holds()`, `Call` object form, `serviceBy`, `tail`, `failRate`, `shed`, `priority`, `bulkheads`, `byTag`, `readYourWrites`, `emit`, `bloom`, `seedKeys`, `batch`, `deadlines`, `nearest`, per-server version weights and error rates (canary), `drain(id)`, crash on sustained overload with a cold-restart ramp, stale-on-error, cached addresses that can point at a moved node, and a per-request wire/wait/work breakdown on `Done`. |
+| `src/lib/sim/types.ts` | modified | The B1 fields; `Result` gains `conflict` (unused until M9); new `MetricId`s and `FxKind`s. |
+| `src/lib/sim/invariants.ts` | new | Test-only `accounted`, `noLeakedHolds`, `arrivalTrace`. |
+| `src/lib/sim/metrics.ts` | modified | `p99`, `wasted`, `onTime`, `filtered`, `batchSize`, `lost`, `refused`, `availability` (long window), `budgetLeft`, `breakdown` (wire, wait, work). |
+| `src/components/stage.tsx`, `stage-draw.ts`, `glyph.tsx` | modified | Lost-on-link effect; dashed outer ring for retransmits; stretched dots for transfer time on thin links; bulkhead dividers; batch clusters; SHEDDING, DEADLINE, v1/v2 badges; link labels from `LinkSpec`; an availability gauge for F6; the wire/wait/work bar for N1. |
+| `src/lib/lessons/kit.ts` | modified | `link()`, `col(i, n)` and `scene.fast`/`scene.slow` presets (architecture §7.2). |
+| `src/lib/lessons/scenes/*.ts`, `catalog.ts`, `glossary.ts` | new/modified | The 15 lessons. |
+| `tests/sim.test.ts` | modified | One test per hook (architecture §2.1 table) and the four property tests over every figure (architecture §6.1). |
+
+**Acceptance:**
+- [ ] Every existing lesson's tuned metrics are unchanged after the engine PR.
+- [ ] Lossy-link scenes lose the same `(logicalId, attempt)` set in both worlds.
+- [ ] Every new lesson passes claims, beats validation, fairness and stage-fit.
+- [ ] The home page's "Start" button points at N1.
+
+### M7 — Engine B2a (messages and delivery) and 7 lessons (L)
+
+**Goal:** a message can be acknowledged, resent, deduplicated, redelivered, dead-lettered, held back by a full consumer, published reliably with an outbox, and ordered per key in a partitioned log.
+**Read first:** architecture §2.3.0, §2.3.2, §2.3.6, §2.3.10, plus back-pressure (§1.1 row 10), idempotency (row 12) and outbox (row 14); curriculum §2 for NC2, NC11, NC12, NC14, NC28, NC29.
+**Lessons:** N2, N15, N17, A4, A5, A6, A7. **Story:** S8 web crawler.
+
+| Path | Change | What |
+|---|---|---|
+| `src/lib/sim/engine/transport.ts`, `types.ts` | modified | `ClientSpec.transport` (fire or ack, ack timeout, max resends); `NodeSpec.ackOn` and `idempotent`; queue `ack` (receive or finish, visibility timeout, max deliveries, dead-letter target); queue `backpressure` (high, low, wait or reject); db `outbox` relay; partitioned queue (partitions by key hash, one consumer per partition, offsets). |
+| `src/lib/sim/metrics.ts` | modified | `delivered`, `duplicates`, `resends`, `ackLag`, `redelivered`, `deadLettered`, `lostJobs`, `duplicateJobs`, `duplicateEffects`, `lostEvents`, `consumerLag`. |
+| `src/components/stage-draw.ts`, `glyph.tsx`, `legend.tsx` | modified | Ack dots (small, green, travelling back); unacked copies stacked beside the sender; invisible in-flight jobs on the queue's lower row; dead-letter queue rim; partition lanes inside a queue; per-lesson Key rows through `FigureDef.key`. |
+| `src/lib/lessons/scenes/*.ts`, `stories/web-crawler.ts`, `catalog.ts`, `glossary.ts` | new/modified | The 7 lessons and S8. |
+| `tests/sim.test.ts` | modified | The three-scene ack test (fire, ack, ack plus idempotent), the queue-ack tests (architecture §2.3.6), back-pressure, outbox and partition-order tests. |
+
+**Acceptance:**
+- [ ] N2 shows all three behaviours on one stage: fire-and-forget loses messages, ack-and-resend delivers ≥99% with duplicates, and an idempotent receiver brings duplicates to zero.
+- [ ] A5's poison job reaches the dead-letter queue after the configured attempts and the line moves again.
+- [ ] S8 passes its per-stage tests.
+
+### M8 — Engine B2b (connections and real time) and 10 lessons (L)
+
+**Goal:** windows and congestion control, connection setup and reuse, head-of-line blocking, L4 vs L7, held connections with push, heartbeats, and replica promotion.
+**Read first:** architecture §2.3.3, §2.3.4, §2.3.5, §2.3.7, §2.3.9, §2.3.10; curriculum §2 for NC3, NC4, NC5, NC7, NC8, NC9, NC24.
+**Lessons:** N5, N6, N7, N8, N10, N11, N12, D6, D7, R8. **Stories:** S7 video premiere, S2 chat, and optionally S0's fifth stage.
+
+| Path | Change | What |
+|---|---|---|
+| `src/lib/sim/engine/transport.ts`, `types.ts` | modified | `ClientSpec.window` (fixed or AIMD), `NodeSpec.advertise`; `ClientSpec.connection` (handshake RTTs, keep-alive, max, streams one or multiplex) and server `pool`; L4 mode on an lb pins connections; `ClientSpec.subscribe` and `NodeSpec.hold` for push; `heartbeat`, with `health` rewritten as sugar over it; replica promotion with sync or async replication acks. |
+| `src/lib/sim/metrics.ts` | modified | `inFlight`, `window`, `goodput`, `bufferWait`, `dropped`, `connectWait`, `handshakes`, `connections`, `detectMs`, `falseAlarms`, `pushLag`, `fanout`, `lostAckedWrites`. |
+| `src/components/stage-draw.ts`, `glyph.tsx` | modified | Window bracket meter; handshake dots (small muted rings); connection sockets under clients; pinned sockets for held connections; push dots; `gateway` glyph; promoted-replica badge. |
+| `src/lib/lessons/scenes/*.ts`, `stories/video-premiere.ts`, `stories/chat.ts`, `catalog.ts`, `glossary.ts` | new/modified | The 10 lessons, S7 and S2. |
+| `tests/sim.test.ts` | modified | Window, AIMD, connection, heartbeat and push tests (architecture §2.3.3–§2.3.9). The existing health-check test still passes through the `heartbeat` sugar. |
+
+**Acceptance:**
+- [ ] `unacked.size ≤ effectiveWindow` holds at every tick in every scene.
+- [ ] N7 shows p50 ≈ 4 × RTT + service on new connections and ≈ 2 × RTT + service with keep-alive.
+- [ ] S7 and S2 pass their per-stage tests.
+
+### M9 — Engine B3 (coordination) and 5 lessons (L)
+
+**Goal:** fan-out-and-wait, quorums, leader election with log replication, locks and leases with compare-and-set, and sagas. Then the four stories that need them.
+**Read first:** architecture §2.4; curriculum §2 for NC25, NC26, NC27, NC31, NC35; the Secret Lives of Data notes in pedagogy §1.
+**Lessons:** D8, D9, D10, A9, R9. **Stories:** S1 flash sale, S5 ride matching, S3 news feed, S6 payments.
+
+| Path | Change | What |
+|---|---|---|
+| `src/lib/sim/engine/coordination.ts` | new | `fanout()` (scatter-gather, wait for k), hedging on an lb, `quorum`, `cluster` roles, terms and votes, Raft-style append and commit, `lock` kind with lease, waiters and fencing token, compare-and-set writes, `saga` steps with compensations. |
+| `src/lib/sim/metrics.ts` | modified | `hedged`, `leaderless`, `term`, `committed`, `uncommitted`, `lockWait`, `expired`, `doubleBookings`, `lostUpdates`, `inconsistentOrders`, `conflicts` as a share. |
+| `src/components/stage-draw.ts`, `glyph.tsx` | modified | Padlock glyph; term and role badges; vote and append dots (small, muted, directional); `W=2 R=2` badge; compensation dots walking back along the chain. |
+| `src/lib/lessons/scenes/*.ts`, `stories/*.ts`, `catalog.ts`, `glossary.ts` | new/modified | The 5 lessons and S1, S5, S3, S6. |
+| `tests/sim.test.ts` | modified | Every test in architecture §2.4. |
+
+**Acceptance:**
+- [ ] Crashing the leader elects a new one within `max(electionMs) + 2 × heartbeatMs`, and a minority partition never elects.
+- [ ] With W + R > N, stale reads stay at zero under replication lag.
+- [ ] D10 shows double bookings above zero without a lock and exactly zero with one.
+
+### M10 — Engine B4 (streams and durability), 2 lessons and the final pass (M/L)
+
+**Goal:** event-time windows and write-behind durability, the click-counting story, then a full accessibility, performance and copy pass over the whole course.
+**Read first:** architecture §2.5 (windows and the durability row), §6.4; curriculum §2 for NC20 and NC30.
+**Skills:** `taste-accessibility`, `animation-performance`, `taste-web-performance`, `improve-animations`, `release-check`.
+**Lessons:** A8, C5. **Story:** S4 click counting.
+
+| Path | Change | What |
+|---|---|---|
+| `src/lib/sim/engine/storage.ts` | new | Stream `window` (size, slide, allowed lateness) with `ClientSpec.lateness`; cache write modes (through, behind, around) with a dirty buffer lost on crash. |
+| `src/lib/sim/metrics.ts` | modified | `lateDropped`, `windowLag`, `lostWrites`. |
+| `src/lib/lessons/scenes/*.ts`, `stories/click-counting.ts` | new | A8, C5 and S4. |
+| `tests/browser/visual.spec.ts` | new | Optional visual snapshots under reduced motion with the canvas masked: one lesson per line and each story's first stage, light and dark. A separate, non-blocking job. |
+| `README.md`, `CLAUDE.md` | modified | Describe v3: levels, lines, journeys, beats, follow, the engine batches, and the authoring rules in §8. |
+
+**Acceptance:**
+- [ ] Lighthouse accessibility ≥ 95 on the home page and three lessons.
+- [ ] No lesson page ships more than 200 KB of gzipped JavaScript.
+- [ ] A run on a mid-range phone records no frame over 34 ms on the busiest scene.
+- [ ] All 57 lessons and 9 stories pass every gate.
+
+### M11 — Optional: a learning record (S/M, only with the owner's agreement)
+
+Pedagogy §5 describes a privacy-safe, localStorage-only event ring buffer, a `/progress` page with export and clear, and a dev-only `/stats` view to tune predictions and checks. It changes the `CLAUDE.md` rule on progress storage, so it waits for an explicit yes.
+
+---
+
+## 8. Authoring rules for every lesson (v3)
+
+A lesson is ready when all of these hold. The tests enforce the ones marked (t).
+
+1. **Shape.**
+   - A hook (≤16 words, a question the learner has felt) and a one-line why.
+   - Two or three figures with allowed tones (t).
+   - At most 2 knobs and 4 metrics per figure (t).
+   - Figure captions ≤25 words that describe the setup, not the outcome (t).
+2. **Build.** One line per node, ≤9 words, label then what it does with a number: "Server: 4 workers, 120 ms each."
+3. **Beats.**
+   - 3–6 per figure, each ≤14 words (t: ≤16).
+   - Verb first: Watch, Count, Find, Press, Drag, Compare.
+   - Each names exactly one on-stage thing and points at it with `focus`.
+   - One change per beat. Every beat must fire in a test run (t).
+4. **Terms.** Plain words first, then the name in the next beat, marked `[[term|plain]]`. Never use a term before the beat that names it (t).
+5. **Dots.** Name a dot kind by colour, shape and meaning at its first appearance in the lesson. New meanings use size, outline, dashes, rings, badges and meters, never a new colour.
+6. **Prediction and checks.**
+   - One prediction before the break, with 2–3 options whose wrong answers are real misconceptions. The engine must agree with the answer (t).
+   - One or two checks on the Recap, each with a ≤25-word why shown for right and wrong.
+7. **Numbers.**
+   - Every latency or share shows a unit and a target.
+   - Prose says "the slowest 1 in 20"; "p95" appears only in the glossary and advanced lessons.
+8. **Fairness.**
+   - Problem and fix share clients, seed, `sloMs`, `timeoutMs`, `timeScale` and `windowMs` (t).
+   - Faults pair by id and hit both worlds (t).
+9. **Claim.** The fix beats the problem by ≥8% on the headline metric (t). A trade-off pair declares its claims explicitly.
+10. **Fit.** Stage-fit passes on all four projects (t). No caption, beat or label is clipped.
+11. **Recap.** Use it when / The catch / Seen in, plus a ≤8-word rule and, for advanced lessons, one "In an interview, say…" line.
+
+---
+
+## 9. Dependencies
+
+- **Runtime packages:** none added (A1).
+- **Dev packages:** none required. `npx next experimental-analyze` ships with Next 16.1+.
+- **Fonts:** Newsreader joins through `next/font/google`, self-hosted at build time. No runtime requests.
+- **Config:**
+  - Two new Playwright projects in M1.
+  - `redirects()` in M5 reads catalog aliases (empty at first).
+  - No environment variables.
+- **Ordering:**
+  - M0 → M1 → M2 → M3 → M4a → M4b → M5, strictly.
+  - Then M6 → M7 → M8 → M9 → M10 for the engine PRs, because each batch builds on the previous one's `logicalId`, `holds()`, link model and transport.
+  - Within each of M6–M10, the engine PR lands before its lesson PRs, and lesson PRs land before the stories that use them.
+  - Lesson PRs from an earlier batch may still be open while the next engine PR is written, as long as they don't touch `src/lib/sim/`.
+
+## 10. Verification
+
+Run these from the repo root at the end of every milestone and before every PR.
+
+```bash
+npm run typecheck && npm test && npm run build
+```
+
+```bash
+npx playwright install chromium
+```
+
+```bash
+npm run test:browser
+```
+
+```bash
+npm run tune
+```
+
+From M5 on, also check bundle shape. The `-o` flag writes the analysis files without starting the analyzer's web server.
+
+```bash
+npx next experimental-analyze -o
+```
+
+Visual check: run the dev server through the preview tool (`.claude/launch.json` defines `system-lab` on port 3100). Capture 1440×900, 1280×720, 390×844 and 844×390 in light and dark for the lessons the milestone touched, and look at every one.
+
+## 11. Rollback
+
+- **Reversible:** every milestone is one PR. Revert the merge commit on `main` and Vercel redeploys the previous build. There is no data, no migration and no third-party write.
+- **Irreversible:** none. The only user-visible commitment is URLs. Slugs never change, and M5 adds aliases and redirects for any future move.
+
+## 12. Open questions for the owner
+
+These do not block M0–M4. Each has a default the plan follows.
+
+1. **Learning record.** Keep progress storage to the visited list (default), or allow M11's prediction and check history?
+2. **A fourth typeface.** Newsreader for titles (default), or stay with three faces?
+3. **Branches and PRs.** One PR per milestone with Vercel previews (default), or direct commits to `main`?
+4. **Catalog size.** 57 lessons and 9 stories (default). Curriculum §8 shows how to trim to 48 lessons by dropping nine should-haves, if a smaller course is preferred.
+5. **Data line codes.** Shift the existing Data codes by one so Indexes can be D1 (default; slugs and URLs don't change), or keep today's codes and give Indexes the next free code?
