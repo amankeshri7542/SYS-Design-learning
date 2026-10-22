@@ -79,14 +79,17 @@ function Icon({ glyph }: { glyph: Glyph }) {
   }
 }
 
-/** The body of a node: shape, icon and slot sockets. Centred on the origin. */
+/** A short rule under a station, like the platform edge on a transit diagram. */
+const Platform = ({ w, h }: { w: number; h: number }) => <path className="platform" d={`M${-w * 0.26} ${h / 2 + 4}H${w * 0.26}`} />;
+
+/** The body of a node, drawn as ink line art: shape, icon, slot sockets and platform. Centred on the origin. */
 export function Body({ glyph, w, h, slots }: { glyph: Glyph; w: number; h: number; slots: number }) {
   const sockets = slotSpots(glyph, w, h, slots);
   if (glyph === "lb" || glyph === "router" || glyph === "limiter") {
     const s = w * 0.74;
     return (
       <>
-        <rect className="body" x={-s / 2} y={-s / 2} width={s} height={s} rx="9" transform="rotate(45)" />
+        <rect className="body" x={-s / 2} y={-s / 2} width={s} height={s} rx="8" transform="rotate(45)" />
         <Icon glyph={glyph} />
       </>
     );
@@ -111,6 +114,7 @@ export function Body({ glyph, w, h, slots }: { glyph: Glyph; w: number; h: numbe
         {sockets.map((p, i) => (
           <circle key={i} className="socket" cx={p.x} cy={p.y} r={p.r} />
         ))}
+        <Platform w={w} h={h} />
       </>
     );
   }
@@ -128,13 +132,14 @@ export function Body({ glyph, w, h, slots }: { glyph: Glyph; w: number; h: numbe
   const client = glyph === "client" || glyph === "bot";
   return (
     <>
-      <rect className="body" x={-w / 2} y={-h / 2} width={w} height={h} rx={client ? h / 2 : 12} />
+      <rect className="body" x={-w / 2} y={-h / 2} width={w} height={h} rx={client ? h / 2 : 10} />
       <g transform={client ? "translate(0 0)" : `translate(${-w / 2 + 14} ${-h / 2 + 13})`}>
         <Icon glyph={glyph} />
       </g>
       {sockets.map((p, i) => (
         <circle key={i} className="socket" cx={p.x} cy={p.y} r={p.r} />
       ))}
+      {!client && <Platform w={w} h={h} />}
     </>
   );
 }
@@ -145,14 +150,14 @@ export interface Spot {
   r: number;
 }
 
-/** Where in-service requests sit inside a node (relative to its centre). */
+/** Where in-service requests sit inside a node (relative to its centre). A working request fills its socket exactly. */
 export function slotSpots(glyph: Glyph, w: number, h: number, slots: number): Spot[] {
   if (!slots || slots > 16 || !["server", "worker", "db"].includes(glyph)) return [];
   const perRow = slots <= 6 ? slots : Math.ceil(slots / 2);
   const rows = Math.ceil(slots / perRow);
-  const gap = perRow > 6 ? 10.5 : 13;
-  const r = perRow > 6 ? 4.2 : 5;
-  const baseY = glyph === "db" ? 6 : 7;
+  const gap = perRow > 6 ? 11 : 15;
+  const r = perRow > 6 ? 4.6 : 6.2;
+  const baseY = glyph === "db" ? 6 : rows > 1 ? 5.5 : 7;
   const out: Spot[] = [];
   for (let i = 0; i < slots; i++) {
     const row = Math.floor(i / perRow);
@@ -160,7 +165,7 @@ export function slotSpots(glyph: Glyph, w: number, h: number, slots: number): Sp
     const inRow = Math.min(perRow, slots - row * perRow);
     out.push({
       x: (col - (inRow - 1) / 2) * gap,
-      y: baseY + (rows === 1 ? 0 : (row - 0.5) * 12),
+      y: baseY + (rows === 1 ? 0 : (row - 0.5) * 13.5),
       r,
     });
   }

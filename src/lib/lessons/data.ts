@@ -199,7 +199,8 @@ const capScene = (mode: "cp" | "ap") =>
       users("us", [10, 20], { rate: 14, keys: 8, writes: 0.4, tag: "us" }, "dbUS", { label: "US users" }),
       users("eu", [10, 80], { rate: 14, keys: 8, writes: 0.4, tag: "eu" }, "dbEU", { label: "EU users" }),
       database("dbUS", [74, 20], {
-        label: mode === "cp" ? "US database · leader" : "US database",
+        // In the consistent world its role shows as a LEADER badge (the follower's `leader` points here).
+        label: "US database",
         slots: 4,
         serviceMs: 40,
         region: "us",
@@ -207,7 +208,7 @@ const capScene = (mode: "cp" | "ap") =>
         lagMs: 90,
       }),
       database("dbEU", [74, 80], {
-        label: mode === "cp" ? "EU database · follower" : "EU database",
+        label: "EU database",
         slots: 4,
         serviceMs: 40,
         region: "eu",

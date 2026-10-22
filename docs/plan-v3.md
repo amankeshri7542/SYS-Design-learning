@@ -1,6 +1,6 @@
 # System Lab v3 plan
 
-- **Status:** proposed, 2026-10-22. M0 built 2026-10-22.
+- **Status:** proposed, 2026-10-22. M0 and M1 built 2026-10-22.
 - **Planned with:** Claude Fable 5.1. **To be built with:** Claude Opus 5.5, one milestone per session.
 - **Research behind it:** `docs/research/` holds five reports. Read the one a milestone points to before starting it.
   - `design-audit.md`: visual and UX audit, art direction, home and player layouts, component inventory.
@@ -410,11 +410,24 @@ Every milestone ends with the full gate (§10), screenshots at 1440×900, 1280×
 | `docs/screenshots/*` | modified | Refreshed home, lesson, phone and capstone captures. |
 
 **Acceptance:**
-- [ ] No label is clipped or below 12 px on any lesson, step or viewport (stage-fit spec).
-- [ ] The token contrast test passes in light and dark.
-- [ ] In dark mode, rails are clearly visible and the primary button passes 4.5:1.
-- [ ] The landscape phone never shows a vertical stack, and portrait phones never squeeze a wide scene.
-- [ ] Reduced motion still opens on a settled still frame.
+- [x] No label is clipped or below 12 px on any lesson, step or viewport (stage-fit spec).
+- [x] The token contrast test passes in light and dark.
+- [x] In dark mode, rails are clearly visible and the primary button passes 4.5:1 (rails 2.40:1, button 6.05:1).
+- [x] The landscape phone never shows a vertical stack, and portrait phones never squeeze a wide scene.
+- [x] Reduced motion still opens on a settled still frame.
+
+**Decisions made while building M1:**
+- **Single rows zoom to 2.0, not 1.45.** At 1.45 a single row of stations fills only 18% of a 1440×900 stage, below the stage-fit test's 20%. The ceiling is now 2.0 for one lane, 1.45 for two and 1.2 for three. Zoom also stops wherever a waiting line would lose its room or a label would collide. C1 and C4 settle near 1.5; F1, A3 and R2 reach 21–24% of the stage.
+- **Labels take the first clear side.** Placement tries each side in order of preference and checks it against every station and label shown in the same step. If no side is clear, the frame spreads the stations apart (smaller stations, same-size labels) until one is. The layout's own collision count is on the stage as `data-hits`.
+- **The frame sees every step.** The stage takes `frameSpecs` (each step's scene) instead of one merged spec. `layout.ts`'s `combine()` replaces `combinedFrame` in `player.tsx`, so collisions only count between stations that appear together.
+- **The tall layout spaces rows and lanes from label sizes.** Steps along the flow within 6 units share a row (pub/sub had six rows from near-duplicate columns). A box with spare width lets single stations keep their labels beside them.
+- **Narrow layouts shorten subs with one shared rule** (`fitSub`: "down · taken out" becomes "taken out", "ring of 64 points each" becomes "ring"). Frames reserve the longest sub a node can show, so numbers changing never rescale the scene.
+- **"Portrait" means a stage box at least 0.85 as tall as it is wide.** The portrait phone's stage is nearly square.
+- **Width estimates:** 0.54 em per character for Atkinson bold (measured at 0.48–0.5) and 0.6 em for Overpass Mono.
+- **Line colours for N and O are chosen and in the tokens now:** Networking olive `#6e7d14` (ink `#56620d`, night `#a8bb3a`) and Operating wine `#7a2f5e` (night `#d888b8`). Each is at least ΔE 29 from every dot and line in both themes, and the token test enforces ΔE ≥ 25. M5 only has to use them.
+- **Small text on a line colour sits on the line's ink variant** (the bar code chip, the current station, small roundels), because the ink variants clear 4.5:1 both ways.
+- **No TSX changes were needed in `legend.tsx`, `brand.tsx` or `route-map.tsx`.** Their tokens, type and 44 px targets all come from `globals.css`.
+- **The stage-fill check measures each station with its labels**, the `.node` group a reader sees.
 
 ### M2 — Lesson player shell v2 (M)
 
