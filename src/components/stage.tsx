@@ -1,8 +1,30 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { NodeRt, Req, Sim } from "@/lib/sim/engine";
-import { SIZES, bezier, curve, edgesOf, frameFor, glyphOf, pathD, type Frame, type Mode, type Pt } from "@/lib/sim/layout";
+import {
+  SIZES,
+  TEXT,
+  badgeBox,
+  bezier,
+  combine,
+  curve,
+  edgesOf,
+  fitFrame,
+  fitSub,
+  glyphOf,
+  nodeKey,
+  pathD,
+  placeAll,
+  sceneOf,
+  type Frame,
+  type Mode,
+  type Pt,
+  type Rect,
+  type Scene,
+  type Side,
+  type Size,
+} from "@/lib/sim/layout";
 import type { FxKind, Glyph, SceneSpec } from "@/lib/sim/types";
 import { Body, slotSpots, type Spot } from "./glyph";
 
@@ -16,8 +38,9 @@ interface Box {
   h: number;
   glyph: Glyph;
   spots: Spot[];
-  /** Where the label goes: below, or beside the node when below would sit in the path of traffic or a neighbour. */
-  side: "below" | "right" | "left";
+  side: Side;
+  /** Free room to the left of the node (where its waiting line forms), in viewBox units. */
+  room: number;
 }
 
 interface Layout {
@@ -25,53 +48,100 @@ interface Layout {
   boxes: Map<string, Box>;
 }
 
-/** Lay out `spec` inside a frame sized for `frameSpec` (all steps of a lesson), so switching steps never rescales. */
-function layoutFor(spec: SceneSpec, mode: Mode, frameSpec: SceneSpec = spec, zoom = 1): Layout {
-  const base = frameFor(frameSpec, mode);
-  const frame = zoom === 1 ? base : { ...base, scale: base.scale * zoom };
+/** Place `spec`'s nodes in a frame fitted for every step of the lesson, so switching steps never rescales. */
+function layoutIn(spec: SceneSpec, frame: Frame): Layout {
+  const { placed } = placeAll(sceneOf(spec), frame);
+  const rects = [...placed.values()];
   const boxes = new Map<string, Box>();
   for (const n of spec.nodes) {
+    const p = placed.get(nodeKey(n))!;
     const glyph = glyphOf(n);
     const size = SIZES[glyph];
-    const p = frame.pos(n.at);
     const s = frame.scale;
+    // The waiting line runs left from the node, up to whatever sits to its left on the same row.
+    const left = rects
+      .filter((q) => q !== p && q.x < p.x && Math.abs(q.y - p.y) < (q.h + p.h) / 2)
+      .flatMap((q) => q.rects)
+      .filter((r) => r.y < p.y + p.h / 2 && r.y + r.h > p.y - p.h / 2)
+      .map((r) => p.x - p.w / 2 - (r.x + r.w));
     boxes.set(n.id, {
       id: n.id,
-      ...p,
-      w: size.w * s,
-      h: size.h * s,
+      x: p.x,
+      y: p.y,
+      w: p.w,
+      h: p.h,
       glyph,
+      side: p.side,
+      room: Math.max(0, Math.min(p.x - p.w / 2, ...left.filter((d) => d > -p.w))),
       spots: slotSpots(glyph, size.w, size.h, n.slots ?? 0).map((q) => ({ x: p.x + q.x * s, y: p.y + q.y * s, r: q.r * s })),
-      side: "below",
     });
-  }
-  if (mode !== "tall") {
-    // Crowded columns, or a link running straight down through the label: put labels on the right.
-    const linked = new Set(edgesOf(spec).flatMap((e) => [`${e.a}~${e.b}`, `${e.b}~${e.a}`]));
-    for (const a of boxes.values()) {
-      for (const b of boxes.values()) {
-        if (a === b || Math.abs(a.x - b.x) > 4) continue;
-        const gap = Math.abs(a.y - b.y);
-        if (gap < a.h / 2 + b.h / 2 + 44 || linked.has(`${a.id}~${b.id}`)) a.side = "right";
-      }
-    }
-  } else {
-    // Phones: traffic flows down through anything below a node, so labels go beside it when there's room.
-    const specs = new Map(spec.nodes.map((n) => [n.id, n]));
-    for (const a of boxes.values()) {
-      const n = specs.get(a.id)!;
-      const need = Math.max(n.label.length * 8.6, 78) + 12;
-      // Toward a neighbour, a label may only use half the gap; the neighbour may want the other half.
-      const row = [...boxes.values()].filter((b) => b !== a && Math.abs(b.y - a.y) < 4);
-      const rightN = row.filter((b) => b.x > a.x).map((b) => (b.x - b.w / 2 - (a.x + a.w / 2)) / 2);
-      const leftN = row.filter((b) => b.x < a.x).map((b) => (a.x - a.w / 2 - (b.x + b.w / 2)) / 2);
-      const right = Math.min(frame.W - (a.x + a.w / 2), ...rightN);
-      const left = Math.min(a.x - a.w / 2, ...leftN);
-      a.side = right >= need ? "right" : left >= need ? "left" : "below";
-    }
   }
   return { frame, boxes };
 }
+
+/** How many lanes (nodes across) and columns (steps along the flow) a scene has. */
+function shapeOf(spec: SceneSpec) {
+  const per = new Map<number, number>();
+  for (const n of spec.nodes) per.set(n.at[0], (per.get(n.at[0]) ?? 0) + 1);
+  return { lanes: Math.max(...per.values()), cols: per.size };
+}
+
+/** Rendered size of a node relative to its design size: what "big enough to read" is judged on. */
+const nodeScale = (f: Frame) => f.k * f.scale;
+
+/**
+ * Biggest zoom on the stations of a wide, uncrowded scene. A single row may grow the most (it would otherwise fill
+ * under a fifth of a desktop stage); the crowding check still stops it wherever a waiting line needs the room.
+ */
+const ZOOM_CEILING = (lanes: number) => (lanes <= 1 ? 2 : lanes <= 2 ? 1.45 : lanes <= 3 ? 1.2 : 1);
+
+/**
+ * Pick the layout for the box. Portrait boxes never squeeze a wide scene into the compact layout (only scenes of at
+ * most two lanes and three columns may use it); landscape boxes never stack the scene vertically. The wide desktop
+ * layout wins whenever its stations come out at 74% of design size or more; otherwise the biggest stations win.
+ */
+function chooseFrame(scene: Scene, box: Size): Frame {
+  const { lanes, cols } = shapeOf(scene.spec);
+  const portrait = box.h >= box.w * 0.85;
+  const modes: Mode[] = portrait ? (lanes <= 2 && cols <= 3 ? ["wide", "compact", "tall"] : ["wide", "tall"]) : ["wide", "compact"];
+  // Layouts where every label found a clear side come first; then the biggest stations.
+  const frames = modes.map((m) => fitFrame(scene, m, box));
+  const better = (a: Frame, b: Frame) => (b.hits !== a.hits ? b.hits < a.hits : nodeScale(b) > nodeScale(a));
+  const wide = frames[0];
+  if (nodeScale(wide) < 0.74 || wide.hits) return frames.reduce((a, b) => (better(a, b) ? b : a));
+  // A wide stage with spare height draws its stations larger, as long as nothing crowds and nothing has to shrink.
+  let best = wide;
+  for (let z = 1.05; z <= ZOOM_CEILING(lanes) + 1e-6; z += 0.05) {
+    const f = fitFrame(scene, "wide", box, z);
+    if (f.k < wide.k * 0.98 || f.hits || crowded(scene, f)) break;
+    best = f;
+  }
+  return best;
+}
+
+/** True when stations, labels or the room a waiting line needs would collide at this frame's size. */
+function crowded(scene: Scene, f: Frame) {
+  const placed = [...placeAll(scene, f).placed.values()];
+  // Room for the link and at least three columns of waiting requests between neighbours on a row.
+  const lane = Math.max(56, 3 * (2 * dotRadius(f) + 2));
+  const hits = (a: Rect, b: Rect, m = 0) => a.x < b.x + b.w + m && b.x < a.x + a.w + m && a.y < b.y + b.h + m && b.y < a.y + a.h + m;
+  for (let i = 0; i < placed.length; i++) {
+    for (let j = i + 1; j < placed.length; j++) {
+      const a = placed[i];
+      const b = placed[j];
+      const sameRow = Math.abs(a.y - b.y) < (a.h + b.h) / 2;
+      if (sameRow && Math.abs(a.x - b.x) - (a.w + b.w) / 2 < lane) return true;
+      if (a.rects.some((r) => b.rects.some((q) => hits(r, q, 4)))) return true;
+    }
+  }
+  return false;
+}
+
+/** Request dots, in viewBox units: they grow with the stations, but never below 4.2 px on screen. */
+const dotRadius = (f: Frame) => Math.max(6.4 * Math.max(0.9, f.scale), 4.2 / f.k);
+
+/** Layouts to draw before the stage has measured itself (and on the server); CSS shows the one that suits the viewport. */
+const NOMINAL: Record<"wide" | "compact", Size> = { wide: { w: 980, h: 700 }, compact: { w: 380, h: 360 } };
 
 type Palette = Record<"req" | "ok" | "slow" | "err" | "stale" | "turned" | "ink" | "muted" | "font", string>;
 
@@ -88,16 +158,6 @@ interface FxDraw {
 const TAU = Math.PI * 2;
 const MAX_QUEUE_DRAWN = { wide: 24, compact: 18, tall: 12 };
 
-/** Pick the layout that draws the scene biggest in the available box; ties go to the wide layout. */
-const LABEL_PX: Record<Mode, number> = { wide: 13.5, compact: 16, tall: 16 };
-
-/** Pick the layout whose labels come out largest on screen; the wide desktop layout wins whenever it reads well. */
-function pickMode(layouts: Record<Mode, Layout>, box: { w: number; h: number }): Mode {
-  const fit = (m: Mode) => Math.min(box.w / layouts[m].frame.W, box.h / layouts[m].frame.H);
-  if (fit("wide") >= 0.74) return "wide";
-  return (["wide", "compact", "tall"] as Mode[]).sort((a, b) => fit(b) * LABEL_PX[b] - fit(a) * LABEL_PX[a])[0];
-}
-
 /** Live scene: SVG stations underneath, a canvas of moving requests on top. It fills its box. */
 export function Stage({
   sim,
@@ -106,7 +166,7 @@ export function Stage({
   reduced,
   label,
   drawRef,
-  frameSpec,
+  frameSpecs,
 }: {
   sim: Sim;
   spec: SceneSpec;
@@ -114,26 +174,14 @@ export function Stage({
   reduced: boolean;
   label: string;
   drawRef: RefObject<DrawFn | null>;
-  /** Size the frame for this spec instead (e.g. every step of a lesson combined). */
-  frameSpec?: SceneSpec;
+  /** Size the frame for all of these (every step of a lesson), so switching steps never rescales. */
+  frameSpecs?: SceneSpec[];
 }) {
-  const base = useMemo(
-    () => ({
-      wide: layoutFor(spec, "wide", frameSpec),
-      compact: layoutFor(spec, "compact", frameSpec),
-      tall: layoutFor(spec, "tall", frameSpec),
-    }),
-    [spec, frameSpec],
-  );
-  const lanes = useMemo(() => {
-    const per = new Map<number, number>();
-    for (const n of (frameSpec ?? spec).nodes) per.set(n.at[0], (per.get(n.at[0]) ?? 0) + 1);
-    return Math.max(...per.values());
-  }, [spec, frameSpec]);
+  const scene = useMemo(() => (frameSpecs ? combine(frameSpecs) : sceneOf(spec)), [frameSpecs, spec]);
   const edges = useMemo(() => edgesOf(spec), [spec]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+  const [box, setBox] = useState<Size | null>(null);
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -144,20 +192,18 @@ export function Stage({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const fitMode = box ? pickMode(base, box) : mode;
-  // A wide stage with plenty of spare height draws its stations a little larger (uncrowded scenes only).
-  const zoom = useMemo(() => {
-    if (!box || fitMode !== "wide" || lanes > 3) return 1;
-    const f = base.wide.frame;
-    const slack = box.h / box.w / (f.H / f.W);
-    return Math.round(Math.min(1.2, Math.max(1, 1 + (slack - 1.4) * 0.25)) * 20) / 20;
-  }, [box, fitMode, lanes, base]);
-  const layouts = useMemo(
-    () => (zoom === 1 ? base : { ...base, wide: layoutFor(spec, "wide", frameSpec, zoom) }),
-    [base, zoom, spec, frameSpec],
+  // The frame depends only on the box and the lesson's combined scene, so it holds still while the scene runs.
+  const frame = useMemo(() => (box ? chooseFrame(scene, box) : null), [scene, box]);
+  const layout = useMemo(() => (frame ? layoutIn(spec, frame) : null), [spec, frame]);
+  const guesses = useMemo(
+    () =>
+      layout
+        ? null
+        : (["wide", "compact"] as const).filter((m) => !mode || m === mode).map((m) => layoutIn(spec, fitFrame(scene, m, NOMINAL[m]))),
+    [layout, spec, scene, mode],
   );
-  const live = useRef({ sim, spec, mode: fitMode, reduced, layouts });
-  live.current = { sim, spec, mode: fitMode, reduced, layouts };
+  const live = useRef({ sim, reduced, layout, box });
+  live.current = { sim, reduced, layout, box };
   const st = useRef({
     vis: new Map<number, Pt>(),
     fx: [] as FxDraw[],
@@ -173,11 +219,11 @@ export function Stage({
 
   useEffect(() => {
     drawRef.current = (dt: number) => {
-      const { sim, mode, reduced, layouts } = live.current;
+      const { sim, reduced, layout: L, box } = live.current;
       const canvas = canvasRef.current;
       const wrap = wrapRef.current;
-      if (!mode || !canvas || !wrap) return;
-      const L = layouts[mode];
+      if (!L || !box || !canvas || !wrap) return;
+      const mode = L.frame.mode;
       const s = st.current;
       const real = performance.now();
       if (s.sim !== sim) {
@@ -210,8 +256,9 @@ export function Stage({
       }
       const P = s.palette;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const cw = canvas.clientWidth;
-      const ch = canvas.clientHeight;
+      // The measured box, not a layout read: the canvas fills the stage exactly.
+      const cw = box.w;
+      const ch = box.h;
       if (canvas.width !== Math.round(cw * dpr) || canvas.height !== Math.round(ch * dpr)) {
         canvas.width = Math.round(cw * dpr);
         canvas.height = Math.round(ch * dpr);
@@ -229,7 +276,9 @@ export function Stage({
 
       const now = sim.now;
       const slo = sim.spec.sloMs;
-      const R = 5.2 * Math.max(0.85, L.frame.scale);
+      const R = dotRadius(L.frame);
+      // Spacing of a waiting line: dots never overlap, however large they are drawn.
+      const pitch = 2 * R + 2;
       const ease = 1 - Math.exp(-dt / 70);
       const next = new Map<number, Pt>();
       const place = (r: Req, target: Pt) => {
@@ -250,8 +299,9 @@ export function Stage({
           const len = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y) * 1.05);
           // On phones a label below a node sits in the path of traffic leaving downward: start and end beneath it.
           const under = (n: Box, other: Box) => mode === "tall" && n.side === "below" && other.y > n.y + 4;
-          const ra = under(a, b) ? a.h / 2 + 40 : Math.min(a.w, a.h) / 2 + 3;
-          const rb = under(b, a) ? b.h / 2 + 40 : Math.min(b.w, b.h) / 2 + 3;
+          const below = (TEXT.gap + TEXT.label * TEXT.line + TEXT.sub * TEXT.line + 4) / k;
+          const ra = under(a, b) ? a.h / 2 + below : Math.min(a.w, a.h) / 2 + 3;
+          const rb = under(b, a) ? b.h / 2 + below : Math.min(b.w, b.h) / 2 + 3;
           const tA = Math.min(0.4, ra / len);
           const tB = Math.max(0.6, 1 - rb / len);
           e = { c, tA, tB };
@@ -261,24 +311,31 @@ export function Stage({
       };
 
       // Requests that are waiting, working or parked at a node.
-      const positions = new Map<number, { p: Pt; work?: number }>();
+      const positions = new Map<number, { p: Pt; work?: number; size?: number }>();
       const overflow: { x: number; y: number; n: number; inside: boolean }[] = [];
       const heldRings: { p: Pt; late: boolean; r: number }[] = [];
       for (const n of sim.list) {
         const b = L.boxes.get(n.spec.id);
         if (!b || !n.on) continue;
-        const cap = n.spec.kind === "queue" ? 2 * Math.floor((b.w / L.frame.scale - 24) / 11) : MAX_QUEUE_DRAWN[mode];
+        const inside = n.spec.kind === "queue";
+        // A queue node holds its line inside the body; elsewhere the line stops where the room to the left runs out.
+        const cap = inside
+          ? 2 * Math.floor((b.w / L.frame.scale - 24) / 11)
+          : mode === "tall"
+            ? MAX_QUEUE_DRAWN.tall
+            : Math.min(MAX_QUEUE_DRAWN[mode], 3 * Math.max(1, Math.floor((b.room - 6) / pitch)));
+        const cell = inside ? Math.min(R, 4.6 * L.frame.scale) : undefined;
         n.queue.forEach((r, i) => {
-          if (i < cap) positions.set(r.id, { p: queueSpot(n, b, i, mode) });
+          if (i < cap) positions.set(r.id, { p: queueSpot(n, b, i, mode, pitch), size: cell });
           else if (i === cap) {
-            const last = queueSpot(n, b, cap - 1, mode);
-            overflow.push({ ...last, n: n.queue.length - cap, inside: n.spec.kind === "queue" });
+            const last = queueSpot(n, b, cap - 1, mode, pitch);
+            overflow.push({ ...last, n: n.queue.length - cap, inside });
           }
         });
         n.work.forEach((r, i) => {
           const spot = b.spots[i];
           const pct = r.doneAt > r.started ? Math.min(1, (now - r.started) / (r.doneAt - r.started)) : 1;
-          positions.set(r.id, { p: spot ?? { x: b.x, y: b.y }, work: pct });
+          positions.set(r.id, { p: spot ?? { x: b.x, y: b.y }, work: pct, size: spot?.r });
         });
         n.held.forEach((r, j) => {
           const spot = b.spots[n.work.length + j];
@@ -287,12 +344,12 @@ export function Stage({
         let pi = 0;
         for (const r of n.parked) {
           if (r.phase !== "parked") continue;
-          positions.set(r.id, { p: parkSpot(b, pi++, mode) });
+          positions.set(r.id, { p: parkSpot(b, pi++, mode, pitch) });
         }
         for (const list of n.waiters.values()) {
           for (const r of list) {
             if (r.phase !== "parked") continue;
-            positions.set(r.id, { p: parkSpot(b, pi++, mode) });
+            positions.set(r.id, { p: parkSpot(b, pi++, mode, pitch) });
           }
         }
       }
@@ -311,6 +368,7 @@ export function Stage({
         if (!look) continue;
         let p: Pt | null = null;
         let work: number | undefined;
+        let base = look.small ? R * 0.5 : R;
         if (r.phase === "travel") {
           const e = path(r.from, r.to);
           if (!e) continue;
@@ -322,7 +380,7 @@ export function Stage({
           const dx = b2.x - a.x;
           const dy = b2.y - a.y;
           const d = Math.hypot(dx, dy) || 1;
-          const lane = look.small ? 0 : 4;
+          const lane = look.small ? 0 : 4 * Math.max(1, L.frame.scale);
           p = { x: a.x - (dy / d) * lane, y: a.y + (dx / d) * lane };
           next.set(r.id, p);
         } else {
@@ -330,8 +388,9 @@ export function Stage({
           if (!pos) continue;
           p = place(r, pos.p);
           work = pos.work;
+          if (pos.size && !look.small) base = pos.size;
         }
-        let size = (look.small ? 3.2 : R) * (r.cost > 1 ? 1.35 : 1);
+        let size = base * (r.cost > 1 ? 1.35 : 1);
         if (r.phase === "travel" && !reduced) {
           // Requests grow out of the client and shrink back into it, so they don't pop in and out.
           const span = r.t1 - r.t0;
@@ -361,12 +420,12 @@ export function Stage({
 
       if (overflow.length) {
         ctx.fillStyle = P.muted;
-        ctx.font = `600 11px ${P.font}`;
+        ctx.font = `600 ${TEXT.sub / k}px ${P.font}`;
         ctx.textAlign = "center";
         for (const o of overflow) {
           if (o.inside) ctx.fillText(`+${o.n}`, o.x - 4, o.y - 12);
-          else if (mode !== "tall") ctx.fillText(`+${o.n}`, o.x - 18, o.y + 4);
-          else ctx.fillText(`+${o.n}`, o.x + 22, o.y + 4);
+          else if (mode !== "tall") ctx.fillText(`+${o.n}`, o.x - pitch - 8, o.y + 4);
+          else ctx.fillText(`+${o.n}`, o.x + pitch + 10, o.y + 4);
         }
       }
 
@@ -390,19 +449,17 @@ export function Stage({
       }
       if (sim.fx.length) s.lastFx = sim.fx[sim.fx.length - 1].t;
       if (s.fx.length > 90) s.fx = s.fx.slice(-60);
-      s.fx = s.fx.filter((f) => drawFx(ctx, f, real, P, reduced));
+      s.fx = s.fx.filter((f) => drawFx(ctx, f, real, P, reduced, R));
     };
     return () => {
       drawRef.current = null;
     };
   }, [drawRef]);
 
-  const modes: Mode[] = fitMode ? [fitMode] : ["wide", "compact"];
-
   return (
-    <div className="stage" ref={wrapRef} data-mode={fitMode ?? "auto"}>
-      {modes.map((m) => (
-        <StageSvg key={m} sim={sim} spec={spec} layout={layouts[m]} edges={edges} label={label} />
+    <div className="stage" ref={wrapRef} data-mode={layout?.frame.mode ?? "auto"} data-hits={layout?.frame.hits}>
+      {(layout ? [layout] : (guesses ?? [])).map((l) => (
+        <StageSvg key={l.frame.mode} sim={sim} spec={spec} layout={l} edges={edges} label={label} reduced={reduced} />
       ))}
       <canvas ref={canvasRef} className="stage-canvas" aria-hidden="true" />
     </div>
@@ -415,15 +472,18 @@ function StageSvg({
   layout,
   edges,
   label,
+  reduced,
 }: {
   sim: Sim;
   spec: SceneSpec;
   layout: Layout;
   edges: ReturnType<typeof edgesOf>;
   label: string;
+  reduced: boolean;
 }) {
   const { frame, boxes } = layout;
   const lbViews = [...sim.nodes.values()].filter((n) => n.spec.health);
+  const leaders = new Set(spec.nodes.flatMap((n) => (n.leader ? [n.leader] : [])));
   // Nodes that appear after the scene has settled (a step adds a cache, a queue…) get a one-time accent ring.
   const born = useRef(performance.now());
   const seen = useRef(new Map<string, number>());
@@ -434,10 +494,17 @@ function StageSvg({
       until = now - born.current > 500 ? now + 900 : 0;
       seen.current.set(id, until);
     }
-    return now < until;
+    return !reduced && now < until;
   };
+  const k = frame.k;
   return (
-    <svg className={`stage-svg stage-${frame.mode}`} viewBox={`0 0 ${frame.W} ${frame.H}`} role="img" aria-label={label}>
+    <svg
+      className={`stage-svg stage-${frame.mode}`}
+      viewBox={`0 0 ${frame.W} ${frame.H}`}
+      role="img"
+      aria-label={label}
+      style={{ "--k": k } as CSSProperties}
+    >
       <g className="links">
         {edges.map((e) => {
           const a = boxes.get(e.a);
@@ -450,17 +517,30 @@ function StageSvg({
           const mid = bezier(c, 0.5);
           const text = spec.linkLabels?.[`${e.a}>${e.b}`] ?? spec.linkLabels?.[`${e.b}>${e.a}`];
           const upright = Math.abs(b.x - a.x) < Math.abs(b.y - a.y);
+          const d = pathD(c);
           return (
-            <g key={`${e.a}~${e.b}`} className="link-g">
-              <path className={`link ${e.style}${cut ? " cut" : ""}`} d={pathD(c)} />
+            <g key={`${e.a}~${e.b}`} className={`link-g ${e.style}${cut ? " cut" : ""}`}>
+              {e.style === "flow" ? (
+                <>
+                  <path className="rail" d={d} />
+                  <path className="rail-core" d={d} />
+                </>
+              ) : (
+                <path className="link sync" d={d} />
+              )}
               {cut && (
-                <g className="cut-mark" transform={`translate(${mid.x} ${mid.y})`}>
+                <g className="cut-mark" transform={`translate(${mid.x} ${mid.y}) scale(${1 / Math.max(0.6, k)})`}>
                   <circle r="11" />
                   <path d="M-4.5-4.5l9 9M4.5-4.5l-9 9" />
                 </g>
               )}
               {text && !cut && (
-                <text className="link-label" x={upright ? mid.x + 14 : mid.x} y={upright ? mid.y + 4 : mid.y - 12} textAnchor={upright ? "start" : "middle"}>
+                <text
+                  className="link-label"
+                  x={upright ? mid.x + 12 / k : mid.x}
+                  y={upright ? mid.y + 4 / k : mid.y - 10 / k}
+                  textAnchor={upright ? "start" : "middle"}
+                >
                   {text}
                 </text>
               )}
@@ -473,33 +553,35 @@ function StageSvg({
           const b = boxes.get(n.id)!;
           const rt = sim.nodes.get(n.id);
           if (!rt) return null;
-          const { cls, sub: detail, badge } = describe(sim, rt, lbViews);
+          const { cls, sub: long, badge } = describe(sim, rt, lbViews);
+          const detail = fitSub(long, frame.mode);
+          const role = n.leader ? "FOLLOWER" : leaders.has(n.id) ? "LEADER" : null;
           const size = SIZES[b.glyph];
+          const s = frame.scale;
+          // CSS px to the node's own units: stage text keeps its size however the scene is scaled.
+          const u = 1 / (k * s);
           // In the compact phone layout, secondary labels appear only when they carry news.
           const sub = frame.mode !== "compact" || cls || rt.queue.length || n.kind === "cache" || n.kind === "queue" ? detail : "";
+          const block = TEXT.label * TEXT.line + (sub ? TEXT.sub * TEXT.line : 0);
+          const top = b.side === "below" ? size.h / 2 + TEXT.gap * u : (-block / 2) * u;
+          const x = b.side === "right" ? size.w / 2 + TEXT.side * u : b.side === "left" ? -size.w / 2 - TEXT.side * u : 0;
           return (
             // Outer group glides between positions; inner group plays the one-time entrance.
-            <g key={n.id} className="node-pos" style={{ transform: `translate(${b.x}px, ${b.y}px) scale(${frame.scale})` }}>
+            <g key={n.id} className="node-pos" style={{ transform: `translate(${b.x}px, ${b.y}px) scale(${s})`, "--ns": s } as CSSProperties}>
               <g className={`node g-${b.glyph} ${cls}`}>
-              {fresh(n.id) && <rect className="fresh-ring" x={-size.w / 2 - 8} y={-size.h / 2 - 8} width={size.w + 16} height={size.h + 16} rx="18" />}
-              <Body glyph={b.glyph} w={size.w} h={size.h} slots={rt.spec.slots ?? 0} />
-              {meter(rt, size.w, size.h)}
-              <text className="node-label" x={labelX(b, size.w)} y={b.side === "below" ? size.h / 2 + 17 : -2} textAnchor={ANCHOR[b.side]}>
-                {n.label}
-              </text>
-              {sub && (
-                <text className="node-sub" x={labelX(b, size.w)} y={b.side === "below" ? size.h / 2 + 31 : 14} textAnchor={ANCHOR[b.side]}>
-                  {sub}
+                {fresh(n.id) && <rect className="fresh-ring" x={-size.w / 2 - 8} y={-size.h / 2 - 8} width={size.w + 16} height={size.h + 16} rx="16" />}
+                <Body glyph={b.glyph} w={size.w} h={size.h} slots={rt.spec.slots ?? 0} />
+                {meter(rt, size.w, size.h)}
+                <text className="node-label" x={x} y={top + TEXT.label * u} textAnchor={ANCHOR[b.side]}>
+                  {n.label}
                 </text>
-              )}
-              {badge && (
-                <g className={`badge badge-${badge.tone}`} transform={`translate(${size.w / 2 - 6} ${-size.h / 2 - 2})`}>
-                  <rect x={-badge.w / 2} y="-9" width={badge.w} height="18" rx="9" />
-                  <text textAnchor="middle" y="4">
-                    {badge.text}
+                {sub && (
+                  <text className="node-sub" x={x} y={top + (TEXT.label * TEXT.line + TEXT.sub) * u} textAnchor={ANCHOR[b.side]}>
+                    {sub}
                   </text>
-                </g>
-              )}
+                )}
+                {badge && <Badge text={badge.text} tone={badge.tone} x={size.w / 2} y={-size.h / 2} k={k} s={s} dir={1} />}
+                {role && <Badge text={role} tone="role" x={-size.w / 2} y={-size.h / 2} k={k} s={s} dir={-1} />}
               </g>
             </g>
           );
@@ -511,8 +593,18 @@ function StageSvg({
 
 const ANCHOR = { below: "middle", right: "start", left: "end" } as const;
 
-function labelX(b: Box, w: number) {
-  return b.side === "right" ? w / 2 + 10 : b.side === "left" ? -w / 2 - 10 : 0;
+/** A small uppercase tag on a node's shoulder: state on the right (DOWN, OPEN), role on the left (LEADER). */
+function Badge({ text, tone, x, y, k, s, dir }: { text: string; tone: string; x: number; y: number; k: number; s: number; dir: 1 | -1 }) {
+  const b = badgeBox(text.length, k, s);
+  const u = 1 / (k * s);
+  return (
+    <g className={`badge badge-${tone}`} transform={`translate(${x - dir * b.inset / s} ${y + b.dy / s})`}>
+      <rect x={-b.w / s / 2} y={-b.h / s / 2} width={b.w / s} height={b.h / s} rx={(b.h / s) / 2} />
+      <text textAnchor="middle" y={4 * u}>
+        {text}
+      </text>
+    </g>
+  );
 }
 
 function meter(n: NodeRt, w: number, h: number) {
@@ -523,7 +615,7 @@ function meter(n: NodeRt, w: number, h: number) {
     return (
       <g className="meter" transform={`translate(${-w / 2 + 12} ${h / 2 - 12})`}>
         <rect className="track" width={w - 24} height="5" rx="2.5" />
-        <rect className="fill fill-cache" width={(w - 24) * fill} height="5" rx="2.5" />
+        <rect className="fill fill-cache" width={w - 24} height="5" rx="2.5" style={{ transform: `scaleX(${fill})` }} />
       </g>
     );
   }
@@ -534,14 +626,15 @@ function meter(n: NodeRt, w: number, h: number) {
     return (
       <g className="meter" transform={`translate(${-w / 2 + 12} ${y})`}>
         <rect className="track" width={w - 24} height="3" rx="1.5" />
-        <rect className={`fill fill-${tone}`} width={(w - 24) * load} height="3" rx="1.5" />
+        <rect className={`fill fill-${tone}`} width={w - 24} height="3" rx="1.5" style={{ transform: `scaleX(${load})` }} />
       </g>
     );
   }
   return null;
 }
 
-function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: string; badge?: { text: string; tone: string; w: number } } {
+/** A node's state class, its secondary label (the long wording; `fitSub` shortens it for narrow layouts) and its state badge. */
+function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: string; badge?: { text: string; tone: string } } {
   const s = n.spec;
   if (!n.on) return { cls: "off", sub: "standby" };
   if (n.bootUntil) return { cls: "booting", sub: "starting…" };
@@ -549,7 +642,7 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
   const benched = lbs.some((lb) => sim.flat(lb.spec.to).includes(s.id) && lb.health.get(s.id)?.ok === false);
   if (!n.up) {
     const sub = s.sink ? "paused · jobs wait" : s.downMode === "hang" ? "not responding" : benched ? "down · taken out" : "down";
-    return { cls: "down", sub, badge: { text: "DOWN", tone: "bad", w: 44 } };
+    return { cls: "down", sub, badge: { text: "DOWN", tone: "bad" } };
   }
   if (benched) return { cls: "benched", sub: "rejoining…" };
   let sub = "";
@@ -587,16 +680,16 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
       else sub = `${busy}/${slots} busy`;
   }
   const hot = slots > 0 && (n.queue.length > slots * 2 || (n.load > 0.92 && n.queue.length > 0));
-  let badge: { text: string; tone: string; w: number } | undefined;
+  let badge: { text: string; tone: string } | undefined;
   if (s.breaker) {
     const b = n.breaker.state;
-    badge = b === "open" ? { text: "OPEN", tone: "bad", w: 46 } : b === "half" ? { text: "TESTING", tone: "warn", w: 62 } : { text: "CLOSED", tone: "good", w: 56 };
+    badge = b === "open" ? { text: "OPEN", tone: "bad" } : b === "half" ? { text: "TESTING", tone: "warn" } : { text: "CLOSED", tone: "good" };
   }
-  if (s.kind === "db" && s.leader && sim.partitioned) badge = { text: "CUT OFF", tone: "bad", w: 62 };
+  if (s.kind === "db" && s.leader && sim.partitioned) badge = { text: "CUT OFF", tone: "bad" };
   return { cls: hot ? "hot" : "", sub, badge };
 }
 
-function queueSpot(n: NodeRt, b: Box, i: number, mode: Mode): Pt {
+function queueSpot(n: NodeRt, b: Box, i: number, mode: Mode, pitch: number): Pt {
   if (n.spec.kind === "queue") {
     const s = b.h / 46;
     const cols = Math.floor((b.w / s - 24) / 11);
@@ -607,19 +700,19 @@ function queueSpot(n: NodeRt, b: Box, i: number, mode: Mode): Pt {
   if (mode !== "tall") {
     const col = Math.floor(i / 3);
     const row = i % 3;
-    return { x: b.x - b.w / 2 - 12 - col * 12, y: b.y + (row - 1) * 12 };
+    return { x: b.x - b.w / 2 - pitch / 2 - 4 - col * pitch, y: b.y + (row - 1) * pitch };
   }
   // Phones: rows of four stacked upward, at most three rows, so the line never reaches the node above.
   const row = Math.floor(i / 4);
   const col = i % 4;
-  return { x: b.x + (col - 1.5) * 11, y: b.y - b.h / 2 - 11 - row * 11 };
+  return { x: b.x + (col - 1.5) * pitch, y: b.y - b.h / 2 - pitch / 2 - 4 - row * pitch };
 }
 
-function parkSpot(b: Box, i: number, mode: Mode): Pt {
+function parkSpot(b: Box, i: number, mode: Mode, pitch: number): Pt {
   const col = i % 6;
   const row = Math.floor(i / 6);
-  if (mode !== "tall") return { x: b.x - 30 + col * 12, y: b.y - b.h / 2 - 14 - row * 12 };
-  return { x: b.x + b.w / 2 + 14 + row * 12, y: b.y - 30 + col * 12 };
+  if (mode !== "tall") return { x: b.x - 2.5 * pitch + col * pitch, y: b.y - b.h / 2 - pitch / 2 - 4 - row * pitch };
+  return { x: b.x + b.w / 2 + pitch / 2 + 4 + row * pitch, y: b.y - 2.5 * pitch + col * pitch };
 }
 
 type Shape = "circle" | "donut" | "diamond" | "square" | "ring";
@@ -672,7 +765,7 @@ function shape(ctx: CanvasRenderingContext2D, kind: Shape, x: number, y: number,
       ctx.fill();
       return;
     case "ring":
-      ctx.lineWidth = 1.6;
+      ctx.lineWidth = Math.max(1.6, r * 0.28);
       ctx.arc(x, y, Math.max(1, r - 0.8), 0, TAU);
       ctx.stroke();
       return;
@@ -681,7 +774,7 @@ function shape(ctx: CanvasRenderingContext2D, kind: Shape, x: number, y: number,
 
 const FX_LIFE: Partial<Record<FxKind, number>> = { drop: 900, crash: 1100, recover: 1100, boot: 900, open: 900, close: 900 };
 
-function drawFx(ctx: CanvasRenderingContext2D, f: FxDraw, real: number, P: Palette, reduced: boolean) {
+function drawFx(ctx: CanvasRenderingContext2D, f: FxDraw, real: number, P: Palette, reduced: boolean, R: number) {
   const life = FX_LIFE[f.kind] ?? 480;
   const age = real - f.born;
   if (age > life) return false;
@@ -705,7 +798,7 @@ function drawFx(ctx: CanvasRenderingContext2D, f: FxDraw, real: number, P: Palet
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(s * 6);
-    shape(ctx, "diamond", 0, 0, 4.6);
+    shape(ctx, "diamond", 0, 0, R * 0.72);
     ctx.restore();
     ctx.globalAlpha = 1;
     return true;

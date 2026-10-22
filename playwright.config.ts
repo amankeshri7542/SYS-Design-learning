@@ -14,7 +14,9 @@ export default defineConfig({
   },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
+    { name: "desktop-short", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 720 } } },
     { name: "mobile", use: { ...devices["Pixel 7"], viewport: { width: 390, height: 844 } } },
+    { name: "phone-landscape", use: { ...devices["Pixel 7 landscape"], viewport: { width: 844, height: 390 } } },
   ],
   webServer: {
     command: "npm run dev -- --port 3100",

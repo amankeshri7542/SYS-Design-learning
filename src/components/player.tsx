@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { getLesson, lessonsOn, lineOf, neighbours } from "@/lib/lessons";
 import { buildSteps, defaultsOf, isChoice, type FigureDef, type Knob, type Values } from "@/lib/lessons/types";
 import type { MetricSpec } from "@/lib/sim/metrics";
-import type { NodeSpec, SceneSpec } from "@/lib/sim/types";
 import { Brand } from "./brand";
 import { Key } from "./legend";
 import { ArrowIcon, BoltIcon, Clock, Compare, Transport, freshNote, useLiveSims, type Live } from "./live";
@@ -18,15 +17,6 @@ const TONE: Record<FigureDef["tone"], string> = {
   tradeoff: "Trade-off",
   explore: "Explore",
 };
-
-/** One frame big enough for every step, so switching steps never rescales the scene. */
-export function combinedFrame(specs: SceneSpec[]): SceneSpec {
-  // Keep every distinct position: a node that moves between steps must fit in the frame in both places.
-  const nodes = new Map<string, NodeSpec>();
-  for (const s of specs) for (const n of s.nodes) nodes.set(`${n.id}@${n.at.join(",")}`, n);
-  const heights = specs.map((s) => s.wideH).filter((h): h is number => !!h);
-  return { ...specs[0], nodes: [...nodes.values()], wideH: heights.length ? Math.max(...heights) : undefined };
-}
 
 /** Space toggles playback; arrow keys move between steps. Ignored while a control has focus. */
 export function usePlayerKeys(live: Live, onStep?: (delta: number) => void) {
@@ -96,7 +86,6 @@ export function LessonPlayer({ slug }: { slug: string }) {
   const [step, setStep] = useState(0);
   const [values, setValues] = useState<Values[]>(() => figs.map(defaultsOf));
   const specs = useMemo(() => buildSteps(figs, values), [figs, values]);
-  const frame = useMemo(() => combinedFrame(specs), [specs]);
   const warm = Math.max(400, ...specs.map((s) => s.warmMs ?? 0));
   const live = useLiveSims(specs, { warm });
   const shown = Math.min(step, figs.length - 1);
@@ -161,7 +150,7 @@ export function LessonPlayer({ slug }: { slug: string }) {
       }
       stage={
         <>
-          <Stage sim={sim} spec={specs[shown]} frameSpec={frame} mode={live.mode} reduced={live.reduced} label={`${fig.title}. ${fig.caption}`} drawRef={live.drawRef} />
+          <Stage sim={sim} spec={specs[shown]} frameSpecs={specs} mode={live.mode} reduced={live.reduced} label={`${fig.title}. ${fig.caption}`} drawRef={live.drawRef} />
           <p className={`note${note ? " on" : ""}`} aria-live="polite">
             {note}
           </p>

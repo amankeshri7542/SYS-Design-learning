@@ -152,20 +152,18 @@ for (const slug of ["latency-and-throughput", "consistency-vs-availability"]) {
   });
 }
 
-test("the dock states the clock in plain words, and it follows the speed", async ({ page, isMobile }) => {
+test("the dock states the clock in plain words, and it follows the speed", async ({ page }) => {
   await page.goto("/learn/caching");
   const clock = page.locator(".dock .slowmo");
   await expect(clock).toHaveText("1 s on screen = 100 ms");
-  if (isMobile) {
-    // The phone dock has no room for the sentence; the speed button carries it.
-    const cycle = page.locator(".dock .speed-cycle");
-    await expect(cycle).toHaveAccessibleName(/1 s on screen = 100 ms/);
-    await cycle.click();
-    await expect(cycle).toHaveAccessibleName(/1 s on screen = 200 ms/);
-  } else {
-    await expect(clock).toBeVisible();
-    await page.locator(".dock .seg-speed label", { hasText: "2×" }).click();
-  }
+  // Wide docks show the sentence; narrower ones keep it in the speed control's name until M2's dock.
+  if ((page.viewportSize()?.width ?? 0) > 1180) await expect(clock).toBeVisible();
+  const cycle = page.locator(".dock .speed-cycle");
+  const speed = cycle.or(page.locator(".dock .seg-speed"));
+  await expect(speed.filter({ visible: true })).toHaveAccessibleName(/1 s on screen = 100 ms/);
+  if (await cycle.isVisible()) await cycle.click();
+  else await page.locator(".dock .seg-speed label", { hasText: "2×" }).click();
+  await expect(speed.filter({ visible: true })).toHaveAccessibleName(/1 s on screen = 200 ms/);
   await expect(clock).toHaveText("1 s on screen = 200 ms");
 });
 
