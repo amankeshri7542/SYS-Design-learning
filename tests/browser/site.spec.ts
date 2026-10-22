@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
 import { LESSONS } from "../../src/lib/lessons";
+import { CAP_METRICS } from "../../src/lib/lessons/capstone";
+import { buildSteps, defaultsOf, type Lesson } from "../../src/lib/lessons/types";
+import { isLatency, type MetricSpec } from "../../src/lib/sim/metrics";
 
 const simTime = async (page: Page) => Number(await page.locator("[data-sim-time]").first().getAttribute("data-sim-time"));
 
@@ -22,6 +25,15 @@ async function expectNoPageScroll(page: Page) {
   expect(y, "no page scroll").toBeLessThanOrEqual(0);
 }
 
+/** The rows of a lesson's comparison table: every figure's metrics, first label wins (as the player does). */
+function tableRows(lesson: Lesson): MetricSpec[] {
+  const seen = new Map<string, MetricSpec>();
+  for (const f of lesson.figures) for (const m of f.metrics) if (!seen.has(m.label)) seen.set(m.label, m);
+  return [...seen.values()].slice(0, 5);
+}
+
+const compareRow = (page: Page, label: string) => page.locator(".compare tbody tr", { has: page.locator("th", { hasText: label }) });
+
 test("home: the hero scene runs and the route map lists every station", async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto("/");
@@ -42,6 +54,16 @@ for (const lesson of LESSONS) {
     const t0 = await simTime(page);
     await page.waitForTimeout(1200);
     expect(await simTime(page)).toBeGreaterThan(t0);
+    // Every response-time row says what it is judged against.
+    const targets = page.locator(".compare .target, .mrow .target");
+    if (lesson.slug === "capstone") {
+      await expect(targets).toHaveCount(CAP_METRICS.filter(isLatency).length);
+      for (const t of await targets.all()) await expect(t).toHaveText(/^target ≤ \d+ ms$/);
+    } else {
+      const sloMs = buildSteps(lesson.figures, lesson.figures.map(defaultsOf))[0].sloMs;
+      await expect(targets).toHaveCount(tableRows(lesson).filter(isLatency).length);
+      for (const t of await targets.all()) await expect(t).toHaveText(`target ≤ ${sloMs} ms`);
+    }
     if (lesson.slug !== "capstone") {
       const tabs = page.getByRole("tab");
       await expect(tabs).toHaveCount(lesson.figures.length + 1);
@@ -103,6 +125,48 @@ test("a fault button crashes and restores a server in both worlds", async ({ pag
   await expect(page.getByRole("button", { name: "Restore server 2" })).toBeVisible();
   await page.getByRole("button", { name: "Restore server 2" }).click();
   await expect(page.locator(".node.down")).toHaveCount(0);
+});
+
+test("F4: taking a dead server out of rotation reads as a plain −1, not as worse", async ({ page }) => {
+  await page.goto("/learn/health-checks");
+  await page.getByRole("tab").nth(1).click();
+  await page.getByRole("button", { name: "Crash server 2" }).click();
+  const row = compareRow(page, "Servers in use");
+  await expect(row.locator("td.delta")).toHaveText("−1");
+  await expect(row.locator("td.num")).toHaveText(["3", "2"]);
+  await expect(row.locator("td.delta")).not.toHaveClass(/\b(up|down)\b/);
+  await expect(row.locator("td.best")).toHaveCount(0);
+  // The rows that do carry a verdict still get one.
+  await expect(compareRow(page, "Failed").locator("td.delta.up")).toHaveCount(1);
+});
+
+for (const slug of ["latency-and-throughput", "consistency-vs-availability"]) {
+  test(`${slug}: explore and trade-off steps show plain differences, never a verdict`, async ({ page }) => {
+    await page.goto(`/learn/${slug}`);
+    await page.getByRole("tab").nth(1).click();
+    const verdicts = page.locator(".compare td.delta.up, .compare td.delta.down, .compare td.best");
+    await expect(page.locator(".compare td.delta").filter({ hasText: /^[+−]/ }).first()).toBeAttached();
+    await expect(verdicts).toHaveCount(0);
+    await page.waitForTimeout(1500);
+    await expect(verdicts).toHaveCount(0);
+  });
+}
+
+test("the dock states the clock in plain words, and it follows the speed", async ({ page, isMobile }) => {
+  await page.goto("/learn/caching");
+  const clock = page.locator(".dock .slowmo");
+  await expect(clock).toHaveText("1 s on screen = 100 ms");
+  if (isMobile) {
+    // The phone dock has no room for the sentence; the speed button carries it.
+    const cycle = page.locator(".dock .speed-cycle");
+    await expect(cycle).toHaveAccessibleName(/1 s on screen = 100 ms/);
+    await cycle.click();
+    await expect(cycle).toHaveAccessibleName(/1 s on screen = 200 ms/);
+  } else {
+    await expect(clock).toBeVisible();
+    await page.locator(".dock .seg-speed label", { hasText: "2×" }).click();
+  }
+  await expect(clock).toHaveText("1 s on screen = 200 ms");
 });
 
 test.describe("reduced motion", () => {

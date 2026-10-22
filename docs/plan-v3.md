@@ -1,6 +1,6 @@
 # System Lab v3 plan
 
-- **Status:** proposed, 2026-10-22.
+- **Status:** proposed, 2026-10-22. M0 built 2026-10-22.
 - **Planned with:** Claude Fable 5.1. **To be built with:** Claude Opus 5.5, one milestone per session.
 - **Research behind it:** `docs/research/` holds five reports. Read the one a milestone points to before starting it.
   - `design-audit.md`: visual and UX audit, art direction, home and player layouts, component inventory.
@@ -368,15 +368,22 @@ Every milestone ends with the full gate (§10), screenshots at 1440×900, 1280×
 | `src/lib/sim/engine.ts` | modified | Optional constructor flag `new Sim(spec, { trace: true })` records first-attempt spawns `(t, client, key, op, cost)` in `sim.trace`. Tests only; off by default. |
 | `tests/lessons.test.ts` | modified | Drop the exact count of 19. Assert unique slugs and codes, allowed tone sequences, at least two figures, and actions with the same label in two figures sharing an id. Add a fairness test: for every `problem,fix` and `tradeoff,tradeoff` pair, `sloMs`, `timeoutMs`, `timeScale`, `windowMs` match, and `sim.trace` of both worlds is identical after 5,000 ms. `problem,explore` lessons are exempt because the explore figure changes the traffic on purpose. |
 | `tests/browser/site.spec.ts` | modified | F4 Fix: the "Servers in use" change cell has no `up`/`down` class. F1 explore: no verdict classes. |
+| `src/lib/lessons/resilience.ts` | modified | *Added during M0.* R3's "Average busy" is `better: "neutral"`. The autoscaler aims at a target, so at night it correctly runs fewer, busier servers, and the fixed "low is better" painted that red. |
+| `tests/metrics.test.ts` | new | *Added during M0.* Unit tests for neutral metrics, the signed difference and the clock text. |
 | `CLAUDE.md` | modified | Note that faults pair by action id, and that problem/fix pairs must produce identical first-attempt arrival traces. |
 
 **Tests:** the fairness test passes for every problem/fix and trade-off pair. A scratch check on 2026-10-22 found all 17 pairs already identical over 5,000 ms; F1's explore figure differs by design and is exempt. Unit tests cover neutral metrics and the clock text.
 **Acceptance:**
-- [ ] F4 Fix shows "Servers in use 3 | 2" with a grey "−1" and no red.
-- [ ] F1's explore step and the consistency-vs-availability trade-off pair show neutral differences.
-- [ ] Every latency row in every lesson shows its target.
-- [ ] The dock reads "1 s on screen = 100 ms" at 1× and "= 200 ms" at 2×.
-- [ ] `npm test` passes with no lesson count in it.
+- [x] F4 Fix shows "Servers in use 3 | 2" with a grey "−1" and no red.
+- [x] F1's explore step and the consistency-vs-availability trade-off pair show neutral differences.
+- [x] Every latency row in every lesson shows its target. This covers response times; see the job-wait note below.
+- [x] The dock reads "1 s on screen = 100 ms" at 1× and "= 200 ms" at 2×.
+- [x] `npm test` passes with no lesson count in it.
+
+**Decisions made while building M0:**
+- **The plain difference keeps the metric's unit:** "−1", "+52 ms", "+11/s". Shares use percentage points ("+55 pts"), so a difference can't be misread as the relative "▼ 4%" that verdict rows show.
+- **"Latency row" means a response time judged against `sloMs`** (`p50`, `p95`). A1's "Email sent within" is a background job's wait. The scene has no target for it, and inventing one would be new lesson content, so it gets a target with `MetricSpec.target` in M4a.
+- **The clock sentence stays hidden where the dock already hid "10× slow motion"** (≤1180 px wide and landscape phones). There, the speed control's accessible name and tooltip carry it. M2's dock makes it visible everywhere.
 
 ### M1 — Design system v3 and a legible stage (L)
 

@@ -130,6 +130,15 @@ export interface Note {
   text: string;
 }
 
+/** A logical request's first attempt leaving its client. */
+export interface Spawn {
+  t: number;
+  client: string;
+  key: number;
+  op: Op;
+  cost: number;
+}
+
 const SAMPLE_KEYS = 1000;
 
 export class Sim {
@@ -145,10 +154,13 @@ export class Sim {
   partitioned = false;
   blocked: Req[] = [];
   conflicts = 0;
+  /** Every first attempt, in order (only with `{ trace: true }`). A problem and its fix must produce the same trace. */
+  trace: Spawn[] = [];
   readonly windowMs: number;
   attempts: Win;
   logical: Win;
   retries: Win;
+  private tracing: boolean;
   private seq = 0;
   private truth = new Map<number, number>();
   private writtenIn = new Map<string, Set<number>>();
@@ -160,8 +172,9 @@ export class Sim {
   private cursor = 0;
   private seed: number;
 
-  constructor(spec: SceneSpec) {
+  constructor(spec: SceneSpec, opts: { trace?: boolean } = {}) {
     this.spec = spec;
+    this.tracing = !!opts.trace;
     this.seed = spec.seed ?? 7;
     this.windowMs = spec.windowMs ?? 1000;
     this.attempts = new Win(this.windowMs);
@@ -571,6 +584,7 @@ export class Sim {
     if (timeout) r.deadline = this.t + timeout;
     this.attempts.add(this.t);
     if (attempt === 0) this.logical.add(this.t);
+    if (attempt === 0 && this.tracing) this.trace.push({ t: this.t, client: n.spec.id, key, op, cost });
     const target = n.spec.to?.[0];
     if (target) this.send(r, this.resolve(n, target));
   }

@@ -8,7 +8,7 @@ import type { MetricSpec } from "@/lib/sim/metrics";
 import type { NodeSpec, SceneSpec } from "@/lib/sim/types";
 import { Brand } from "./brand";
 import { Key } from "./legend";
-import { ArrowIcon, BoltIcon, Compare, Transport, freshNote, useLiveSims, type Live } from "./live";
+import { ArrowIcon, BoltIcon, Clock, Compare, Transport, freshNote, useLiveSims, type Live } from "./live";
 import { MarkVisited } from "./route-map";
 import { Stage } from "./stage";
 
@@ -114,6 +114,8 @@ export function LessonPlayer({ slug }: { slug: string }) {
 
   const setKnob = (k: Knob, v: number) => setValues((all) => all.map((vals, i) => (i === shown ? { ...vals, [k.id]: v } : vals)));
   const nextLabel = step < last - 1 ? figs[step + 1].short : "Recap";
+  // Only a problem and its fix earn a better/worse verdict; explore and trade-off steps just differ.
+  const verdict = figs.map((f) => f.tone).join(",") === "problem,fix";
 
   return (
     <Shell
@@ -202,7 +204,7 @@ export function LessonPlayer({ slug }: { slug: string }) {
                     {fig.knobs?.map((k) => <KnobControl key={k.id} k={k} value={values[shown][k.id]} name={`${slug}-${shown}`} onChange={(v) => setKnob(k, v)} />)}
                     {fig.actions && (
                       <div className="faults">
-                        {fig.actions.map((a, ai) => {
+                        {fig.actions.map((a) => {
                           const on = a.isOn(sim);
                           return (
                             <button
@@ -211,8 +213,8 @@ export function LessonPlayer({ slug }: { slug: string }) {
                               className={`btn btn-fault${on ? " on" : ""}`}
                               aria-pressed={on}
                               onClick={() => {
-                                // The same fault hits every step's world, so the comparison stays fair.
-                                figs.forEach((f, j) => f.actions?.[ai]?.run(live.sims[j], !on));
+                                // The same fault (matched by id) hits every step's world, so the comparison stays fair.
+                                figs.forEach((f, j) => f.actions?.find((x) => x.id === a.id)?.run(live.sims[j], !on));
                                 live.refresh();
                               }}
                             >
@@ -230,13 +232,13 @@ export function LessonPlayer({ slug }: { slug: string }) {
               <Takeaways takeaways={lesson.takeaways} />
             )}
           </div>
-          <Compare metrics={metrics} columns={figs.map((f, i) => ({ label: f.short, sim: live.sims[i], active: i === shown }))} />
+          <Compare metrics={metrics} verdict={verdict} columns={figs.map((f, i) => ({ label: f.short, sim: live.sims[i], active: i === shown }))} />
         </>
       }
       dock={
         <>
           <Transport live={live} name={slug} compact />
-          <span className="slowmo">{live.slowdown}× slow motion</span>
+          <Clock live={live} />
           <span className="dock-fill" />
           <span className="dock-progress" aria-hidden="true">
             {[...figs, null].map((_, i) => (

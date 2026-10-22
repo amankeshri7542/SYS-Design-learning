@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Sim } from "@/lib/sim/engine";
-import { betterIs, formatMetric, measure, toneOf, type MetricSpec } from "@/lib/sim/metrics";
+import { betterIs, formatClock, formatDiff, formatMetric, isLatency, measure, toneOf, type MetricSpec } from "@/lib/sim/metrics";
 import type { SceneSpec } from "@/lib/sim/types";
 import { useMode, useReducedMotion, useVisible } from "./hooks";
 import type { DrawFn } from "./stage";
@@ -114,7 +114,7 @@ export function useLiveSims(specs: SceneSpec[], opts: { onFrame?: (sims: Sim[], 
     refresh,
     rootRef,
     drawRef,
-    slowdown: Math.round(1 / (timeScale * speed)),
+    clock: formatClock(timeScale, speed),
   };
 }
 
@@ -147,13 +147,14 @@ export function Transport({ live, name, compact = false }: { live: Live; name: s
           type="button"
           className="btn btn-icon speed-cycle"
           onClick={() => live.setSpeed(SPEEDS[(SPEEDS.indexOf(live.speed) + 1) % SPEEDS.length])}
-          aria-label={`Playback speed ${live.speed}×, tap to change`}
+          aria-label={`Playback speed ${live.speed}× (${live.clock}), tap to change`}
+          title={live.clock}
         >
           {live.speed}×
         </button>
       )}
-      <fieldset className="seg seg-speed">
-        <legend className="sr-only">Playback speed</legend>
+      <fieldset className="seg seg-speed" title={live.clock}>
+        <legend className="sr-only">Playback speed ({live.clock})</legend>
         {SPEEDS.map((s) => (
           <label key={s}>
             <input type="radio" name={`speed-${name}`} checked={live.speed === s} onChange={() => live.setSpeed(s)} />
@@ -161,13 +162,23 @@ export function Transport({ live, name, compact = false }: { live: Live; name: s
           </label>
         ))}
       </fieldset>
-      {!compact && (
-        <span className="slowmo" title="Simulated time runs slower than real time so you can follow each request.">
-          {live.slowdown}× slow motion
-        </span>
-      )}
+      {!compact && <Clock live={live} />}
     </div>
   );
+}
+
+/** States the slow-motion clock in plain words, so the numbers on screen can be read against it. */
+export function Clock({ live }: { live: Live }) {
+  return (
+    <span className="slowmo" title="The scene plays in slow motion so you can follow each request. The numbers show the times the system really takes.">
+      {live.clock}
+    </span>
+  );
+}
+
+/** "target ≤ 400 ms" under a response-time label. */
+function Target({ m, sloMs }: { m: MetricSpec; sloMs: number }) {
+  return isLatency(m) ? <small className="target">target ≤ {sloMs} ms</small> : null;
 }
 
 /** Smooths a stream of values so numbers glide instead of flickering at 11 updates a second. */
@@ -214,7 +225,10 @@ export function MetricList({ metrics, sim }: { metrics: MetricSpec[]; sim: Sim }
     <dl className="mlist">
       {metrics.map((m, i) => (
         <div key={m.label} className={`mrow tone-${toneOf(m, values[i], sim.spec.sloMs)}`}>
-          <dt title={m.hint}>{m.label}</dt>
+          <dt title={m.hint}>
+            {m.label}
+            <Target m={m} sloMs={sim.spec.sloMs} />
+          </dt>
           <dd className="num">{formatMetric(m, values[i])}</dd>
           <dd className="mspark">
             <Spark data={history[m.label] ?? []} />
@@ -231,8 +245,11 @@ export interface Column {
   active: boolean;
 }
 
-/** The same metrics measured in every step's simulation, side by side: the lesson's argument in numbers. */
-export function Compare({ metrics, columns }: { metrics: MetricSpec[]; columns: Column[] }) {
+/**
+ * The same metrics measured in every step's simulation, side by side: the lesson's argument in numbers.
+ * `verdict` (a problem and its fix) marks changes better or worse; otherwise they are plain differences.
+ */
+export function Compare({ metrics, columns, verdict }: { metrics: MetricSpec[]; columns: Column[]; verdict: boolean }) {
   const smooth = useSmoothed();
   const activeIndex = Math.max(0, columns.findIndex((c) => c.active));
   const cells = metrics.map((m) => columns.map((c, j) => smooth(`${j}:${m.label}`, measure(c.sim, m), m)));
@@ -266,11 +283,13 @@ export function Compare({ metrics, columns }: { metrics: MetricSpec[]; columns: 
           const row = cells[i];
           const known = row.filter((v): v is number => v !== null);
           const differs = new Set(known.map((v) => formatMetric(m, v))).size > 1;
-          const best = known.length > 1 && differs ? (betterIs(m) === "low" ? Math.min(...known) : Math.max(...known)) : null;
+          const better = verdict ? betterIs(m) : "neutral";
+          const best = known.length > 1 && differs && better !== "neutral" ? (better === "low" ? Math.min(...known) : Math.max(...known)) : null;
           return (
             <tr key={m.label}>
               <th scope="row" title={m.hint}>
                 <span>{m.label}</span>
+                <Target m={m} sloMs={columns[0].sim.spec.sloMs} />
                 <Spark data={history[m.label] ?? []} />
               </th>
               {row.map((v, j) => (
@@ -281,7 +300,7 @@ export function Compare({ metrics, columns }: { metrics: MetricSpec[]; columns: 
                   {formatMetric(m, v)}
                 </td>
               ))}
-              {columns.length === 2 && <Delta m={m} from={row[0]} to={row[1]} />}
+              {columns.length === 2 && <Delta m={m} from={row[0]} to={row[1]} verdict={better !== "neutral"} />}
             </tr>
           );
         })}
@@ -290,9 +309,10 @@ export function Compare({ metrics, columns }: { metrics: MetricSpec[]; columns: 
   );
 }
 
-/** Relative change from the first step to the second, marked better or worse. */
-function Delta({ m, from, to }: { m: MetricSpec; from: number | null; to: number | null }) {
+/** Change from the first step to the second: relative and marked better or worse, or a plain signed difference. */
+function Delta({ m, from, to, verdict }: { m: MetricSpec; from: number | null; to: number | null; verdict: boolean }) {
   if (from === null || to === null || formatMetric(m, from) === formatMetric(m, to)) return <td className="delta">—</td>;
+  if (!verdict) return <td className="delta">{formatDiff(m, to - from)}</td>;
   const better = betterIs(m) === "low" ? to < from : to > from;
   const pct = from === 0 ? null : Math.abs((to - from) / from);
   const text = pct === null ? "new" : pct >= 9.95 ? `${Math.round(pct)}×` : `${Math.round(pct * 100)}%`;
