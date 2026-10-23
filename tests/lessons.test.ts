@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { LESSONS, getLesson, neighbours } from "../src/lib/lessons";
 import { STAGES, START, TARGET, capstoneScene, type Arch } from "../src/lib/lessons/capstone";
 import { HERO } from "../src/lib/lessons/hero";
-import { termOf } from "../src/lib/glossary";
+import { GLOSSARY, termOf } from "../src/lib/glossary";
 import { termsIn, unresolved, wordCount, type Focus } from "../src/lib/lessons/beats";
 import { beatsOf, buildSteps, defaultsOf, headlineOf, type FigureDef, type Lesson } from "../src/lib/lessons/types";
 import { walk } from "../src/lib/lessons/walk";
@@ -243,7 +243,7 @@ function beatProblems(l: Lesson): string[] {
   return bad;
 }
 
-for (const lesson of lessons.filter((l) => l.figures.some((f) => f.beats?.length))) {
+for (const lesson of lessons) {
   test(`${lesson.code} ${lesson.title}: beats follow the authoring rules`, () => {
     assert.deepEqual(beatProblems(lesson), []);
   });
@@ -256,11 +256,44 @@ for (const lesson of lessons.filter((l) => l.figures.some((f) => f.beats?.length
   });
 }
 
+test("the hero's looping beats and each capstone stage's opening beats point at stations that exist", () => {
+  const hero = HERO.build({});
+  const ids = new Set(hero.nodes.map((n) => n.id));
+  assert.equal(HERO.beats?.length, 3);
+  assert.ok(words(HERO.caption) <= 25, "the hero's caption is 25 words or fewer");
+  for (const b of HERO.beats ?? []) {
+    assert.ok(words(b.text) <= 16, `hero: ${b.id}`);
+    for (const n of b.focus?.nodes ?? []) assert.ok(ids.has(n), `hero: ${b.id} points at ${n}`);
+    if ("note" in b.when) assert.ok(hero.script?.events.some((e) => e.label === (b.when as { note: string }).note), `hero: ${b.id}'s event is in the loop`);
+  }
+  STAGES.forEach((stage, i) => {
+    assert.equal(stage.beats.length, 2, `stage ${i + 1} opens with two beats`);
+    const nodes = new Set(capstoneScene(START, stage).nodes.map((n) => n.id));
+    for (const b of stage.beats) {
+      assert.ok(words(b.text) <= 16, `stage ${i + 1}: ${b.id}`);
+      for (const n of b.focus?.nodes ?? []) assert.ok(nodes.has(n), `stage ${i + 1}: ${b.id} points at ${n}`);
+    }
+  });
+});
+
+test("every glossary term is named by a lesson, and its Show me points at something in that lesson", () => {
+  const named = new Set(LESSONS.flatMap((l) => l.figures.flatMap((f) => beatsOf(f).flatMap((b) => termsIn(b.text)))));
+  for (const t of GLOSSARY.values()) {
+    if (t.key !== "p95") assert.ok(named.has(t.key), `${t.key} is named somewhere`);
+    assert.ok(words(t.short) <= 20, `${t.key}: short definition`);
+    if (!t.show) continue;
+    const l = getLesson(t.show.lesson);
+    assert.ok(l, `${t.key}: shown in ${t.show.lesson}`);
+    const nodes = new Set(buildSteps(l!.figures, l!.figures.map(defaultsOf)).flatMap((s) => s.nodes.map((n) => n.id)));
+    for (const n of [...(t.show.focus.nodes ?? []), ...(t.show.focus.link ?? [])]) assert.ok(nodes.has(n), `${t.key}: shows ${n}`);
+  }
+});
+
 test("D3: a hash ring moves far fewer keys than hash % N", () => {
   const l = getLesson("consistent-hashing")!;
   const moved = (f: FigureDef) => {
     const sim = new Sim(f.build(defaultsOf(f)));
-    sim.step(2400);
+    stepFiring(sim, 2400);
     return measure(sim, f.metrics[2])!;
   };
   assert.ok(moved(l.figures[0]) > 0.6);

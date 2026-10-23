@@ -107,6 +107,15 @@ export function headlineOf(figures: FigureDef[]): string {
   return f.headline?.metric ?? f.metrics[0].label;
 }
 
+/**
+ * Whether the lesson holds its traffic while the first step's parts are introduced. A scene with a warm-up opens
+ * mid-flow on purpose (warm caches, say), so it doesn't.
+ */
+export function holdsTraffic(figures: FigureDef[]): boolean {
+  const f = figures[0];
+  return !!f?.parts?.length && !f.build(defaultsOf(f)).warmMs;
+}
+
 /** A step's narration in order: its build lines, its beats, then its invitations. */
 export function beatsOf(f: FigureDef): Beat[] {
   return sequenceOf(f.parts, [...(f.beats ?? []), ...(f.invite ?? [])]);

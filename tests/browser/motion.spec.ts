@@ -7,13 +7,19 @@ const simTime = async (page: Page) => Number(await page.locator("[data-sim-time]
 /**
  * Every animation running on the page now: its name, duration and delay. Live readouts (meters, change bars, a rail's
  * traffic glow) glide continuously between values the scene produces, and the browser shortens a glide it reverses
- * midway, so they are left out of the choreography: `readouts: true` puts them back.
+ * midway, so they are left out of the choreography: `readouts: true` puts them back. So is the narration's spotlight
+ * (a station or rail fading back while a beat points elsewhere): it follows the beats, not the switch.
  */
 const running = (page: Page, readouts = false) =>
   page.evaluate((readouts) =>
     document
       .getAnimations()
-      .filter((a) => readouts || !(a.effect as KeyframeEffect).target?.matches(".meter .fill, .delta-bar, .link-flow"))
+      .filter((a) => {
+        if (readouts) return true;
+        const el = (a.effect as KeyframeEffect).target;
+        if (el?.matches(".meter .fill, .delta-bar, .link-flow")) return false;
+        return !(el?.matches(".node-pos, .link-g") && (a as CSSTransition).transitionProperty === "opacity");
+      })
       .map((a) => {
         const t = a.effect!.getTiming();
         return { name: (a as CSSAnimation).animationName ?? (a as CSSTransition).transitionProperty, duration: Number(t.duration), delay: Number(t.delay) };
@@ -157,6 +163,8 @@ test("R2: an open breaker slides its pill to open and breaks the payments rail",
   await page.goto("/learn/circuit-breakers");
   await page.getByRole("tab").nth(1).click();
   await page.locator(".dock .speed-cycle").click();
+  // Payments hangs when the learner makes it (the fault is armed, not on a loop).
+  await page.locator(".faults").getByRole("button", { name: "Make payments hang" }).click();
   const pill = page.locator(".theatre .pill");
   await expect(pill).toHaveAttribute("data-state", "closed");
   await expect(pill).toHaveAttribute("data-state", "open", { timeout: 20000 });

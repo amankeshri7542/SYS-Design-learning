@@ -16,8 +16,11 @@ An animated system-design course. It's built with Next.js 16 App Router, React 1
 - `src/lib/sim/engine.ts`: the deterministic simulator. All randomness comes from seeded per-node streams.
   - Keep arrivals independent of downstream behaviour, so a problem scene and its fix see the same traffic.
   - What the stage draws is output only: effects (`fx`: a cache's fill and evict, a node running hot, a drop with its queue slot) and per-link traffic (`links`, read through `flowOf`). Reading or clearing it never changes a run; `tests/motion.test.ts` checks that.
-- `src/lib/lessons/*.ts`: lessons, as pure `build(values) => SceneSpec`.
-  - `tests/lessons.test.ts` asserts the fix beats the problem on its headline metric (`headlineOf`: `FigureDef.headline`, by default the fix's first metric).
+- `src/lib/lessons/*.ts`: lessons, as pure `build(values) => SceneSpec`, with their narration as data (`parts`, `beats`, `predict`, `break`, `checks`).
+  - `tests/lessons.test.ts` asserts the fix beats the problem on its headline metric (`headlineOf`: `FigureDef.headline.metric`, by default the fix's first metric), firing armed faults at their `at` as a learner's break would.
+- `src/lib/lessons/beats.ts`: the beats runtime. `BeatRunner` fires a step's beats in order on a 10 ms grid of simulated time (`stepGrid`), so they fire at the same moments at any speed. Triggers read only the simulation.
+  - `src/lib/lessons/walk.ts` walks a lesson as a learner would; the tests use it to prove every beat fires and every prediction holds. `npm run tune -- <slug> --beats` prints the timeline.
+- `src/components/beats.tsx`: `useBeats` (the player's runners and Next), the strip, callouts, and the Predict, Check and What-to-watch cards. `follow.tsx`: follow one request. `term.tsx` and `src/lib/glossary.ts`: glossary terms.
 - `src/components/shell.tsx`: the one-screen layout shared by lessons and the capstone.
   - `Shell` lays out bar · theatre | panel · dock. The theatre is one sheet: the `BeatStrip` row, then the stage. The panel is a reading part (`.panel-scroll`) over the pinned comparison table (`.panel-pin`). Phones add a summary row of the headline number, and their panel scrolls as one.
   - Nothing floats over the stage. The Key is a popover from the bar (`legend.tsx`); scripted event notes go on the beat strip.
@@ -33,11 +36,18 @@ An animated system-design course. It's built with Next.js 16 App Router, React 1
 
 ## Conventions
 
-- **Lesson shape.** One-line `why`, then a problem figure, then a fix figure (or a pair of trade-off figures).
+- **Lesson shape.** A hook (a question, ≤16 words), a one-line `why`, then a problem figure, then a fix figure (or a pair of trade-off figures), and a Recap with one or two checks and a rule of ≤8 words.
   - Each figure has a `short` tab name of two words at most.
   - Faults pair across figures by action `id`, not position: a fault offered in two steps has the same id and label, and hits both worlds.
-  - At most 2 knobs, 4 metrics, and a caption under 60 words.
+  - At most 2 knobs, 4 metrics, and a caption of 25 words or fewer that describes the setup, not the outcome.
   - Plain words; no jargon before the scene shows it.
+- **Beats** (`docs/plan-v3.md` §8; `tests/lessons.test.ts` enforces them).
+  - Build lines (`parts`): one per part, ≤9 words, label then what it does with a number. The first step's parts are introduced before any traffic runs (unless the scene has a warm-up).
+  - 3–6 beats per figure, ≤16 words, verb first, each pointing at one thing (`focus`). Every beat must fire in a learner's run.
+  - Numbers in beats are placeholders (`{p95:fix}`, `{util:db:problem}`, `{queue:app}`) filled in as the beat fires; never hard-code a number the scene measures.
+  - Terms: `[[key|plain words]]`, defined in `src/lib/glossary.ts`. A term is first used where it is marked, in the beat that names it (`term`); nothing uses it before.
+  - One prediction per lesson, before the break, with 2–3 options; the engine must agree with its answer (`holds`).
+  - Faults the learner causes are armed (`ScriptEvent.armed`, `kit.ts`'s `armed`/`fault`): they never loop, and `sim.fire` plays them in every world at once. Only the hero and the capstone keep looping scripts.
 - **Fairness.** A problem and its fix (or both sides of a trade-off) share `sloMs`, `timeoutMs`, `timeScale` and `windowMs`, and must produce identical first-attempt arrival traces (`new Sim(spec, { trace: true })`). The fairness test in `tests/lessons.test.ts` checks both. Explore figures change the traffic on purpose and are exempt.
 - **Change column.** Only a `problem,fix` lesson gets better/worse verdicts. Explore and trade-off steps show a plain signed difference, and metrics with `better: "neutral"` (servers in use) never get a verdict. Response-time rows show their target.
 - **Visual language.** Never reuse a dot colour for a new meaning. The mapping is fixed: cobalt for a request, amber for late, green for answered, violet for stale, slate for turned away, red for failed. Shape carries the state as well as colour.
@@ -53,4 +63,5 @@ An animated system-design course. It's built with Next.js 16 App Router, React 1
   - `npm run test:browser` asserts that the document doesn't scroll, that the panel's reading part doesn't scroll on any problem or fix step at 1440×900 and 1280×720, and that phones show the headline number without scrolling.
   - `tests/browser/stage-fit.spec.ts` asserts that every stage label is inside the stage, at full size and clear of other labels and rails, that nothing covers a station, and that phone controls are at least 40px square.
   - A longer caption or an extra knob has to fit 1280×720. Shorten the copy rather than letting the panel scroll.
-- **Out of scope.** No cloud, accounts or backend. Progress is a localStorage list of visited lessons and nothing more.
+  - Callouts sit on wide stages only, beside what they point at and clear of every station and label; phones carry the beat in the strip. On touch layouts, glossary terms are words in the text and 40px chips in the panel.
+- **Out of scope.** No cloud, accounts or backend. Progress is a localStorage list of visited lessons and nothing more; predictions, checks and following a request are component state only.

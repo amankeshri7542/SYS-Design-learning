@@ -7,8 +7,13 @@ export const HERO: FigureDef = {
   tone: "explore",
   short: "Live",
   title: "A small web system under load",
-  caption:
-    "Users send requests through a load balancer to three servers. The servers read through a cache to a database. Every so often a server crashes and the balancer routes around it.",
+  caption: "Users send requests through a load balancer to three servers, which read through a cache to a database. Now and then a server crashes.",
+  // Three beats that come round with the loop.
+  beats: [
+    { id: "flow", when: { at: 300 }, text: "Requests flow from Users through the balancer to three servers.", focus: { nodes: ["lb"] } },
+    { id: "crash", when: { note: "Server 2 crashed" }, text: "Server 2 crashed. Watch the balancer stop sending it work.", focus: { nodes: ["s2", "lb"] } },
+    { id: "back", when: { note: "Server 2 is back" }, text: "Server 2 is back, and gets its share of requests again.", focus: { nodes: ["s2"] } },
+  ],
   metrics: [M.p95(), M.hit(["cache"]), M.errors()],
   build: () =>
     scene(

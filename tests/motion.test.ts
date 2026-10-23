@@ -43,7 +43,10 @@ test("effects and link counts are output only: clearing them as the stage reads 
   for (const spec of [figure("caching", 1), figure("circuit-breakers", 1), figure("rate-limiting", 1)]) {
     const left = new Sim(spec);
     const right = new Sim(spec);
+    // The breaker's fault is armed: fire it where its script says, in both runs, as a learner would.
+    const fault = spec.script?.events.find((e) => e.armed);
     for (let t = 0; t < 4000; t += 10) {
+      if (fault && t === fault.at) for (const s of [left, right]) s.fire(fault.label);
       left.step(10);
       right.step(10);
       right.fx.length = 0;
@@ -115,7 +118,7 @@ test("R2: the breaker goes closed → open → testing → closed, its trial is 
 });
 
 test("D3: when cache 4 joins under hash % N the hit rate dips and the database's rail brightens; a ring barely stirs", () => {
-  // Cache 4 joins at 1.8 s into every 4.2 s loop. The first time the caches are still warming, so watch the second.
+  // Cache 4 joins when the learner adds it (an armed event). Let the caches warm first, then add it.
   const join = (i: number) => {
     const sim = new Sim(figure("consistent-hashing", i));
     const toDb = () => [...sim.links].filter(([key]) => key.split("~").includes("db")).reduce((sum, [, l]) => sum + l.sent, 0);
@@ -124,6 +127,7 @@ test("D3: when cache 4 joins under hash % N the hit rate dips and the database's
     const a = toDb();
     sim.step(800);
     const before = { db: toDb() - a, hits: hits() };
+    sim.fire("Cache 4 joins");
     const b = toDb();
     sim.step(800);
     return { before, after: { db: toDb() - b, hits: hits() } };

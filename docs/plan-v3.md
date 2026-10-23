@@ -1,6 +1,6 @@
 # System Lab v3 plan
 
-- **Status:** proposed, 2026-10-22. M0, M1, M2 and M3 built 2026-10-22. M4a built 2026-10-23; M4b not started.
+- **Status:** proposed, 2026-10-22. M0, M1, M2 and M3 built 2026-10-22. M4a and M4b built 2026-10-23.
 - **Planned with:** Claude Fable 5.1. **To be built with:** Claude Opus 5.5, one milestone per session.
 - **Research behind it:** `docs/research/` holds five reports. Read the one a milestone points to before starting it.
   - `design-audit.md`: visual and UX audit, art direction, home and player layouts, component inventory.
@@ -598,7 +598,7 @@ All four are browser tests in `tests/browser/beats.spec.ts`. Gates on 2026-10-23
 - **Following a request keeps the learner's speed** (no forced 0.5×): a C1 read waits about a second of system time, which would be 20 s on screen at half speed. The flight strip takes the beat strip's row, so the stage never resizes.
 - **`walk.ts`** walks a lesson as a learner would (reads each beat, answers, presses each break). The tests use it to prove every beat fires and every prediction holds; `npm run tune -- <slug> --beats` prints the timeline.
 
-**Left for M4b:** the other 15 lessons, the hero, the capstone, the rest of the glossary, captions ≤25 words everywhere (the validator in `tests/lessons.test.ts` runs only on lessons with beats until then), the `CLAUDE.md` conventions, and arming the looping faults (F2, F4, A2, D3, D4, R2). Arming D3 and R2 means `tests/lessons.test.ts`'s D3 test and `tests/browser/motion.spec.ts`'s R2 test must fire the fault themselves, as `stepFiring` does for the claims.
+**Left for M4b** (done, below): the other 15 lessons, the hero, the capstone, the rest of the glossary, captions ≤25 words everywhere, the `CLAUDE.md` conventions, and arming the looping faults.
 
 ### M4b — Convert the remaining lessons (M)
 
@@ -614,9 +614,27 @@ All four are browser tests in `tests/browser/beats.spec.ts`. Gates on 2026-10-23
 | `src/lib/glossary.ts` | modified | All terms the 18 lessons name. |
 
 **Acceptance:**
-- [ ] Every lesson passes beats validation.
-- [ ] No caption is over 25 words.
-- [ ] No term is used before the beat that names it (a test greps the `[[` order).
+- [x] Every lesson passes beats validation: the authoring rules, and a learner's walk in which every beat fires and every prediction comes true (`tests/lessons.test.ts`, 18 lessons).
+- [x] No caption is over 25 words (the hero's too). `CLAUDE.md` now says 25, not 60.
+- [x] No term is used before the beat that names it: the test reads each lesson in order and fails any use of a term's name, marked or plain, before its first marked use.
+
+Gates on 2026-10-23: typecheck, 126 unit tests, build, and the browser suite (431 passed, 5 skipped, frame budgets included) all green. Screenshots of all 15 converted lessons, the hero and the capstone at 1440×900, 1280×720, 390×844 and 844×390, light and dark, were checked by eye.
+
+**Decisions made while building M4b:**
+- **Armed faults** in F2, F4, A2, D3, D4 and R2 use `kit.ts`'s `armed` (a fault and its end, at a fixed spacing) and `fault` (its button). One button fires the fault in every world under the same labels, so each world can do its own thing: F2 crashes the big server in one world and server 1 in the other. The hero and the capstone keep their loops.
+- **A step whose fault is still on when you reach it narrates it rather than asking for another press** (D4's cut, A3's stall); a step after the fault has ended asks again ("same crash, both worlds"). A break beat whose fault the learner already caused lets itself go.
+- **Comparisons are read at one moment in both worlds.** A prediction can read both numbers at the reveal (`track.same`), a trigger can watch another world (`metric … world: 0`, so C4 reveals at the problem world's next stampede), and the Recap's claim is read at a named beat (`headline.at`) for faults whose moment has passed.
+- **Scenes with a warm-up don't hold their traffic** for the build lines (C2, C3, D3): they open mid-flow on purpose, with warm caches.
+- **Predictions changed where the engine disagreed:** D2 asks whether the slowest 1 in 20 drops under the target (the busiest shard hovers around 70%, not safely under it); C4 asks about the database's line at an expiry (coalescing barely changes total database reads); C2, C3, F3, R1 and R3 compare both worlds at the reveal.
+- **Scenes changed to tell their story on time:** A1's line holds 6, not 10, so every burst overflows (it took 98 s to drop one sign-up), and its bursts start 1.4 s in; its "Email sent within" row now has a 2 s target (M0's note). F2, F3, F4, C2, C3, R2 and R3 had triggers moved so each comparison is read once the worse world has caught up.
+- **Terms never come before their naming beat**, so some titles and captions were reworded (C1 "goes to the database", C2 "Caches next to each region", D1 "Writes to one, reads from its copies", D2 "Split the keys across databases", R1 "A limit per client", R2 "Stop calling after repeated failures").
+- **The reduced-motion list shows beats only** (not build lines or invitations), one line each with the current one in full, and takes the caption's place, so every Problem and Fix fits 1280×720. R2's problem has five beats and a one-line title to fit.
+- **On touch layouts a "follow one" beat doesn't start following by itself**: the flight strip would cover the strip that carries the beats. The beat still invites the tap.
+- **Bugs found by the screenshot pass and fixed:** the strip's line clamp also caught a term's own span (a phone strip read "a / cache stampede / . Its line jumps."), and the phone flight strip clipped its totals.
+- **The hero's three beats live in its strip only**, with no spotlight on the home page. Each capstone stage opens with two beats and a callout; a scripted event newer than the beat (server 1 crashing) takes the strip.
+- **Tests adapted to armed faults:** D3's unit and motion tests and the output-only test fire the fault where its script says; the R2 browser test presses "Make payments hang". The step-switch timing test leaves out the spotlight's dim, which follows the beats and is reversed mid-fade when a step's first beat moves the focus.
+
+**Not verified:** real phones and screen readers (the live region is tested for one announcement per beat, not listened to); the learner-facing timing at 0.5× and 2× beyond the determinism test.
 
 ### M5 — Catalog v2, route map and home, story player (L)
 

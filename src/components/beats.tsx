@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BeatRunner, fillIn, placeholdersIn, plainText, termsIn, type Check, type Fired, type Focus, type Prediction } from "@/lib/lessons/beats";
-import { beatsOf, type Lesson } from "@/lib/lessons/types";
+import { BeatRunner, fillIn, placeholdersIn, plainText, termsIn, type Beat, type Check, type Fired, type Focus, type Prediction } from "@/lib/lessons/beats";
+import { beatsOf, holdsTraffic, type Lesson } from "@/lib/lessons/types";
 import type { Sim } from "@/lib/sim/engine";
 import type { Pt, Rect, Size } from "@/lib/sim/layout";
 import { formatMetric, measure } from "@/lib/sim/metrics";
@@ -70,6 +70,8 @@ export function useBeats(lesson: Lesson, step: number) {
   const shownRef = useRef(recap ? -1 : shown);
   shownRef.current = recap ? -1 : shown;
   const startRef = useRef<() => void>(() => {});
+  /** Whether a fault is on: a break beat whose fault the learner already caused lets itself go. */
+  const isOnRef = useRef<(id: string) => boolean>(() => false);
   // Beats fired before the step was (re)entered are not announced again.
   const entered = useRef({ step, seq: 0 });
   if (entered.current.step !== step) entered.current = { step, seq: state.current.seq };
@@ -108,7 +110,7 @@ export function useBeats(lesson: Lesson, step: number) {
       }
       const r = runners[i];
       const was = r.waiting;
-      const fired = r.tick(sims[i], rushed);
+      const fired = r.tick(sims[i], rushed, sims);
       const s = state.current;
       const track = prediction?.track;
       if (fired) {
@@ -116,18 +118,24 @@ export function useBeats(lesson: Lesson, step: number) {
         if (claim?.at === fired.beat.id) s.claim = fillIn(claim.sentence, { sims, ...ctx, current: i });
         if (prediction && fired.beat.id === prediction.reveal.beat) {
           if (track) {
+            if (track.same) {
+              s.raw.before = measure(sims[track.world ?? ask], track.metric);
+              s.marks.before = formatMetric(track.metric, s.raw.before);
+            }
             s.raw.after = measure(sims[track.afterWorld ?? track.world ?? ask], track.metric);
             s.marks.after = formatMetric(track.metric, s.raw.after);
           }
           s.line = fillIn(prediction.reveal.text, { sims, ...ctx, current: i, marks: s.marks });
         }
       }
+      const brk = figs[i].break;
+      if (fired && brk && fired.beat.id === brk.beat && isOnRef.current(brk.action)) r.release();
       const asked = r.waiting === "ask" && was !== "ask";
       if (asked && track) {
         s.raw.before = measure(sims[track.world ?? ask], track.metric);
         s.marks.before = formatMetric(track.metric, s.raw.before);
       }
-      return { fired, stop: !!fired?.beat.pause || asked };
+      return { fired, stop: (!!fired?.beat.pause && r.waiting === "beat") || asked };
     },
     [runnersFor, prediction, ask, ctx, claim],
   );
@@ -137,6 +145,7 @@ export function useBeats(lesson: Lesson, step: number) {
   /** The beats bound to the running scene: what to show now, and what Next, the faults and the question do. */
   const bind = (live: Live, faults: { run: (id: string, on: boolean) => void; isOn: (id: string) => boolean }) => {
     startRef.current = live.start;
+    isOnRef.current = faults.isOn;
     const runners = runnersFor(live.sims);
     const s = state.current;
     const r = recap ? null : runners[shown];
@@ -258,10 +267,35 @@ export function useBeats(lesson: Lesson, step: number) {
     };
   };
 
-  return { onGrid, hold: !!figs[0]?.parts?.length, bind };
+  return { onGrid, hold: holdsTraffic(figs), bind };
 }
 
 export type Beats = ReturnType<ReturnType<typeof useBeats>["bind"]>;
+
+/**
+ * Beats for a scene that loops on its own (the home page's hero) or has stages of its own (the capstone): one runner,
+ * started afresh whenever `key(sim)` changes (each loop of the script, each stage). Nothing pauses; the strip shows
+ * the latest beat, and a fresh one is announced.
+ */
+export function useSceneBeats(beats: Beat[], key: (sim: Sim) => string | number) {
+  const r = useRef<{ key: string | number; runner: BeatRunner; sims: Sim[]; fired: number } | null>(null);
+  const latest = useRef({ beats, key });
+  latest.current = { beats, key };
+  const onGrid = useCallback((sims: Sim[]) => {
+    const { beats, key } = latest.current;
+    const k = key(sims[0]);
+    if (!r.current || r.current.key !== k || r.current.sims !== sims) {
+      r.current = { key: k, runner: new BeatRunner(beats, { timeScale: sims[0].spec.timeScale ?? 0.1 }), sims, fired: 0 };
+    }
+    r.current.runner.tick(sims[0], false, sims);
+    return false;
+  }, []);
+  const cur = r.current?.runner.current;
+  const view: BeatView | null = cur
+    ? { id: `${r.current!.key}:${cur.beat.id}`, text: cur.text, focus: cur.beat.focus ?? null, n: cur.index + 1, total: r.current!.runner.beats.length, waiting: false, part: false, follow: false }
+    : null;
+  return { onGrid, beat: view, at: cur?.t ?? null };
+}
 
 /**
  * The narration line on the stage's sheet: along its top edge, or its bottom edge on phones. It says what the scene

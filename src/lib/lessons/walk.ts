@@ -5,7 +5,7 @@
 import { Sim } from "../sim/engine";
 import { formatMetric, measure } from "../sim/metrics";
 import { BeatRunner, fillIn, stepGrid, type Focus } from "./beats";
-import { beatsOf, buildSteps, defaultsOf, type Lesson } from "./types";
+import { beatsOf, buildSteps, defaultsOf, holdsTraffic, type Lesson } from "./types";
 
 export interface Walked {
   step: number;
@@ -32,7 +32,7 @@ export function walk(lesson: Lesson, { capMs = 20000 }: { capMs?: number } = {})
   const figs = lesson.figures;
   const specs = buildSteps(figs, figs.map(defaultsOf));
   const sims = specs.map((s) => new Sim(s));
-  if (figs[0]?.parts?.length) for (const s of sims) s.hold();
+  if (holdsTraffic(figs)) for (const s of sims) s.hold();
   for (const s of sims) s.step(warmOf(lesson));
   const tones = figs.map((f) => f.tone);
   const metrics = figs.flatMap((f) => f.metrics);
@@ -58,10 +58,13 @@ export function walk(lesson: Lesson, { capMs = 20000 }: { capMs?: number } = {})
     while (!r.done) {
       const moved = stepGrid(sims, capMs, (ss) => {
         const was = r.waiting;
-        const b = r.tick(ss[i]);
+        const b = r.tick(ss[i], false, ss);
         if (b) {
           fired.push({ step: i, id: b.beat.id, t: b.t, text: b.text, focus: b.beat.focus, part: !!b.beat.part });
-          if (p && b.beat.id === p.reveal.beat) note("after");
+          if (p && b.beat.id === p.reveal.beat) {
+            if (p.track?.same) note("before");
+            note("after");
+          }
           return true;
         }
         if (r.waiting === "ask" && was !== "ask") {

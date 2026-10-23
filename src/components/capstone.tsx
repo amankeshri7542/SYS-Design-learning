@@ -7,9 +7,9 @@ import { CAP_METRICS, START, STAGES, TARGET, capstoneScene, monthlyCost, type Ar
 import type { Sim } from "@/lib/sim/engine";
 import { formatMetric, measure } from "@/lib/sim/metrics";
 import { KeyPopover } from "./legend";
-import { ArrowIcon, Clock, MetricList, Transport, useLiveSims } from "./live";
+import { ArrowIcon, Clock, MetricList, Transport, freshNote, useLiveSims } from "./live";
 import { MarkVisited } from "./route-map";
-import { BeatStrip } from "./beats";
+import { BeatStrip, useSceneBeats } from "./beats";
 import { Shell, usePlayerKeys } from "./shell";
 import { Stage } from "./stage";
 
@@ -42,9 +42,14 @@ export function CapstonePlayer() {
     [S, stage],
   );
 
-  const live = useLiveSims(specs, { onFrame });
+  // Each stage opens with two beats: what changed, and the box to watch.
+  const beats = useSceneBeats(S.beats, () => stage);
+  const live = useLiveSims(specs, { onFrame, onGrid: beats.onGrid });
   usePlayerKeys(live);
   const sim = live.sims[0];
+  // A scripted event (server 1 crashing) newer than the beat takes the strip.
+  const last = sim.notes[sim.notes.length - 1];
+  const eventLater = !!freshNote(sim) && !!last && (beats.at === null || last.t > beats.at);
 
   const change = (next: Partial<Arch>) => {
     setArch((a) => ({ ...a, ...next }));
@@ -92,6 +97,8 @@ export function CapstonePlayer() {
       beat={
         <BeatStrip
           sim={sim}
+          beat={eventLater ? undefined : (beats.beat ?? undefined)}
+          announce={eventLater ? undefined : (beats.beat?.text.replace(/\[\[[\w-]+\|?([^\]]*)\]\]/g, "$1") ?? "")}
           lead={
             <span key={stage} className="beat-tone tone-explore">
               Stage {stage + 1} · {rate} a second
@@ -100,7 +107,18 @@ export function CapstonePlayer() {
           clock={<Clock live={live} />}
         />
       }
-      stage={<Stage sim={sim} spec={specs[0]} mode={live.mode} reduced={live.reduced} label={`URL shortener, stage ${stage + 1}: ${S.name}`} drawRef={live.drawRef} />}
+      stage={
+        <Stage
+          sim={sim}
+          spec={specs[0]}
+          mode={live.mode}
+          reduced={live.reduced}
+          label={`URL shortener, stage ${stage + 1}: ${S.name}`}
+          drawRef={live.drawRef}
+          focus={eventLater ? null : beats.beat?.focus}
+          callout={!eventLater && beats.beat ? { id: beats.beat.id, text: beats.beat.text, waiting: false } : null}
+        />
+      }
       panel={
         <>
           <div className="panel-head">

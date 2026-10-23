@@ -9,6 +9,7 @@ import type { Sim } from "@/lib/sim/engine";
 import type { MetricSpec } from "@/lib/sim/metrics";
 import { BeatStrip, CheckCard, PredictCard, WatchList, useBeats } from "./beats";
 import { FlightStrip, useFollow } from "./follow";
+import { useTouch } from "./hooks";
 import { KeyPopover } from "./legend";
 import { ArrowIcon, BoltIcon, Clock, Compare, MetricSummary, Transport, useLiveSims } from "./live";
 import { MarkVisited } from "./route-map";
@@ -92,8 +93,10 @@ export function LessonPlayer({ slug }: { slug: string }) {
     else live.play();
     live.refresh();
   };
-  // A beat that says "follow one" starts following, once, as it fires (not when it is shown again).
-  const followCue = b.beat?.follow && b.announce ? `${step}:${b.beat.id}` : null;
+  // A beat that says "follow one" starts following, once, as it fires (not when it is shown again). Not on touch
+  // layouts: there the flight strip would cover the strip that carries the beats, so the beat invites the tap instead.
+  const touch = useTouch();
+  const followCue = b.beat?.follow && b.announce && !touch ? `${step}:${b.beat.id}` : null;
   const toggleRef = useRef(toggleFollow);
   toggleRef.current = toggleFollow;
   useEffect(() => {

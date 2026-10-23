@@ -40,8 +40,11 @@ export type BeatTrigger =
    * earlier beat of the step has used it.
    */
   | { note: string; since?: "lesson" }
-  /** A metric crosses a value (and stays across it for `forMs` simulated ms). */
-  | { metric: MetricSpec; is: ">" | "<"; value: number; forMs?: number }
+  /**
+   * A metric crosses a value (and stays across it for `forMs` simulated ms), in this step's world or, with `world`, in
+   * another step's (the moment the problem world stampedes, say).
+   */
+  | { metric: MetricSpec; is: ">" | "<"; value: number; forMs?: number; world?: number }
   /** As soon as the step is shown. */
   | { step: "enter" };
 
@@ -85,9 +88,10 @@ export interface Prediction {
   reveal: { beat: string; text: string };
   /**
    * A number noted when the question is asked (in `world`, default the asking step's) and again at the reveal (in
-   * `afterWorld`, default the same): `{before}` and `{after}` in the line.
+   * `afterWorld`, default the same): `{before}` and `{after}` in the line. With `same`, both are read at the reveal: a
+   * comparison of two worlds at one moment.
    */
-  track?: { metric: MetricSpec; world?: number; afterWorld?: number };
+  track?: { metric: MetricSpec; world?: number; afterWorld?: number; same?: boolean };
   /** The engine agrees with the answer. The tests check it at the moment the reveal beat fires. */
   holds: (before: number | null, after: number | null) => boolean;
 }
@@ -210,7 +214,7 @@ export class BeatRunner {
    * Look at the world once. `rushed` means the learner asked for the next beat: it fires as soon as its trigger holds,
    * without waiting for the previous one's moment. Returns the beat that fired, if one did.
    */
-  tick(sim: Sim, rushed = false): Fired | null {
+  tick(sim: Sim, rushed = false, worlds: Sim[] = [sim]): Fired | null {
     if (this.entry === null) this.entry = this.lastT = sim.t;
     if (this.waiting) return null;
     const beat = this.next;
@@ -226,7 +230,7 @@ export class BeatRunner {
       return null;
     }
     if (!beat) return null;
-    if (!settled || !this.ready(beat, sim)) return null;
+    if (!settled || !this.ready(beat, sim, worlds)) return null;
     return this.fire(beat, sim);
   }
 
@@ -253,7 +257,7 @@ export class BeatRunner {
     if (this.waiting === "ask") this.waiting = null;
   }
 
-  private ready(b: Beat, sim: Sim): boolean {
+  private ready(b: Beat, sim: Sim, worlds: Sim[]): boolean {
     const w = b.when;
     if ("step" in w) return true;
     if ("at" in w) return sim.t >= (b.part ? this.entry! + this.sim(PACE.first) : this.origin!) + w.at;
@@ -270,7 +274,7 @@ export class BeatRunner {
       if (n) this.lastEvent = n;
       return !!n;
     }
-    const v = measure(sim, w.metric);
+    const v = measure(w.world === undefined ? sim : (worlds[w.world] ?? sim), w.metric);
     if (v === null || !(w.is === ">" ? v > w.value : v < w.value)) {
       this.holdSince = null;
       return false;

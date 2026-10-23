@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { LESSONS } from "../../src/lib/lessons";
 import { CAP_METRICS, TARGET } from "../../src/lib/lessons/capstone";
 import { buildSteps, defaultsOf, headlineOf, type Lesson } from "../../src/lib/lessons/types";
-import { isLatency, type MetricSpec } from "../../src/lib/sim/metrics";
+import { formatTarget, isLatency, type MetricSpec } from "../../src/lib/sim/metrics";
 
 const simTime = async (page: Page) => Number(await page.locator("[data-sim-time]").first().getAttribute("data-sim-time"));
 
@@ -54,17 +54,18 @@ for (const lesson of LESSONS) {
     const t0 = await simTime(page);
     await page.waitForTimeout(1200);
     expect(await simTime(page)).toBeGreaterThan(t0);
-    // Every response-time row says what it is judged against.
+    // Every response-time row (and any row with a target of its own) says what it is judged against.
     const targets = page.locator(".compare .target, .mrow .target");
     if (lesson.slug === "capstone") {
       // The capstone's target is two cells, each with its live value: the response time and the failures.
       await expect(page.locator(".cap-cell .target")).toHaveText([`target ≤ ${TARGET.p95} ms`, `target ≤ ${Math.round(TARGET.errors * 100)}%`]);
       await expect(page.locator(".cap-cell .num").first()).toBeVisible();
-      await expect(targets).toHaveCount(CAP_METRICS.slice(2).filter(isLatency).length);
+      await expect(targets).toHaveCount(CAP_METRICS.slice(2).filter((m) => formatTarget(m, TARGET.p95)).length);
     } else {
       const sloMs = buildSteps(lesson.figures, lesson.figures.map(defaultsOf))[0].sloMs;
-      await expect(targets).toHaveCount(tableRows(lesson).filter(isLatency).length);
-      for (const t of await targets.all()) await expect(t).toHaveText(`target ≤ ${sloMs} ms`);
+      const expected = tableRows(lesson).flatMap((m) => formatTarget(m, sloMs) ?? []);
+      expect(expected.length, "response times have targets").toBeGreaterThanOrEqual(tableRows(lesson).filter(isLatency).length);
+      await expect(targets).toHaveText(expected);
     }
     if (lesson.slug !== "capstone") {
       const tabs = page.getByRole("tab");

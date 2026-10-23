@@ -1245,7 +1245,7 @@ svg.stroke {
   border-left: 1px solid var(--rule);
 }
 
-.beat-text span {
+.beat-text > span {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1570,6 +1570,11 @@ svg.stroke {
   gap: 8px;
   margin: 2px 0 0;
   padding: 12px 14px;
+}
+
+.watch {
+  gap: 6px;
+  padding-block: 10px;
   border-radius: var(--r-card);
   background: var(--paper);
 }
@@ -1669,7 +1674,7 @@ svg.stroke {
 /* Reduced motion: the step's beats as a list; Next brings each on, on a still frame. */
 .watch ol {
   display: grid;
-  gap: 4px;
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1681,7 +1686,7 @@ svg.stroke {
   padding-left: 26px;
   color: var(--muted);
   font-size: var(--fs-meta);
-  line-height: 1.4;
+  line-height: 1.35;
   counter-increment: beat;
 }
 
@@ -3268,7 +3273,7 @@ svg.stroke {
     padding-left: 0;
     border-left: 0;
   }
-  .beat-text span {
+  .beat-text > span {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
@@ -3282,27 +3287,32 @@ svg.stroke {
     grid-area: clock;
     display: block;
   }
+  /* Two rows: what the request is doing, then its timeline and totals. The close button sits beside both. */
   .flight {
+    position: relative;
     flex-wrap: wrap;
     align-content: center;
-    gap: 2px 10px;
-    padding: 4px 4px 4px 12px;
+    gap: 4px 10px;
+    padding: 4px 48px 4px 12px;
   }
   .flight-text {
     flex: 1 1 60%;
-    white-space: normal;
-    line-height: 1.25;
   }
   .flight-bar {
     order: 3;
-    flex: 1 1 45%;
+    flex: 1 1 30%;
   }
   .flight-sum {
     order: 4;
+    gap: 6px;
   }
   .flight-close {
+    position: absolute;
+    top: 50%;
+    right: 4px;
     width: 40px;
     height: 40px;
+    translate: 0 -50%;
   }
   .summary-row {
     display: block;
@@ -3409,7 +3419,7 @@ svg.stroke {
     padding-left: 0;
     border-left: 0;
   }
-  .beat-text span {
+  .beat-text > span {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;

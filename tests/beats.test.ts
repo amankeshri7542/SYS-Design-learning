@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { getLesson } from "../src/lib/lessons";
 import { BeatRunner, GRID, fillIn, placeholdersIn, plainText, sequenceOf, stepGrid, termsIn, unresolved, wordCount, type Beat } from "../src/lib/lessons/beats";
-import { beatsOf, buildSteps, defaultsOf } from "../src/lib/lessons/types";
+import { beatsOf, buildSteps, defaultsOf, holdsTraffic } from "../src/lib/lessons/types";
 import { walk } from "../src/lib/lessons/walk";
 import { Sim } from "../src/lib/sim/engine";
 import { measure } from "../src/lib/sim/metrics";
@@ -24,13 +24,13 @@ function play(slug: string, frameMs: number, until = 6000) {
   const lesson = getLesson(slug)!;
   const f = lesson.figures[0];
   const sims = buildSteps(lesson.figures, lesson.figures.map(defaultsOf)).map((s) => new Sim(s));
-  if (f.parts?.length) for (const s of sims) s.hold();
+  if (holdsTraffic(lesson.figures)) for (const s of sims) s.hold();
   for (const s of sims) s.step(400);
   const r = new BeatRunner(beatsOf(f), { timeScale: 0.1, askBefore: f.predict?.before, onStart: () => sims.forEach((s) => s.start()) });
   const fired: string[] = [];
   while (sims[0].t < until && !r.done) {
     stepGrid(sims, frameMs, (ss) => {
-      const b = r.tick(ss[0]);
+      const b = r.tick(ss[0], false, ss);
       if (b) fired.push(`${b.beat.id}@${b.t}`);
       // The learner moves on at once: release pauses, answer the question, press the break.
       if (r.waiting === "beat") {
