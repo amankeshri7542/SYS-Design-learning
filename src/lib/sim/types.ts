@@ -89,6 +89,13 @@ export interface ScriptEvent {
   at: number;
   label: string;
   run: (sim: Sim) => void;
+  /**
+   * Armed events never run from the loop. `sim.fire(label)` plays them once, from that event on: it runs now, and every
+   * later armed event follows at the same spacing as their `at`s (a stall, then its end 800 ms later).
+   */
+  armed?: true;
+  /** The station the event happens to: while it is on its way, that station shows a countdown chip. */
+  node?: string;
 }
 
 export interface SceneSpec {
@@ -106,10 +113,13 @@ export interface SceneSpec {
   links?: Record<string, number>;
   /** Text shown on a link, keyed like `links`. */
   linkLabels?: Record<string, string>;
+  /** Events on a loop, and armed events that play once when fired (`sim.fire`). */
   script?: { loopMs: number; events: ScriptEvent[] };
   windowMs?: number;
   /** Simulated time to run before the scene is first shown, so it opens mid-flow. */
   warmMs?: number;
+  /** Reduced motion: how far past the warm-up the settled still frame the scene opens on is (2600 ms when not given). */
+  stillMs?: number;
   /** Fixed wide-layout height; otherwise the stage fits its nodes. */
   wideH?: number;
 }
@@ -125,10 +135,18 @@ export type FxKind =
   | "recover"
   | "open"
   | "close"
-  | "boot";
+  | "boot"
+  /** A cache wrote an entry (a miss coming back fills it). */
+  | "fill"
+  /** A full cache pushed its least recently used entry out. */
+  | "evict"
+  /** A node started running hot: its line grew past twice its workers. */
+  | "hot";
 
 export interface Fx {
   t: number;
   kind: FxKind;
   node: string;
+  /** For a drop at a full waiting line: the slot it would have taken (the line's tail). */
+  slot?: number;
 }

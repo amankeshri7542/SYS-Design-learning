@@ -3,17 +3,34 @@ import { test } from "node:test";
 import { LESSONS, getLesson, neighbours } from "../src/lib/lessons";
 import { STAGES, START, TARGET, capstoneScene, type Arch } from "../src/lib/lessons/capstone";
 import { HERO } from "../src/lib/lessons/hero";
-import { buildSteps, defaultsOf, type FigureDef } from "../src/lib/lessons/types";
+import { GLOSSARY, termOf } from "../src/lib/glossary";
+import { termsIn, unresolved, wordCount, type Focus } from "../src/lib/lessons/beats";
+import { beatsOf, buildSteps, defaultsOf, headlineOf, type FigureDef, type Lesson } from "../src/lib/lessons/types";
+import { walk } from "../src/lib/lessons/walk";
 import { Sim } from "../src/lib/sim/engine";
 import { betterIs, measure, type MetricSpec } from "../src/lib/sim/metrics";
 import type { SceneSpec } from "../src/lib/sim/types";
+
+/**
+ * Step a scene by `ms`, firing its armed script as a learner's break would: the first armed event at its own `at`
+ * (the rest of that run follows by itself).
+ */
+function stepFiring(sim: Sim, ms: number) {
+  const first = sim.spec.script?.events.find((e) => e.armed);
+  const end = sim.t + ms;
+  if (first && sim.t < first.at && first.at <= end) {
+    sim.step(first.at - sim.t);
+    sim.fire(first.label);
+  }
+  sim.step(end - sim.t);
+}
 
 /** Average a metric over a run, after the scene's warm-up. */
 function average(spec: SceneSpec, metric: MetricSpec, ms = 7000) {
   const sim = new Sim(spec);
   const values: number[] = [];
   for (let t = 0; t < ms; t += 100) {
-    sim.step(100);
+    stepFiring(sim, 100);
     if (t < 800) continue;
     const v = measure(sim, metric);
     if (v !== null) values.push(v);
@@ -21,20 +38,23 @@ function average(spec: SceneSpec, metric: MetricSpec, ms = 7000) {
   return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
-test("the course is 18 lessons plus a capstone, with unique slugs and codes", () => {
-  assert.equal(LESSONS.length, 19);
-  assert.equal(new Set(LESSONS.map((l) => l.slug)).size, 19);
-  assert.equal(new Set(LESSONS.map((l) => l.code)).size, 19);
+const lessons = LESSONS.filter((l) => l.line !== "capstone");
+const TONES = ["problem,fix", "problem,explore", "tradeoff,tradeoff", "problem,fix,fix", "problem,fix,tradeoff"];
+
+test("slugs and codes are unique, and the course runs from a first lesson to the capstone", () => {
+  assert.ok(lessons.length > 0);
+  assert.equal(new Set(LESSONS.map((l) => l.slug)).size, LESSONS.length);
+  assert.equal(new Set(LESSONS.map((l) => l.code)).size, LESSONS.length);
   assert.equal(neighbours(LESSONS[0].slug).prev, undefined);
   assert.equal(neighbours("capstone").next, undefined);
 });
 
 test("every lesson has a one-line why, a problem then a fix (or a trade-off pair), and short takeaways", () => {
-  for (const l of LESSONS.filter((x) => x.slug !== "capstone")) {
+  for (const l of lessons) {
     assert.ok(l.why.length < 220, `${l.slug} why is short`);
-    assert.equal(l.figures.length, 2, `${l.slug} has two scenes`);
+    assert.ok(l.figures.length >= 2, `${l.slug} has at least two scenes`);
     const tones = l.figures.map((f) => f.tone).join(",");
-    assert.ok(["problem,fix", "problem,explore", "tradeoff,tradeoff"].includes(tones), `${l.slug}: ${tones}`);
+    assert.ok(TONES.includes(tones), `${l.slug}: ${tones}`);
     assert.ok(l.figures.every((f) => f.short.length <= 16), `${l.slug} step names fit a tab`);
     for (const f of l.figures) {
       assert.ok((f.knobs ?? []).length <= 2, `${l.slug} keeps knobs to two`);
@@ -66,12 +86,53 @@ test("every scene builds and runs at every knob extreme without throwing", () =>
   }
 });
 
-// The teaching claim of each lesson: the second step measurably beats the first on the first metric shown.
+test("a fault offered in several steps is one fault: the same label always has the same id", () => {
+  for (const l of lessons) {
+    const ids = new Map<string, string>();
+    for (const f of l.figures) {
+      const own = (f.actions ?? []).map((a) => a.id);
+      assert.equal(new Set(own).size, own.length, `${l.slug}: action ids are unique within “${f.short}”`);
+      for (const a of f.actions ?? []) {
+        const id = ids.get(a.label) ?? a.id;
+        ids.set(a.label, id);
+        assert.equal(a.id, id, `${l.slug}: “${a.label}” has one id in every step`);
+      }
+    }
+  }
+});
+
+// Lockstep fairness: the problem and the fix (or both sides of a trade-off) share the clock and the targets,
+// and their clients send exactly the same requests at the same moments. Explore figures change the traffic
+// on purpose, so they are exempt.
+for (const lesson of lessons) {
+  const compared = lesson.figures.flatMap((f, i) => (i > 0 && f.tone !== "explore" ? [i] : []));
+  if (!compared.length) continue;
+  test(`${lesson.code} ${lesson.title}: every step sees the same clock, targets and traffic`, () => {
+    const specs = buildSteps(lesson.figures, lesson.figures.map(defaultsOf));
+    const trace = (spec: SceneSpec) => {
+      const sim = new Sim(spec, { trace: true });
+      sim.step(5000);
+      return sim.trace;
+    };
+    const first = trace(specs[0]);
+    assert.ok(first.length > 50, `${lesson.slug}: the first step has traffic`);
+    for (const i of compared) {
+      for (const k of ["sloMs", "timeoutMs", "timeScale", "windowMs"] as const)
+        assert.equal(specs[i][k], specs[0][k], `${lesson.slug}: “${lesson.figures[i].short}” has the same ${k}`);
+      assert.deepEqual(trace(specs[i]), first, `${lesson.slug}: “${lesson.figures[i].short}” sees the same arrivals`);
+    }
+  });
+}
+
+// The teaching claim of each lesson: the second step measurably beats the first on its headline metric.
 for (const lesson of LESSONS) {
   const [problem, fix] = lesson.figures;
   if (!fix || fix.tone === "explore") continue;
   test(`${lesson.code} ${lesson.title}: the fix beats the problem`, () => {
-    const metric = fix.metrics[0];
+    const label = headlineOf(lesson.figures);
+    const metric = fix.metrics.find((m) => m.label === label);
+    assert.ok(metric, `${lesson.slug}: the headline “${label}” is one of the fix's metrics`);
+    assert.notEqual(betterIs(metric), "neutral", `${lesson.slug}: the headline has a better direction`);
     const [without, withFix] = buildSteps([problem, fix], [defaultsOf(problem), defaultsOf(fix)]);
     const ms = lesson.slug === "consistent-hashing" || lesson.slug === "consistency-vs-availability" ? 9000 : 7000;
     const a = average(withFix, metric, ms);
@@ -81,11 +142,158 @@ for (const lesson of LESSONS) {
   });
 }
 
+// ------------------------------------------------------------------------------------------------ beats
+
+const words = (t: string) => wordCount(t);
+const isPart = (f: FigureDef) => new Set((f.parts ?? []).map((_, i) => `part-${i}`));
+
+/** Everything a learner reads, in the order they meet it: the hook, then each step, then the Recap. */
+function readingOrder(l: Lesson): { where: string; text: string; names?: string }[] {
+  const out: { where: string; text: string; names?: string }[] = [];
+  const p = l.figures.find((f) => f.predict)?.predict;
+  if (l.hook) out.push({ where: "hook", text: l.hook });
+  l.figures.forEach((f, i) => {
+    out.push({ where: `${i + 1} title`, text: f.title }, { where: `${i + 1} caption`, text: f.caption });
+    for (const b of beatsOf(f)) {
+      if (f.predict && b.id === f.predict.before) for (const t of [f.predict.prompt, ...f.predict.options]) out.push({ where: `${i + 1} predict`, text: t });
+      out.push({ where: `${i + 1} ${b.id}`, text: b.text, names: b.term });
+      if (p && b.id === p.reveal.beat) out.push({ where: `${i + 1} reveal`, text: p.reveal.text });
+    }
+    if (f.predict?.before === "end") for (const t of [f.predict.prompt, ...f.predict.options]) out.push({ where: `${i + 1} predict`, text: t });
+  });
+  for (const c of l.checks ?? []) for (const t of [c.prompt, ...c.options, c.why]) out.push({ where: "check", text: t });
+  for (const t of [l.takeaways.use, l.takeaways.catch, l.takeaways.seen, l.takeaways.rule ?? "", l.takeaways.interview ?? ""]) out.push({ where: "takeaways", text: t });
+  return out;
+}
+
+/** Every rule of the beat structure (docs/plan-v3.md §8) a lesson breaks, as readable lines. Empty when it is ready. */
+function beatProblems(l: Lesson): string[] {
+  const bad: string[] = [];
+  const specs = buildSteps(l.figures, l.figures.map(defaultsOf));
+  const table = new Set(l.figures.flatMap((f) => f.metrics.map((m) => m.label)));
+  const tags = new Set(l.figures.flatMap((f) => f.metrics.flatMap((m) => (m.tag ? [m.tag] : []))));
+  const ids = l.figures.flatMap((f) => beatsOf(f).filter((b) => !b.part).map((b) => b.id));
+  if (new Set(ids).size !== ids.length) bad.push("beat ids repeat");
+  if (!l.hook || words(l.hook) > 16) bad.push("a hook of at most 16 words");
+  if (!l.level || !l.minutes) bad.push("a level and minutes");
+  if (!l.dots?.length) bad.push("a local key (dots)");
+  if (!l.takeaways.rule || words(l.takeaways.rule) > 8) bad.push(`a rule of at most 8 words: “${l.takeaways.rule}”`);
+  const checks = l.checks ?? [];
+  if (checks.length < 1 || checks.length > 2) bad.push("one or two checks");
+  for (const c of checks) {
+    if (c.options.length < 2 || c.options.length > 3 || c.answer >= c.options.length) bad.push(`check “${c.prompt}” has 2–3 options and a valid answer`);
+    if (words(c.why) > 25) bad.push(`check why is ${words(c.why)} words`);
+  }
+  if (l.figures.filter((f) => f.predict).length !== 1) bad.push("one prediction");
+  l.figures.forEach((f, i) => {
+    const spec = specs[i];
+    const nodes = new Set(spec.nodes.map((n) => n.id));
+    const where = `${l.slug} step ${i + 1}`;
+    if (words(f.caption) > 25) bad.push(`${where}: caption is ${words(f.caption)} words`);
+    const own = (f.beats ?? []).length;
+    if (own < 3 || own > 6) bad.push(`${where}: ${own} beats (3–6)`);
+    for (const p of f.parts ?? []) {
+      if (words(p.text) > 9) bad.push(`${where}: build line “${p.text}” is ${words(p.text)} words`);
+      for (const n of [p.node].flat()) if (!nodes.has(n)) bad.push(`${where}: build line names a missing station ${n}`);
+    }
+    const parts = isPart(f);
+    for (const b of beatsOf(f)) {
+      if (!parts.has(b.id) && words(b.text) > 16) bad.push(`${where}: beat ${b.id} is ${words(b.text)} words`);
+      const fo: Focus = b.focus ?? {};
+      for (const n of [...(fo.nodes ?? []), ...(fo.link ?? [])]) if (!nodes.has(n)) bad.push(`${where}: beat ${b.id} points at a missing station ${n}`);
+      if (fo.metric && !table.has(fo.metric)) bad.push(`${where}: beat ${b.id} points at a missing row ${fo.metric}`);
+      if (fo.knob && !f.knobs?.some((k) => k.id === fo.knob)) bad.push(`${where}: beat ${b.id} points at a missing knob ${fo.knob}`);
+      if (fo.action && !f.actions?.some((a) => a.id === fo.action)) bad.push(`${where}: beat ${b.id} points at a missing fault ${fo.action}`);
+      const missing = unresolved(b.text, { tones: l.figures.map((g) => g.tone), current: i, nodes: specs.map((s) => new Set(s.nodes.map((n) => n.id))), tags });
+      if (missing.length) bad.push(`${where}: beat ${b.id} reads unknown numbers ${missing.join(" ")}`);
+      if (b.term && !b.text.includes(`[[${b.term}`)) bad.push(`${where}: beat ${b.id} names ${b.term} but doesn't mark it`);
+      if (!b.focus) bad.push(`${where}: beat ${b.id} points at nothing`);
+    }
+    if (f.break) {
+      if (!f.actions?.some((a) => a.id === f.break!.action)) bad.push(`${where}: the break's fault is not a button here`);
+      if (!beatsOf(f).some((b) => b.id === f.break!.beat)) bad.push(`${where}: the break's beat is missing`);
+    }
+    const p = f.predict;
+    if (p) {
+      if (p.options.length < 2 || p.options.length > 3 || p.answer >= p.options.length) bad.push(`${where}: prediction has 2–3 options and a valid answer`);
+      if (p.before !== "end" && !beatsOf(f).some((b) => b.id === p.before)) bad.push(`${where}: prediction comes before a missing beat`);
+      if (!l.figures.some((g) => beatsOf(g).some((b) => b.id === p.reveal.beat))) bad.push(`${where}: prediction is revealed by a missing beat`);
+    }
+    if (f.headline) {
+      if (words(f.headline.sentence) > 25) bad.push(`${where}: headline sentence is ${words(f.headline.sentence)} words`);
+      const missing = unresolved(f.headline.sentence, { tones: l.figures.map((g) => g.tone), current: i, nodes: specs.map((s) => new Set(s.nodes.map((n) => n.id))), tags });
+      if (missing.length) bad.push(`${where}: headline reads unknown numbers ${missing.join(" ")}`);
+    }
+  });
+  if (!l.figures.some((f) => f.headline)) bad.push("a headline sentence");
+  // Terms: each is in the glossary, and nothing uses a term (marked or in plain words) before it is first marked.
+  const order = readingOrder(l);
+  const marked = new Set(order.flatMap((o) => termsIn(o.text)));
+  for (const key of marked) {
+    const term = termOf(key);
+    if (!term) {
+      bad.push(`term ${key} is not in the glossary`);
+      continue;
+    }
+    const plain = new RegExp(`\\b(${[term.name, key.replace(/-/g, " ")].map((w) => w.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(e?s)?\\b`, "i");
+    const first = order.findIndex((o) => termsIn(o.text).includes(key) || plain.test(o.text.replace(/\[\[[^\]]*\]\]|\{[^}]*\}/g, "")));
+    if (first >= 0 && !termsIn(order[first].text).includes(key)) bad.push(`“${term.name}” is used in ${order[first].where} before it is named`);
+  }
+  for (const o of order) if (o.names && !marked.has(o.names)) bad.push(`${o.where} names ${o.names} without marking it`);
+  return bad;
+}
+
+for (const lesson of lessons) {
+  test(`${lesson.code} ${lesson.title}: beats follow the authoring rules`, () => {
+    assert.deepEqual(beatProblems(lesson), []);
+  });
+  test(`${lesson.code} ${lesson.title}: every beat fires in a learner's run, and the prediction comes true`, () => {
+    const w = walk(lesson);
+    assert.deepEqual(w.missing, [], `${lesson.slug}: beats that never fired`);
+    assert.equal(w.prediction?.holds, true, `${lesson.slug}: prediction before ${w.prediction?.before}, after ${w.prediction?.after}`);
+    // Beats that read numbers find them: nothing shows as “—”.
+    for (const b of w.fired) assert.ok(!b.text.includes("—"), `${lesson.slug}: ${b.id} reads a number that isn't there yet: “${b.text}”`);
+  });
+}
+
+test("the hero's looping beats and each capstone stage's opening beats point at stations that exist", () => {
+  const hero = HERO.build({});
+  const ids = new Set(hero.nodes.map((n) => n.id));
+  assert.equal(HERO.beats?.length, 3);
+  assert.ok(words(HERO.caption) <= 25, "the hero's caption is 25 words or fewer");
+  for (const b of HERO.beats ?? []) {
+    assert.ok(words(b.text) <= 16, `hero: ${b.id}`);
+    for (const n of b.focus?.nodes ?? []) assert.ok(ids.has(n), `hero: ${b.id} points at ${n}`);
+    if ("note" in b.when) assert.ok(hero.script?.events.some((e) => e.label === (b.when as { note: string }).note), `hero: ${b.id}'s event is in the loop`);
+  }
+  STAGES.forEach((stage, i) => {
+    assert.equal(stage.beats.length, 2, `stage ${i + 1} opens with two beats`);
+    const nodes = new Set(capstoneScene(START, stage).nodes.map((n) => n.id));
+    for (const b of stage.beats) {
+      assert.ok(words(b.text) <= 16, `stage ${i + 1}: ${b.id}`);
+      for (const n of b.focus?.nodes ?? []) assert.ok(nodes.has(n), `stage ${i + 1}: ${b.id} points at ${n}`);
+    }
+  });
+});
+
+test("every glossary term is named by a lesson, and its Show me points at something in that lesson", () => {
+  const named = new Set(LESSONS.flatMap((l) => l.figures.flatMap((f) => beatsOf(f).flatMap((b) => termsIn(b.text)))));
+  for (const t of GLOSSARY.values()) {
+    if (t.key !== "p95") assert.ok(named.has(t.key), `${t.key} is named somewhere`);
+    assert.ok(words(t.short) <= 20, `${t.key}: short definition`);
+    if (!t.show) continue;
+    const l = getLesson(t.show.lesson);
+    assert.ok(l, `${t.key}: shown in ${t.show.lesson}`);
+    const nodes = new Set(buildSteps(l!.figures, l!.figures.map(defaultsOf)).flatMap((s) => s.nodes.map((n) => n.id)));
+    for (const n of [...(t.show.focus.nodes ?? []), ...(t.show.focus.link ?? [])]) assert.ok(nodes.has(n), `${t.key}: shows ${n}`);
+  }
+});
+
 test("D3: a hash ring moves far fewer keys than hash % N", () => {
   const l = getLesson("consistent-hashing")!;
   const moved = (f: FigureDef) => {
     const sim = new Sim(f.build(defaultsOf(f)));
-    sim.step(2400);
+    stepFiring(sim, 2400);
     return measure(sim, f.metrics[2])!;
   };
   assert.ok(moved(l.figures[0]) > 0.6);

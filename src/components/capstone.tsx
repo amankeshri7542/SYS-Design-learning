@@ -6,10 +6,11 @@ import { CAPSTONE } from "@/lib/lessons";
 import { CAP_METRICS, START, STAGES, TARGET, capstoneScene, monthlyCost, type Arch } from "@/lib/lessons/capstone";
 import type { Sim } from "@/lib/sim/engine";
 import { formatMetric, measure } from "@/lib/sim/metrics";
-import { Key } from "./legend";
-import { ArrowIcon, MetricList, Transport, freshNote, useLiveSims } from "./live";
-import { Shell, usePlayerKeys } from "./player";
+import { KeyPopover } from "./legend";
+import { ArrowIcon, Clock, MetricList, Transport, freshNote, useLiveSims } from "./live";
 import { MarkVisited } from "./route-map";
+import { BeatStrip, useSceneBeats } from "./beats";
+import { Shell, usePlayerKeys } from "./shell";
 import { Stage } from "./stage";
 
 const P95 = CAP_METRICS[0];
@@ -41,10 +42,14 @@ export function CapstonePlayer() {
     [S, stage],
   );
 
-  const live = useLiveSims(specs, { onFrame });
+  // Each stage opens with two beats: what changed, and the box to watch.
+  const beats = useSceneBeats(S.beats, () => stage);
+  const live = useLiveSims(specs, { onFrame, onGrid: beats.onGrid });
   usePlayerKeys(live);
   const sim = live.sims[0];
-  const note = freshNote(sim);
+  // A scripted event (server 1 crashing) newer than the beat takes the strip.
+  const last = sim.notes[sim.notes.length - 1];
+  const eventLater = !!freshNote(sim) && !!last && (beats.at === null || last.t > beats.at);
 
   const change = (next: Partial<Arch>) => {
     setArch((a) => ({ ...a, ...next }));
@@ -59,11 +64,10 @@ export function CapstonePlayer() {
 
   const p95 = measure(sim, P95);
   const err = measure(sim, ERR);
-  const p95ok = p95 !== null && p95 <= TARGET.p95;
-  const errOk = err === null || err <= TARGET.errors;
   const done = cleared[stage];
   const allDone = cleared.every(Boolean);
   const pct = Math.min(1, held / S.hold);
+  const rate = S.users + S.bot;
 
   return (
     <Shell
@@ -78,10 +82,11 @@ export function CapstonePlayer() {
               ★
             </Link>
           </nav>
-          <h1 className="bar-title">
+          <h1 className="bar-title" title={CAPSTONE.why}>
             <span className="bar-code">Capstone</span>
             <span className="bar-name">{CAPSTONE.title}</span>
           </h1>
+          <KeyPopover />
           <span className="bar-arrows">
             <Link href="/learn/autoscaling" className="icon-link" aria-label="Previous lesson: Autoscaling" title="R3 Autoscaling">
               <ArrowIcon dir="left" />
@@ -89,43 +94,66 @@ export function CapstonePlayer() {
           </span>
         </>
       }
+      beat={
+        <BeatStrip
+          sim={sim}
+          beat={eventLater ? undefined : (beats.beat ?? undefined)}
+          announce={eventLater ? undefined : (beats.beat?.text.replace(/\[\[[\w-]+\|?([^\]]*)\]\]/g, "$1") ?? "")}
+          lead={
+            <span key={stage} className="beat-tone tone-explore">
+              Stage {stage + 1} · {rate} a second
+            </span>
+          }
+          clock={<Clock live={live} />}
+        />
+      }
       stage={
-        <>
-          <Stage sim={sim} spec={specs[0]} mode={live.mode} reduced={live.reduced} label={`URL shortener, stage ${stage + 1}: ${S.name}`} drawRef={live.drawRef} />
-          <p className={`note${note ? " on" : ""}`} aria-live="polite">
-            {note}
-          </p>
-          <span key={stage} className="stage-tag tone-explore">
-            Stage {stage + 1} · {S.users + S.bot} req/s
-          </span>
-          <Key />
-        </>
+        <Stage
+          sim={sim}
+          spec={specs[0]}
+          mode={live.mode}
+          reduced={live.reduced}
+          label={`URL shortener, stage ${stage + 1}: ${S.name}`}
+          drawRef={live.drawRef}
+          focus={eventLater ? null : beats.beat?.focus}
+          callout={!eventLater && beats.beat ? { id: beats.beat.id, text: beats.beat.text, waiting: false } : null}
+        />
       }
       panel={
         <>
-          <p className="why">{CAPSTONE.why}</p>
-          <ol className="tabs cap-stages" aria-label="Stages">
-            {STAGES.map((s, i) => {
-              const locked = i > 0 && !cleared[i - 1];
-              return (
-                <li key={s.name}>
-                  <button
-                    type="button"
-                    className={`tab${i === stage ? " current" : ""}${cleared[i] ? " cleared" : ""}`}
-                    aria-current={i === stage ? "step" : undefined}
-                    disabled={locked}
-                    title={locked ? "Clear the previous stage first" : s.name}
-                    onClick={() => go(i)}
-                  >
-                    <span className="tab-n" aria-hidden="true">
-                      {cleared[i] ? "✓" : i + 1}
-                    </span>
-                    {s.name}
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
+          <div className="panel-head">
+            <ol className="tabs cap-stages" aria-label="Stages">
+              {STAGES.map((s, i) => {
+                const locked = i > 0 && !cleared[i - 1];
+                return (
+                  <li key={s.name}>
+                    <button
+                      type="button"
+                      className={`tab${i === stage ? " current" : ""}${cleared[i] ? " cleared" : ""}`}
+                      aria-current={i === stage ? "step" : undefined}
+                      disabled={locked}
+                      title={locked ? "Clear the previous stage first" : s.name}
+                      onClick={() => go(i)}
+                    >
+                      <span className="tab-n" aria-hidden="true">
+                        {cleared[i] ? "✓" : i + 1}
+                      </span>
+                      <span className="tab-name">{s.name}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+          <div className="step" key={stage}>
+            <h2 className="step-title">{S.name}</h2>
+            {stage === 0 && <p className="step-text">{CAPSTONE.why}</p>}
+            <p className="step-text">{S.brief}</p>
+            <details className="cap-hint">
+              <summary>Hint</summary>
+              <p>{S.hint}</p>
+            </details>
+          </div>
           <div className="cap-build" role="group" aria-label="Architecture">
             <Stepper label="App servers" value={arch.servers} min={1} max={4} onChange={(v) => change({ servers: v })} />
             <Toggle label="Cache" on={arch.cache} onChange={(v) => change({ cache: v })} />
@@ -136,49 +164,36 @@ export function CapstonePlayer() {
               <strong>${monthlyCost(arch)}/mo</strong>
             </p>
           </div>
-          <div className="step" key={stage}>
-            <p className="step-tag tone-explore">
-              Stage {stage + 1} of {STAGES.length} · {S.users + S.bot} requests a second
-            </p>
-            <p className="step-text">{S.brief}</p>
-            <details className="cap-hint">
-              <summary>Hint</summary>
-              <p>{S.hint}</p>
-            </details>
-          </div>
-          <div className={`cap-status${done ? " done" : ""}`}>
-            <p className="cap-target">
-              Target: p95 ≤ {TARGET.p95} ms, ≤ {Math.round(TARGET.errors * 100)}% failing, held {S.hold} s
-            </p>
-            <div className="chips">
-              <span className={`chip ${p95ok ? "pass" : "fail"}`}>
-                p95 {formatMetric(P95, p95)} {p95ok ? "✓" : "✗"}
-              </span>
-              <span className={`chip ${errOk ? "pass" : "fail"}`}>
-                failed {formatMetric(ERR, err)} {errOk ? "✓" : "✗"}
-              </span>
-            </div>
-            <div className="hold" aria-hidden="true">
-              <span className="hold-bar" style={{ transform: `scaleX(${done ? 1 : pct})` }} />
-            </div>
-            <p className="hold-text">{done ? "Stage cleared" : `Holding ${held.toFixed(1)} of ${S.hold} s`}</p>
-            <p className="sr-only" role="status">
-              {done ? `Stage ${stage + 1} cleared.` : ""}
-            </p>
-          </div>
+          <MetricList metrics={CAP_METRICS.slice(2)} sim={sim} />
           {allDone && (
             <p className="cap-win">
               You kept it alive through all four stages for ${monthlyCost(arch)} a month. Can you find a cheaper design that still holds
               stage 4?
             </p>
           )}
-          <MetricList metrics={CAP_METRICS} sim={sim} />
         </>
+      }
+      pinned={
+        <div className={`cap-status${done ? " done" : ""}`}>
+          <div className="cap-target" role="group" aria-label={`Target, held for ${S.hold} s`}>
+            <TargetCell label="Response time" value={p95} shown={formatMetric(P95, p95)} target={`target ≤ ${TARGET.p95} ms`} ok={p95 !== null && p95 <= TARGET.p95} />
+            <TargetCell label="Failed" value={err} shown={formatMetric(ERR, err)} target={`target ≤ ${Math.round(TARGET.errors * 100)}%`} ok={err !== null && err <= TARGET.errors} />
+          </div>
+          <div className="hold-row">
+            <div className="hold" aria-hidden="true">
+              <span className="hold-bar" style={{ transform: `scaleX(${done ? 1 : pct})` }} />
+            </div>
+            <p className="hold-text">{done ? "Stage cleared" : `Holding ${held.toFixed(1)} of ${S.hold} s`}</p>
+          </div>
+          <p className="sr-only" role="status">
+            {done ? `Stage ${stage + 1} cleared.` : ""}
+          </p>
+        </div>
       }
       dock={
         <>
-          <Transport live={live} name="capstone" compact />
-          <span className="slowmo">{live.slowdown}× slow motion</span>
+          <Transport live={live} />
+          <Clock live={live} />
           <span className="dock-fill" />
           {done && stage < STAGES.length - 1 ? (
             <button type="button" className="btn-primary btn-next" onClick={() => go(stage + 1)}>
@@ -194,6 +209,19 @@ export function CapstonePlayer() {
         </>
       }
     />
+  );
+}
+
+/** One half of the target: the live value beside what it must stay under. Neutral until there is data. */
+function TargetCell({ label, value, shown, target, ok }: { label: string; value: number | null; shown: string; target: string; ok: boolean }) {
+  const state = value === null ? "wait" : ok ? "pass" : "fail";
+  return (
+    <div className={`cap-cell ${state}`}>
+      <span className="cap-cell-label">{label}</span>
+      <strong className="num">{shown}</strong>
+      <small className="target">{target}</small>
+      <span className="sr-only">{state === "wait" ? "no data yet" : ok ? "on target" : "off target"}</span>
+    </div>
   );
 }
 

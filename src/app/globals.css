@@ -1,78 +1,190 @@
-/* System Lab: a transit map for system design. Tokens first, then layout, then components. */
+/* System Lab: an animated field guide, set in signage. Tokens first, then layout, then components. */
+
+/* ------------------------------------------------------------------ tokens: the day edition */
 
 :root {
   color-scheme: light;
-  --paper: #f3f5f8;
-  --surface: #ffffff;
-  --stage: #fbfcfd;
-  --grid: #dfe5ed;
-  --ink: #121826;
-  --ink-2: #3a4454;
-  --muted: #667185;
-  --rule: #dce2ea;
-  --track: #e5e9f0;
-  --card: #ffffff;
-  --card-line: #121826;
-  --socket: #e6ebf2;
 
+  /* Paper and ink */
+  --paper: #f4f3ef;
+  --surface: #fdfcfa;
+  --stage: #faf9f6;
+  --card: #ffffff;
+  --ink: #15171c;
+  --ink-2: #3b3f48;
+  --muted: #666b74;
+  --rule: #e3e1db;
+  --track: #e6e4de;
+  --rail: #a3aab5;
+  --rail-core: #eceef1;
+  --socket: #ecebe6;
+  --socket-edge: #d3d0c8;
+  --accent: #3d63ff;
+  --accent-hover: #2a4fe0;
+  --on-accent: #ffffff;
+
+  /* Request dots: canvas and legend only, never text. The mapping is fixed (CLAUDE.md). */
   --dot-req: #3d63ff;
-  --dot-ok: #12a35c;
   --dot-slow: #f29e0c;
-  --dot-err: #e5383b;
+  --dot-ok: #12a35c;
   --dot-stale: #8b5cf6;
   --dot-turned: #8a94a6;
+  --dot-err: #e5383b;
+
+  /* Text-safe tones */
   --t-ok: #0b7a44;
   --t-warn: #9a5b00;
   --t-bad: #c01f2b;
+  --t-stale: #6d3fd6;
+  --t-req: #2a4fe0;
 
+  /* Filled tones and the text that sits on them: badges, an armed fault, the current step's number */
+  --bad: #c01f2b;
+  --on-bad: #ffffff;
+  --warn: #f29e0c;
+  --on-warn: #15171c;
+  --good: #12a35c;
+  --on-good: #15171c;
+  --stale: #6d3fd6;
+  --on-stale: #ffffff;
+
+  /* Lines. The fill identifies a line (roundels, tracks, rules); the -ink variant carries text and small chips. */
+  --l-networking: #6e7d14;
+  --l-networking-ink: #56620d;
   --l-foundations: #0b8a8a;
+  --l-foundations-ink: #087070;
   --l-caching: #e0560c;
+  --l-caching-ink: #b94406;
   --l-data: #c2255c;
+  --l-data-ink: #a81f4f;
   --l-async: #2f3e9e;
+  --l-async-ink: #2a3790;
   --l-resilience: #8f6516;
-  --l-capstone: #121826;
+  --l-resilience-ink: #7a5410;
+  --l-operating: #7a2f5e;
+  --l-operating-ink: #7a2f5e;
+  --l-capstone: #15171c;
+  --l-capstone-ink: #15171c;
 
-  --shadow: 0 1px 0 rgb(18 24 38 / 0.03), 0 14px 34px -22px rgb(18 24 38 / 0.28);
-  --radius: 20px;
+  /* Type: signage (Overpass, 16px and up), the guide's voice (Newsreader), body and UI (Atkinson), numbers (Overpass Mono) */
+  --fs-caption: 12px;
+  --fs-meta: 13px;
+  --fs-ui: 14px;
+  --fs-body: 15.5px;
+  --fs-home: 17px;
+  --fs-h3: 20px;
+  --fs-step: 24px;
+  --fs-section: 32px;
+  --fs-hero: 44px;
+  --fs-h1: 60px;
+  /* Stage text keeps these sizes on every screen; src/lib/sim/layout.ts (TEXT) sizes the frame from the same numbers. */
+  --label-px: 13px;
+  --sub-px: 12px;
+  --badge-px: 11px;
+
+  /* Space (4-base), radius, elevation */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+  --sp-9: 96px;
+  --r-chip: 4px;
+  --r-ctl: 8px;
+  --r-card: 12px;
+  --r-sheet: 20px;
+  --r-round: 999px;
+  --e-raised: 0 1px 0 rgb(21 23 28 / 0.04), 0 12px 32px -20px rgb(21 23 28 / 0.28);
+  --e-sheet: inset 0 1px 0 rgb(255 255 255 / 0.85);
+
+  /* Motion (src/lib/motion.ts) */
+  --dur-fast: 120ms;
+  --dur-base: 240ms;
+  --dur-exit: 160ms;
+  --dur-switch: 480ms;
+  --dur-hero: 900ms;
+  /* The second beat of a step switch starts this long after the first. */
+  --beat: 120ms;
+  /* The scene intro (src/lib/motion.ts INTRO): parts 60 ms apart, each entering in 360 ms, links drawing in 420 ms. */
+  --intro-step: 60ms;
+  --intro-node: 360ms;
+  --intro-stroke: 420ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-linear: linear;
 }
+
+/* ------------------------------------------------------------------ tokens: the night edition (deep tinted ink, not black) */
 
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --paper: #0b0f17;
-    --surface: #121926;
-    --stage: #0e141e;
-    --grid: #1a2230;
-    --ink: #e8edf4;
-    --ink-2: #b8c2d0;
-    --muted: #8b96a8;
-    --rule: #242e3d;
-    --track: #212b3a;
-    --card: #151d2b;
-    --card-line: #c7d1e0;
-    --socket: #243042;
+
+    --paper: #0e1116;
+    --surface: #151921;
+    --stage: #11151c;
+    --card: #171c25;
+    --ink: #ecebe6;
+    --ink-2: #c3c5cc;
+    --muted: #8e939d;
+    --rule: #262b35;
+    --track: #282e3a;
+    --rail: #4b5464;
+    --rail-core: #1c222d;
+    --socket: #232a36;
+    --socket-edge: #374050;
+    --accent: #6c8aff;
+    --accent-hover: #8aa2ff;
+    --on-accent: #0e1116;
 
     --dot-req: #6c8aff;
-    --dot-ok: #2fd28a;
     --dot-slow: #ffb13b;
-    --dot-err: #ff5c60;
+    --dot-ok: #2fd28a;
     --dot-stale: #a98bff;
     --dot-turned: #8f9bb1;
+    --dot-err: #ff5c60;
+
     --t-ok: #4fe0a0;
     --t-warn: #ffbf5c;
     --t-bad: #ff7a7d;
+    --t-stale: #b9a2ff;
+    --t-req: #8aa2ff;
 
+    --bad: #ff5c60;
+    --on-bad: #0e1116;
+    --warn: #ffb13b;
+    --on-warn: #0e1116;
+    --good: #2fd28a;
+    --on-good: #0e1116;
+    --stale: #a98bff;
+    --on-stale: #0e1116;
+
+    --l-networking: #a8bb3a;
+    --l-networking-ink: #a8bb3a;
     --l-foundations: #25b8b8;
+    --l-foundations-ink: #25b8b8;
     --l-caching: #ff7a33;
+    --l-caching-ink: #ff7a33;
     --l-data: #f0508a;
+    --l-data-ink: #f0508a;
     --l-async: #7a8cf5;
+    --l-async-ink: #7a8cf5;
     --l-resilience: #d2a043;
-    --l-capstone: #e8edf4;
+    --l-resilience-ink: #d2a043;
+    --l-operating: #d888b8;
+    --l-operating-ink: #d888b8;
+    --l-capstone: #ecebe6;
+    --l-capstone-ink: #ecebe6;
 
-    --shadow: 0 1px 0 rgb(0 0 0 / 0.2), 0 18px 40px -24px rgb(0 0 0 / 0.7);
+    --e-raised: 0 1px 0 rgb(0 0 0 / 0.25), 0 18px 40px -24px rgb(0 0 0 / 0.75);
+    --e-sheet: inset 0 1px 0 rgb(255 255 255 / 0.03);
   }
 }
+
+/* ------------------------------------------------------------------ base */
 
 * {
   box-sizing: border-box;
@@ -80,8 +192,18 @@
 
 html {
   -webkit-text-size-adjust: 100%;
-  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: color-mix(in srgb, var(--accent) 16%, transparent);
   scroll-padding-top: 80px;
+  accent-color: var(--accent);
+  scrollbar-color: color-mix(in srgb, var(--ink) 28%, transparent) transparent;
+}
+
+a,
+button,
+summary,
+label,
+input {
+  touch-action: manipulation;
 }
 
 body {
@@ -89,9 +211,13 @@ body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 17px;
-  line-height: 1.55;
+  font-size: var(--fs-home);
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 h1,
@@ -99,10 +225,12 @@ h2,
 h3 {
   font-family: var(--font-display), system-ui, sans-serif;
   line-height: 1.05;
+  text-wrap: balance;
 }
 
 a {
-  color: var(--dot-req);
+  color: var(--t-req);
+  text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
 
@@ -130,9 +258,9 @@ fieldset {
 }
 
 :focus-visible {
-  outline: 3px solid var(--dot-req);
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: var(--r-ctl);
 }
 
 .sr-only {
@@ -150,7 +278,7 @@ fieldset {
   top: -60px;
   z-index: 50;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: var(--r-ctl);
   background: var(--ink);
   color: var(--paper);
   font-weight: 700;
@@ -177,9 +305,10 @@ fieldset {
   align-items: center;
   gap: 10px;
   flex: none;
+  min-height: 40px;
   color: var(--ink);
   text-decoration: none;
-  font: 900 19px/1 var(--font-display);
+  font: 800 19px/1 var(--font-display);
   letter-spacing: -0.02em;
 }
 
@@ -212,24 +341,27 @@ fieldset {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 12px clamp(16px, 3vw, 40px);
+  gap: var(--sp-4);
+  padding: var(--sp-2) clamp(16px, 3vw, 40px);
   border-bottom: 1px solid var(--rule);
-  background: color-mix(in srgb, var(--paper) 86%, transparent);
-  backdrop-filter: blur(10px);
+  background: var(--paper);
 }
 
 .site-nav {
   display: flex;
-  gap: 4px;
+  gap: var(--sp-1);
 }
 
 .site-nav a {
-  padding: 8px 12px;
-  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-ctl);
   color: var(--ink-2);
-  font: 700 15px/1 var(--font-display);
+  font: 600 15px/1 var(--font-body);
   text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .site-nav a:hover {
@@ -241,12 +373,12 @@ fieldset {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 8px 24px;
-  margin-top: 72px;
-  padding: 24px clamp(16px, 3vw, 40px) 32px;
+  gap: var(--sp-2) var(--sp-5);
+  margin-top: var(--sp-8);
+  padding: var(--sp-5) clamp(16px, 3vw, 40px) var(--sp-6);
   border-top: 1px solid var(--rule);
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--fs-ui);
 }
 
 .site-foot p {
@@ -263,11 +395,15 @@ fieldset {
   height: 40px;
   padding: 0 14px;
   border: 1px solid var(--rule);
-  border-radius: 10px;
+  border-radius: var(--r-ctl);
   background: var(--surface);
   color: var(--ink);
-  font: 700 14px/1 var(--font-display);
-  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.12s var(--ease-out);
+  font: 600 var(--fs-ui)/1 var(--font-body);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 
 .btn:hover {
@@ -304,7 +440,7 @@ svg.stroke {
 }
 
 .btn-play:hover {
-  border-color: var(--ink);
+  border-color: var(--ink-2);
   background: var(--ink-2);
 }
 
@@ -313,20 +449,20 @@ svg.stroke {
   padding: 0;
 }
 
-.transport.compact .btn-play {
+.transport .btn-play {
   width: 44px;
   padding: 0;
 }
 
 .btn-fault {
-  border-color: color-mix(in srgb, var(--dot-err) 45%, var(--rule));
+  border-color: color-mix(in srgb, var(--t-bad) 45%, var(--rule));
   color: var(--t-bad);
 }
 
 .btn-fault.on {
-  border-color: var(--dot-err);
-  background: var(--dot-err);
-  color: #fff;
+  border-color: var(--bad);
+  background: var(--bad);
+  color: var(--on-bad);
 }
 
 .btn-primary {
@@ -336,16 +472,16 @@ svg.stroke {
   gap: 8px;
   height: 48px;
   padding: 0 22px;
-  border-radius: 12px;
-  background: var(--dot-req);
-  color: #fff;
-  font: 800 16px/1 var(--font-display);
+  border-radius: var(--r-ctl);
+  background: var(--accent);
+  color: var(--on-accent);
+  font: 700 16px/1 var(--font-display);
   text-decoration: none;
-  transition: background 0.15s, transform 0.15s var(--ease-out);
+  transition: background-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
 }
 
 .btn-primary:hover {
-  background: color-mix(in srgb, var(--dot-req) 85%, #000);
+  background: var(--accent-hover);
 }
 
 .btn-quiet {
@@ -354,10 +490,11 @@ svg.stroke {
   height: 48px;
   padding: 0 18px;
   border: 1px solid var(--rule);
-  border-radius: 12px;
+  border-radius: var(--r-ctl);
   color: var(--ink);
   font: 700 16px/1 var(--font-display);
   text-decoration: none;
+  transition: border-color var(--dur-fast) var(--ease-out);
 }
 
 .btn-quiet:hover {
@@ -367,10 +504,11 @@ svg.stroke {
 .icon-link {
   display: inline-grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-ctl);
   color: var(--ink-2);
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .icon-link:hover {
@@ -383,7 +521,7 @@ svg.stroke {
   gap: 2px;
   padding: 3px;
   border: 1px solid var(--rule);
-  border-radius: 11px;
+  border-radius: var(--r-ctl);
   background: var(--paper);
 }
 
@@ -405,41 +543,44 @@ svg.stroke {
 }
 
 .seg span {
-  display: block;
-  padding: 8px 11px;
-  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  min-height: 32px;
+  padding: 0 11px;
+  border-radius: calc(var(--r-ctl) - 3px);
   color: var(--ink-2);
-  font: 600 13px/1.1 var(--font-mono);
+  font: 600 var(--fs-meta)/1.1 var(--font-mono);
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
 
 .seg input:checked + span {
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgb(18 24 38 / 0.14), 0 0 0 1px var(--rule);
+  box-shadow: 0 0 0 1px var(--rule);
 }
 
 .seg input:focus-visible + span {
-  outline: 2px solid var(--dot-req);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
 .transport {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-2);
 }
 
 .speed-cycle {
-  display: none;
-  font: 600 13px/1 var(--font-mono);
+  width: 44px;
+  font: 600 var(--fs-meta)/1 var(--font-mono);
 }
 
 .slowmo {
+  flex: none;
   color: var(--muted);
-  font: 500 12px var(--font-mono);
+  font: 500 var(--fs-caption) var(--font-mono);
   white-space: nowrap;
 }
 
@@ -456,8 +597,8 @@ svg.stroke {
 
 .eyebrow {
   margin: 0;
-  color: var(--dot-req);
-  font: 600 13px/1.3 var(--font-mono);
+  color: var(--t-req);
+  font: 600 var(--fs-meta)/1.3 var(--font-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -465,9 +606,9 @@ svg.stroke {
 .hero h1 {
   margin: 14px 0 0;
   font-size: clamp(2.4rem, 3.7vw, 3.75rem);
-  font-weight: 900;
+  font-weight: 800;
   line-height: 0.98;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.035em;
 }
 
 .hero h1 span {
@@ -497,7 +638,7 @@ svg.stroke {
   padding: 0;
   list-style: none;
   color: var(--ink-2);
-  font: 600 13px/1.2 var(--font-display);
+  font: 600 var(--fs-meta)/1.2 var(--font-body);
 }
 
 .dot-strip li {
@@ -507,8 +648,8 @@ svg.stroke {
 }
 
 .dot-strip .dot {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
 }
 
 .hero-fig {
@@ -518,9 +659,8 @@ svg.stroke {
   margin: 0;
   padding: 10px;
   border: 1px solid var(--rule);
-  border-radius: var(--radius);
+  border-radius: var(--r-sheet);
   background: var(--surface);
-  box-shadow: var(--shadow);
 }
 
 .hero-stage {
@@ -569,8 +709,8 @@ svg.stroke {
 .section-h {
   margin: 0;
   font-size: clamp(1.9rem, 3.4vw, 2.6rem);
-  font-weight: 900;
-  letter-spacing: -0.035em;
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
 .section-sub {
@@ -600,56 +740,72 @@ svg.stroke {
   stroke-width: 1.7;
 }
 
+.dot .hollow {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.6;
+}
+
 .dot .socket-demo {
   fill: var(--socket);
   stroke: var(--dot-req);
   stroke-width: 1.6;
 }
 
-.key {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 3;
-}
-
-.key summary {
-  display: inline-flex;
-  align-items: center;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+/* The Key: a button in the bar opens a native popover under it, on top of everything and clear of the bar. */
+.key-btn {
+  flex: none;
+  height: 36px;
+  margin-left: auto;
+  border-radius: var(--r-round);
   color: var(--ink-2);
-  font: 700 13px/1 var(--font-display);
-  list-style: none;
-  cursor: pointer;
+  font-size: var(--fs-meta);
 }
 
-.key summary::-webkit-details-marker {
-  display: none;
-}
-
-.key[open] summary {
+.key-btn:hover,
+.key-btn:has(+ .key-pop:popover-open) {
   border-color: var(--ink);
   color: var(--ink);
 }
 
 .key-pop {
-  position: absolute;
-  top: 40px;
-  right: 0;
-  width: min(300px, calc(100vw - 40px));
-  max-height: min(420px, 60svh);
+  position: fixed;
+  inset: calc(var(--bar-h, 56px) + 8px) 12px auto auto;
+  width: min(320px, calc(100vw - 24px));
+  max-height: calc(100svh - var(--bar-h, 56px) - 24px);
+  margin: 0;
   overflow-y: auto;
-  padding: 10px 12px;
+  padding: 8px 14px 14px;
   border: 1px solid var(--rule);
-  border-radius: 14px;
+  border-radius: var(--r-card);
   background: var(--surface);
-  box-shadow: var(--shadow);
-  animation: pop-in 0.22s var(--ease-out) both;
+  color: var(--ink);
+  box-shadow: var(--e-raised);
   transform-origin: top right;
+}
+
+.key-pop:popover-open {
+  animation: pop-in var(--dur-base) var(--ease-out) both;
+}
+
+.key-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin: 0 -6px 6px 0;
+}
+
+.key-head h2 {
+  margin: 0;
+  font: 700 var(--fs-ui)/1.2 var(--font-display);
+  letter-spacing: 0;
+}
+
+.key-close {
+  width: 36px;
+  height: 36px;
+  border-color: transparent;
 }
 
 .key-pop ul {
@@ -664,13 +820,12 @@ svg.stroke {
   display: flex;
   gap: 10px;
   color: var(--ink-2);
-  font-size: 13.5px;
-  line-height: 1.35;
+  font-size: var(--fs-meta);
+  line-height: 1.4;
 }
 
 .key-pop strong {
   color: var(--ink);
-  font-family: var(--font-display);
 }
 
 @keyframes pop-in {
@@ -678,6 +833,27 @@ svg.stroke {
     opacity: 0;
     transform: translateY(-4px) scale(0.97);
   }
+}
+
+.key-sub {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font: 700 var(--fs-caption)/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.key-rest {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+
+.key-rest summary {
+  margin-bottom: 8px;
+  color: var(--ink-2);
+  font-size: var(--fs-meta);
+  cursor: pointer;
 }
 
 /* ------------------------------------------------------------------ route map */
@@ -689,12 +865,14 @@ svg.stroke {
   overflow: visible;
 }
 
-.line-foundations { --lc: var(--l-foundations); }
-.line-caching { --lc: var(--l-caching); }
-.line-data { --lc: var(--l-data); }
-.line-async { --lc: var(--l-async); }
-.line-resilience { --lc: var(--l-resilience); }
-.line-capstone { --lc: var(--l-capstone); }
+.line-networking { --lc: var(--l-networking); --lc-ink: var(--l-networking-ink); }
+.line-foundations { --lc: var(--l-foundations); --lc-ink: var(--l-foundations-ink); }
+.line-caching { --lc: var(--l-caching); --lc-ink: var(--l-caching-ink); }
+.line-data { --lc: var(--l-data); --lc-ink: var(--l-data-ink); }
+.line-async { --lc: var(--l-async); --lc-ink: var(--l-async-ink); }
+.line-resilience { --lc: var(--l-resilience); --lc-ink: var(--l-resilience-ink); }
+.line-operating { --lc: var(--l-operating); --lc-ink: var(--l-operating-ink); }
+.line-capstone { --lc: var(--l-capstone); --lc-ink: var(--l-capstone-ink); }
 
 .route-line .track {
   fill: none;
@@ -710,7 +888,7 @@ svg.stroke {
 
 .roundel-letter {
   fill: var(--paper);
-  font: 900 18px var(--font-display);
+  font: 800 19px var(--font-display);
 }
 
 .route-name {
@@ -731,12 +909,14 @@ svg.stroke {
   fill: var(--paper);
   stroke: var(--lc);
   stroke-width: 5;
-  transition: r 0.2s var(--ease-out);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform var(--dur-fast) var(--ease-out);
 }
 
 .station:hover .station-dot,
 .station:focus-visible .station-dot {
-  r: 14;
+  transform: scale(1.27);
 }
 
 .station.seen .station-dot {
@@ -753,13 +933,13 @@ svg.stroke {
 }
 
 .station-code {
-  fill: var(--lc);
-  font: 600 12px var(--font-mono);
+  fill: var(--lc-ink);
+  font: 600 var(--fs-caption) var(--font-mono);
 }
 
 .station-name {
   fill: var(--ink);
-  font: 700 14.5px var(--font-display);
+  font: 700 14.5px var(--font-body);
 }
 
 .station:hover .station-name,
@@ -773,7 +953,7 @@ svg.stroke {
 }
 
 .station:focus-visible .hit {
-  stroke: var(--dot-req);
+  stroke: var(--accent);
   stroke-width: 2.5;
   rx: 12;
 }
@@ -790,7 +970,7 @@ svg.stroke {
 
 .terminal-kicker {
   fill: var(--muted);
-  font: 600 13px var(--font-mono);
+  font: 600 var(--fs-meta) var(--font-mono);
 }
 
 .terminal-name {
@@ -804,7 +984,7 @@ svg.stroke {
 }
 
 .terminal:focus-visible .terminal-pill {
-  stroke: var(--dot-req);
+  stroke: var(--accent);
 }
 
 .route-list {
@@ -829,20 +1009,21 @@ svg.stroke {
 .route-blurb {
   display: block;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--fs-ui);
   line-height: 1.4;
 }
 
+/* Small roundels carry their letter at under 16px, so they sit on the line's ink colour. */
 .roundel-sm {
   display: inline-grid;
   place-items: center;
   flex: none;
   width: 30px;
   height: 30px;
-  border-radius: 50%;
-  background: var(--lc);
+  border-radius: var(--r-round);
+  background: var(--lc-ink);
   color: var(--paper);
-  font: 900 15px/1 var(--font-display);
+  font: 800 15px/1 var(--font-display);
   text-decoration: none;
 }
 
@@ -867,7 +1048,7 @@ svg.stroke {
   height: 18px;
   margin-left: -12px;
   border: 4px solid var(--lc);
-  border-radius: 50%;
+  border-radius: var(--r-round);
   background: var(--paper);
   flex: none;
 }
@@ -878,21 +1059,23 @@ svg.stroke {
 
 .stop-code {
   width: 22px;
-  color: var(--lc);
-  font: 600 12px var(--font-mono);
+  color: var(--lc-ink);
+  font: 600 var(--fs-caption) var(--font-mono);
 }
 
 .stop-name {
   font: 700 16px/1.25 var(--font-display);
 }
 
-/* ------------------------------------------------------------------ lesson shell: bar · stage | panel · dock */
+/* ------------------------------------------------------------------ lesson shell: bar · theatre | panel · dock */
 
 .shell {
+  --bar-h: 56px;
+  --dock-h: 60px;
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(340px, 30vw, 430px);
-  grid-template-rows: 54px minmax(0, 1fr) 62px;
+  grid-template-columns: minmax(0, 1fr) clamp(368px, 31vw, 440px);
+  grid-template-rows: var(--bar-h) minmax(0, 1fr) var(--dock-h);
   grid-template-areas:
     "bar bar"
     "theatre panel"
@@ -910,7 +1093,7 @@ svg.stroke {
   align-items: center;
   gap: 14px;
   min-width: 0;
-  padding: 0 14px 0 16px;
+  padding: 0 12px 0 16px;
   border-bottom: 1px solid var(--rule);
   background: var(--surface);
 }
@@ -952,12 +1135,12 @@ svg.stroke {
   height: 26px;
   padding: 0 5px;
   border: 2px solid var(--lc);
-  border-radius: 999px;
+  border-radius: var(--r-round);
   background: var(--surface);
   color: var(--ink);
-  font: 600 12px/1 var(--font-mono);
+  font: 600 var(--fs-caption)/1 var(--font-mono);
   text-decoration: none;
-  transition: background 0.18s, color 0.18s;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .bar-stops a:hover {
@@ -965,7 +1148,8 @@ svg.stroke {
 }
 
 .bar-stops a[aria-current="page"] {
-  background: var(--lc);
+  border-color: var(--lc-ink);
+  background: var(--lc-ink);
   color: var(--paper);
 }
 
@@ -983,10 +1167,10 @@ svg.stroke {
 .bar-code {
   flex: none;
   padding: 3px 7px;
-  border-radius: 7px;
-  background: var(--lc);
+  border-radius: var(--r-chip);
+  background: var(--lc-ink);
   color: var(--paper);
-  font: 700 13px/1.1 var(--font-mono);
+  font: 600 var(--fs-meta)/1.1 var(--font-mono);
   letter-spacing: 0;
 }
 
@@ -998,40 +1182,634 @@ svg.stroke {
 
 .bar-arrows {
   display: flex;
+  flex: none;
   gap: 2px;
-  margin-left: auto;
 }
 
+/* The theatre holds one sheet: the beat strip along its top edge and the stage. Following a request, the flight strip
+   takes the beat strip's row. */
 .theatre {
   grid-area: theatre;
-  position: relative;
+  display: grid;
+  min-width: 0;
   min-height: 0;
   padding: 14px;
 }
 
-.theatre .stage,
-.hero-stage .stage {
+.sheet {
+  --strip-row: 1;
+  --stage-row: 2;
+  display: grid;
+  grid-template-rows: 36px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sheet);
+  background: var(--stage);
+  box-shadow: var(--e-sheet);
+}
+
+/* The beat strip: what the scene shows, and the beat (or the events) as they happen. Its own row; nothing floats on
+   the stage. */
+.beat {
+  grid-row: var(--strip-row);
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.beat-tone {
+  flex: none;
+  color: var(--tone-text);
+  font: 700 var(--fs-meta)/1.2 var(--font-body);
+  animation: fade-in var(--dur-base) var(--ease-out) both;
+}
+
+.beat-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font: 600 var(--fs-meta)/1.2 var(--font-body);
+}
+
+.beat-text:not(:empty) {
+  padding-left: 12px;
+  border-left: 1px solid var(--rule);
+}
+
+.beat-text > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: beat-in var(--dur-base) var(--ease-out) both;
+}
+
+.beat.fresh .beat-text {
+  color: var(--ink);
+}
+
+@keyframes beat-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* The clock sits in the dock; only phones, whose dock has no room for it, show it on the strip. */
+.beat .slowmo {
+  display: none;
+}
+
+/* Where the step is in its beats: small ink stations, the current one larger. Ink, never a dot colour. */
+.beat-pips {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+
+.beat-pips i {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-round);
+  box-shadow: inset 0 0 0 1.5px var(--rail);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.beat-pips i.past {
+  box-shadow: inset 0 0 0 3px var(--ink-2);
+}
+
+.beat-pips i.on {
+  box-shadow: inset 0 0 0 3px var(--ink);
+  transform: scale(1.35);
+}
+
+/* A wide stage shows the beat beside what it names: the strip then keeps the step's place, not the words. */
+.sheet:has(.callout[data-placed]) .beat-text {
+  visibility: hidden;
+}
+
+.sheet > .stage {
+  grid-row: var(--stage-row);
+  grid-column: 1;
+}
+
+/* The flight strip: one followed request's life, in the beat strip's row while it runs. */
+.flight {
+  grid-row: var(--strip-row);
+  grid-column: 1;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 6px 0 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+  animation: beat-in var(--dur-base) var(--ease-out) both;
+}
+
+.flight-tag {
+  flex: none;
+  color: var(--ink);
+  font: 700 var(--fs-caption)/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.flight-text {
+  flex: 1 1 40%;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font: 600 var(--fs-meta)/1.2 var(--font-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Rails are a thin line, waiting an open box, work a filled one: shape and ink, since the dot colours are taken. */
+.flight-bar {
+  display: flex;
+  flex: 1 1 30%;
+  align-items: center;
+  gap: 1px;
+  min-width: 60px;
+  max-width: 260px;
+  height: 12px;
+}
+
+.hop {
+  min-width: 2px;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.hop-travel {
+  height: 2px;
+  background: var(--rail);
+}
+
+.hop-wait {
+  box-shadow: inset 0 0 0 1.5px var(--ink-2);
+}
+
+.hop-work {
+  background: var(--ink);
+}
+
+.flight-sum {
+  display: flex;
+  flex: none;
+  gap: 10px;
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.flight-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-color: transparent;
+}
+
+/* ------------------------------------------------------------------ beats: callouts, cards, terms */
+
+/* A callout: the beat's words beside what they name, on a card in the stage's clear space, with a short ink leader.
+   The line's colour marks its edge, like an annotation in a field guide. */
+.callout {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  max-width: 264px;
+  padding: 8px 12px 9px;
+  border: 1px solid var(--ink);
+  border-left: 3px solid var(--lc);
+  border-radius: var(--r-ctl);
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--e-raised);
+  font: 600 var(--fs-ui)/1.4 var(--font-body);
+  text-wrap: pretty;
+  animation: callout-in var(--dur-base) var(--ease-out) both;
+}
+
+.callout:not([data-placed]) {
+  visibility: hidden;
+  animation: none;
+}
+
+@keyframes callout-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.callout-leader {
   position: absolute;
   inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  animation: fade-in var(--dur-base) var(--ease-out) both;
 }
 
-.theatre .stage {
-  inset: 14px;
+.callout-leader line {
+  stroke: var(--ink);
+  stroke-width: 1.5px;
 }
 
+.callout-leader circle {
+  fill: var(--ink);
+}
+
+/* A glossary term in running text: its plain words, underlined with dots. A tap opens the definition. */
+.term {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline dotted 1.5px;
+  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
+  text-underline-offset: 3px;
+  cursor: help;
+}
+
+.term:hover {
+  text-decoration-color: currentColor;
+}
+
+/* Touch layouts: a term in the text is a marked word; its button is a chip in the panel. */
+.term-word {
+  text-decoration: underline dotted 1.5px;
+  text-decoration-color: color-mix(in srgb, currentColor 55%, transparent);
+  text-underline-offset: 3px;
+}
+
+.term-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.term-chip {
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--r-round);
+  color: var(--ink-2);
+  font: 600 var(--fs-meta)/1 var(--font-body);
+  text-decoration: underline dotted 1.5px color-mix(in srgb, currentColor 55%, transparent);
+  text-underline-offset: 3px;
+}
+
+/* A term's definition and a metric's explainer: popovers in the Key's style, beside what opened them. */
+.term-pop,
+.metric-pop {
+  position: fixed;
+  inset: auto;
+  width: min(320px, calc(100vw - 24px));
+  max-height: calc(100svh - 24px);
+  margin: 0;
+  overflow-y: auto;
+  padding: 8px 14px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--e-raised);
+}
+
+.term-pop.above {
+  translate: 0 -100%;
+}
+
+.term-pop:popover-open,
+.metric-pop:popover-open {
+  animation: pop-in var(--dur-base) var(--ease-out) both;
+}
+
+.term-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin: 0 -6px 4px 0;
+}
+
+.term-head h2 {
+  margin: 0;
+  font: 600 var(--fs-h3)/1.15 var(--font-guide), Georgia, serif;
+}
+
+.term-alias {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1.3 var(--font-mono);
+}
+
+.term-short,
+.metric-line,
+.metric-why {
+  margin: 0 0 6px;
+  color: var(--ink-2);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+}
+
+.metric-line:first-of-type {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.metric-why strong {
+  color: var(--ink);
+}
+
+.term-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+.term-all {
+  margin-left: auto;
+  font-size: var(--fs-meta);
+}
+
+/* The hook: the question the lesson answers, in the guide's voice. */
+.hook {
+  margin: 4px 0 -2px;
+  color: var(--ink-2);
+  font: italic 500 var(--fs-h3)/1.3 var(--font-guide), Georgia, serif;
+  text-wrap: balance;
+}
+
+/* Cards in the panel: the prediction, the checks and (reduced motion) what to watch. Paper, like the controls. */
+.card,
+.watch {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0 0;
+  padding: 12px 14px;
+}
+
+.watch {
+  gap: 6px;
+  padding-block: 10px;
+  border-radius: var(--r-card);
+  background: var(--paper);
+}
+
+.card-eyebrow {
+  margin: 0;
+  color: var(--lc-ink);
+  font: 700 var(--fs-caption)/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.card-prompt {
+  margin: 0;
+  color: var(--ink);
+  font: 600 17px/1.3 var(--font-guide), Georgia, serif;
+}
+
+.card-options {
+  display: grid;
+  gap: 6px;
+}
+
+.opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-ctl);
+  background: var(--surface);
+  color: var(--ink);
+  font: 600 var(--fs-ui)/1.3 var(--font-body);
+  text-align: left;
+  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.opt:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.opt:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.opt:disabled {
+  opacity: 0.5;
+}
+
+.opt.right {
+  border-color: var(--t-ok);
+  color: var(--t-ok);
+}
+
+.opt.wrong {
+  border-color: var(--t-bad);
+  color: var(--t-bad);
+}
+
+.opt svg,
+.card-result svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  vertical-align: -3px;
+}
+
+.mark-right {
+  color: var(--t-ok);
+}
+
+.mark-wrong {
+  color: var(--t-bad);
+}
+
+.card-result,
+.card-why {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-ui);
+  line-height: 1.45;
+}
+
+.card.done {
+  padding-block: 10px;
+}
+
+.card-result strong {
+  color: var(--ink);
+}
+
+.card-wait {
+  color: var(--muted);
+}
+
+/* Reduced motion: the step's beats as a list; Next brings each on, on a still frame. */
+.watch ol {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: beat;
+}
+
+.watch li {
+  position: relative;
+  padding-left: 26px;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  line-height: 1.35;
+  counter-increment: beat;
+}
+
+.watch li::before {
+  content: counter(beat);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-round);
+  box-shadow: inset 0 0 0 1.5px var(--rail);
+  font: 600 var(--fs-caption)/1 var(--font-mono);
+}
+
+.watch li:not(.now) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watch li.seen {
+  color: var(--ink-2);
+}
+
+.watch li.now {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.watch li.now::before {
+  background: var(--ink);
+  box-shadow: none;
+  color: var(--paper);
+}
+
+/* What the beat points at in the panel (a knob, a fault, a row of numbers): an accent ring, like keyboard focus. */
+.knob.spot,
+.btn-fault.spot {
+  border-radius: var(--r-ctl);
+  box-shadow: 0 0 0 2px var(--accent);
+  animation: spot-in var(--dur-switch) var(--ease-out) both;
+}
+
+.compare tr.spot > * {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+@keyframes spot-in {
+  from {
+    transform: scale(1.03);
+  }
+}
+
+/* The Recap: the lesson's rule in the guide's voice, the claim in numbers. */
+.rule {
+  margin: 2px 0 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--lc);
+  color: var(--ink);
+  font: italic 500 var(--fs-h3)/1.3 var(--font-guide), Georgia, serif;
+  text-wrap: balance;
+}
+
+.in-numbers .card-eyebrow {
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* Follow one request: a dock button. On, it reads like Play. */
+.btn-follow svg {
+  width: 16px;
+}
+
+.btn-follow.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* The panel: a reading part that scrolls if it must, and the numbers pinned under it. */
 .panel {
   grid-area: panel;
-  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  border-left: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.panel-scroll {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 16px 20px 22px;
-  border-left: 1px solid var(--rule);
-  background: var(--surface);
+  padding: 0 20px 16px;
   scrollbar-gutter: stable;
+}
+
+.panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 14px 0 2px;
+  background: var(--surface);
+}
+
+.panel-pin {
+  container-type: inline-size;
+  padding: 10px 20px 12px;
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.summary-row {
+  grid-area: summary;
+  display: none;
+  min-width: 0;
 }
 
 .dock {
@@ -1050,26 +1828,54 @@ svg.stroke {
   flex: 1;
 }
 
+/* Progress: the lesson's steps as stations on a short rail. */
 .dock-progress {
+  position: relative;
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 14px;
+  isolation: isolate;
+}
+
+.dock-progress::before {
+  content: "";
+  position: absolute;
+  inset: 50% 4px auto;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--track);
+  z-index: -1;
 }
 
 .dock-progress i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--track);
-  transition: background 0.25s, transform 0.25s var(--ease-out);
+  width: 10px;
+  height: 10px;
+  border-radius: var(--r-round);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 2px var(--rail);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 .dock-progress i.past {
-  background: color-mix(in srgb, var(--lc) 55%, var(--track));
+  box-shadow: inset 0 0 0 5px color-mix(in srgb, var(--lc) 55%, var(--track));
 }
 
 .dock-progress i.on {
-  background: var(--lc);
-  transform: scale(1.3);
+  box-shadow: inset 0 0 0 5px var(--lc);
+  transform: scale(1.25);
+}
+
+/* Back appears once you leave the first step: it slides in from the side it points to. */
+.btn-back {
+  animation: back-in var(--dur-exit) var(--ease-out) both;
+}
+
+@keyframes back-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
 }
 
 .btn-back svg {
@@ -1092,7 +1898,7 @@ svg.stroke {
 
 .dock-hold {
   color: var(--muted);
-  font: 600 13px var(--font-mono);
+  font: 600 var(--fs-meta) var(--font-mono);
 }
 
 .dock-hold.done {
@@ -1101,37 +1907,40 @@ svg.stroke {
 
 /* panel content */
 
-.why {
-  margin: 0;
-  color: var(--ink-2);
-  font-size: 15px;
-  line-height: 1.5;
-}
-
+/* Step tabs size to their content. When the row runs out of room, the other tabs shrink to their number: the name
+   wraps to a second line inside the tab and is clipped, so it stays the tab's accessible name. */
 .tabs {
   display: flex;
   gap: 3px;
   margin: 0;
   padding: 3px;
   border: 1px solid var(--rule);
-  border-radius: 12px;
+  border-radius: var(--r-card);
   background: var(--paper);
   list-style: none;
 }
 
 .tab {
-  display: inline-flex;
-  flex: 1 1 0;
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  align-content: flex-start;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  min-width: 0;
-  min-height: 40px;
-  padding: 6px 8px;
-  border-radius: 9px;
+  column-gap: 7px;
+  min-width: 44px;
+  height: 40px;
+  overflow: hidden;
+  padding: 0 11px 0 9px;
+  border-radius: calc(var(--r-card) - 3px);
   color: var(--ink-2);
-  font: 700 13.5px/1.15 var(--font-display);
-  transition: background 0.2s, color 0.2s, box-shadow 0.2s, transform 0.12s var(--ease-out);
+  font: 600 var(--fs-ui)/40px var(--font-body);
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
 }
 
 .tab:hover:not(:disabled) {
@@ -1140,13 +1949,21 @@ svg.stroke {
 
 .tab[aria-selected="true"],
 .tab.current {
+  flex-shrink: 0;
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 1px 2px rgb(18 24 38 / 0.12), 0 0 0 1px var(--rule);
+  box-shadow: 0 0 0 1px var(--rule);
 }
 
 .tab:disabled {
   opacity: 0.45;
+}
+
+/* When the names don't all fit (measured in player.tsx), the other tabs are just their numbers. */
+.tabs.tight .tab:not([aria-selected="true"]) {
+  flex: none;
+  width: 44px;
+  padding: 0;
 }
 
 .tab-n {
@@ -1155,74 +1972,64 @@ svg.stroke {
   flex: none;
   width: 20px;
   height: 20px;
-  border-radius: 50%;
+  margin-block: 10px;
+  border-radius: var(--r-round);
   background: var(--track);
   color: var(--ink-2);
-  font: 600 11px/1 var(--font-mono);
-  transition: background 0.2s, color 0.2s;
+  font: 600 var(--fs-caption)/1 var(--font-mono);
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .tab[aria-selected="true"] .tab-n,
 .tab.current .tab-n {
   background: var(--tone, var(--ink));
-  color: #fff;
+  color: var(--on-tone, var(--paper));
 }
 
 .tab.cleared .tab-n {
-  background: var(--dot-ok);
-  color: #fff;
+  background: var(--good);
+  color: var(--on-good);
 }
 
 .step {
-  animation: step-in 0.34s var(--ease-out) both;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: step-in var(--dur-base) var(--ease-out) both;
 }
 
 @keyframes step-in {
   from {
     opacity: 0;
     transform: translateY(8px);
-    filter: blur(3px);
   }
 }
 
-.step-tag {
-  display: inline-block;
-  margin: 0;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--tone) 13%, transparent);
-  color: var(--tone-text);
-  font: 600 11.5px/1.3 var(--font-mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
 .step-title {
-  margin: 8px 0 5px;
-  font-size: 20px;
-  font-weight: 800;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
+  margin: 2px 0 0;
+  font: 600 var(--fs-step)/1.15 var(--font-guide), Georgia, serif;
+  letter-spacing: -0.01em;
 }
 
 .step-text {
   margin: 0;
   color: var(--ink-2);
-  font-size: 15px;
+  font-size: var(--fs-body);
   line-height: 1.55;
 }
 
-.tone-problem { --tone: var(--dot-err); --tone-text: var(--t-bad); }
-.tone-fix { --tone: var(--dot-ok); --tone-text: var(--t-ok); }
-.tone-tradeoff { --tone: var(--dot-stale); --tone-text: var(--dot-stale); }
-.tone-explore { --tone: var(--dot-req); --tone-text: var(--dot-req); }
+.tone-problem { --tone: var(--bad); --on-tone: var(--on-bad); --tone-text: var(--t-bad); }
+.tone-fix { --tone: var(--good); --on-tone: var(--on-good); --tone-text: var(--t-ok); }
+/* A trade-off has no better side, so it takes no colour: violet means a stale answer on the stage. */
+.tone-tradeoff { --tone: var(--ink); --on-tone: var(--paper); --tone-text: var(--ink-2); }
+.tone-explore { --tone: var(--accent); --on-tone: var(--on-accent); --tone-text: var(--t-req); }
 
 .controls {
   display: grid;
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 2px;
   padding: 10px 12px;
-  border-radius: 14px;
+  border-radius: var(--r-card);
   background: var(--paper);
 }
 
@@ -1235,21 +2042,21 @@ svg.stroke {
 
 .knob-label,
 .knob-choice legend {
-  font: 700 14px/1.2 var(--font-display);
+  font: 700 var(--fs-ui)/1.2 var(--font-body);
 }
 
 .knob-value {
-  color: var(--dot-req);
-  font: 600 14px var(--font-mono);
+  color: var(--t-req);
+  font: 600 var(--fs-ui) var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
 .knob-range input {
   grid-column: 1 / -1;
   width: 100%;
-  height: 30px;
+  height: 24px;
   margin: 0;
-  accent-color: var(--dot-req);
+  accent-color: var(--accent);
   cursor: pointer;
 }
 
@@ -1266,24 +2073,22 @@ svg.stroke {
 .takeaways {
   display: grid;
   gap: 14px;
-  margin: 0;
+  margin: 4px 0 0;
 }
 
 .takeaways dt {
-  color: var(--lc);
-  font: 800 12.5px/1.2 var(--font-display);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  color: var(--lc-ink);
+  font: 600 17px/1.2 var(--font-guide), Georgia, serif;
 }
 
 .takeaways dd {
   margin: 4px 0 0;
   color: var(--ink-2);
-  font-size: 15px;
+  font-size: var(--fs-body);
   line-height: 1.5;
 }
 
-/* comparison table */
+/* comparison table: both columns at full strength; a 2px line-colour rule marks the step on screen */
 
 .compare {
   width: 100%;
@@ -1291,72 +2096,202 @@ svg.stroke {
   font-variant-numeric: tabular-nums;
 }
 
+.compare:focus-visible {
+  outline-offset: 4px;
+}
+
 .compare th,
 .compare td {
-  padding: 7px 6px;
+  padding: 5px 4px;
   border-bottom: 1px solid var(--rule);
   text-align: right;
   white-space: nowrap;
 }
 
+.compare tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
 .compare thead th {
   padding-top: 0;
+  padding-bottom: 4px;
   color: var(--muted);
-  font: 700 12px/1.2 var(--font-display);
+  font: 600 var(--fs-caption)/1.15 var(--font-body);
+  white-space: normal;
   vertical-align: bottom;
-  transition: color 0.2s;
 }
 
 .compare thead th.on {
   color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--lc);
 }
 
 .compare tbody th {
+  padding-left: 0;
   color: var(--ink-2);
-  font: 700 13px/1.2 var(--font-display);
+  font: 700 var(--fs-meta)/1.2 var(--font-body);
   text-align: left;
   white-space: normal;
-  cursor: help;
 }
 
-.compare tbody th span {
+.compare tbody th .mx {
   display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: underline dotted 1px color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.compare tbody th .mx:hover {
+  color: var(--ink);
+}
+
+/* "target ≤ 400 ms" under a response-time label */
+.compare .target,
+.mrow .target {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1.2 var(--font-mono);
+  white-space: nowrap;
+}
+
+.compare td.num {
+  padding-left: 8px;
+  color: var(--ink);
+  font: 600 var(--fs-ui)/1.2 var(--font-mono);
+}
+
+.compare td.tone-good,
+.summary .num.tone-good { color: var(--t-ok); }
+.compare td.tone-warn,
+.summary .num.tone-warn { color: var(--t-warn); }
+.compare td.tone-bad,
+.summary .num.tone-bad { color: var(--t-bad); }
+
+.compare td.delta,
+.summary .delta {
+  color: var(--muted);
+  font: 600 var(--fs-meta)/1.2 var(--font-mono);
+}
+
+.compare td.delta.up,
+.summary .delta.up {
+  color: var(--t-ok);
+}
+
+.compare td.delta.down,
+.summary .delta.down {
+  color: var(--t-bad);
+}
+
+/* A number that crosses into a new tone, or a change that flips direction, nudges into place once. */
+.compare .cue {
+  display: inline-block;
+  animation: cue var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes cue {
+  from {
+    opacity: 0.3;
+    transform: translateY(3px);
+  }
+}
+
+/* The change's size as a thin bar under it: full width at a doubling (or from nothing), never longer. */
+.delta-bar {
+  display: block;
+  width: 36px;
+  height: 2px;
+  margin: 3px 0 0 auto;
+  border-radius: 1px;
+  background: currentColor;
+  opacity: 0.75;
+  transform-origin: right;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.compare td.trend {
+  width: 44px;
+  padding-right: 0;
 }
 
 .compare .spark {
   display: block;
-  width: 56px;
+  width: 40px;
   height: 14px;
-  margin-top: 3px;
-  color: var(--muted);
+  margin-left: auto;
 }
 
-.compare td.num {
+/* A narrow panel drops the trend column rather than let the numbers run past its edge. */
+@container (max-width: 349px) {
+  .compare .trend,
+  .compare .trend-h {
+    display: none;
+  }
+}
+
+/* Phones: the headline number in one pinned row. Tapping it brings the full table into view. */
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  padding: 0 16px;
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
+  text-align: left;
+}
+
+/* Up to two lines, so a narrow row shortens the label's line, not the label. */
+.summary-label {
+  display: -webkit-box;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font: 700 var(--fs-meta)/1.15 var(--font-body);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.summary-vals {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 600 15px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.summary-vals .num {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 3px;
   color: var(--ink);
-  font: 600 15px/1.2 var(--font-mono);
-  opacity: 0.5;
-  transition: opacity 0.25s, color 0.3s;
 }
 
-.compare td.num.on {
-  opacity: 1;
+.summary-vals .num.on {
+  box-shadow: inset 0 -2px 0 var(--lc);
 }
 
-.compare td.tone-good { color: var(--t-ok); }
-.compare td.tone-warn { color: var(--t-warn); }
-.compare td.tone-bad { color: var(--t-bad); }
-
-.compare td.delta {
+.summary-vals svg {
+  width: 13px;
+  height: 13px;
   color: var(--muted);
-  font: 600 12.5px/1.2 var(--font-mono);
 }
 
-.compare td.delta.up {
-  color: var(--t-ok);
-}
-
-.compare td.delta.down {
-  color: var(--t-bad);
+.summary .delta {
+  min-width: 44px;
+  text-align: right;
 }
 
 /* metric list (hero, capstone) */
@@ -1378,7 +2313,7 @@ svg.stroke {
 
 .mrow dt {
   color: var(--ink-2);
-  font: 700 13px/1.2 var(--font-display);
+  font: 700 var(--fs-meta)/1.2 var(--font-body);
   cursor: help;
 }
 
@@ -1409,16 +2344,14 @@ svg.stroke {
   stroke-linejoin: round;
 }
 
-/* ------------------------------------------------------------------ stage */
+/* ------------------------------------------------------------------ stage: a paper sheet; only the dots are saturated */
 
+/* The stage fills its row of the sheet; the sheet draws the paper, the edge and the corners. */
 .stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--rule);
-  border-radius: 16px;
-  background-color: var(--stage);
-  background-image: radial-gradient(var(--grid) 1.1px, transparent 1.3px);
-  background-size: 22px 22px;
-  background-position: 11px 11px;
 }
 
 .stage-svg,
@@ -1452,33 +2385,20 @@ svg.stroke {
   display: block;
 }
 
-.stage-tag {
-  position: absolute;
-  left: 26px;
-  top: 26px;
-  z-index: 2;
-  padding: 5px 11px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--tone) 14%, var(--surface));
-  color: var(--tone-text);
-  font: 700 12.5px/1.2 var(--font-display);
-  pointer-events: none;
-  animation: tag-in 0.4s var(--ease-out) both;
-}
-
-@keyframes tag-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-
-.hero-stage .stage-tag {
-  display: none;
-}
-
+/* A step switch is two beats of one family: parts leave and stations start gliding at once; new parts, their links and
+   the accent ring follow one beat (120 ms) later. */
 .link-g {
-  animation: fade-in 0.5s ease-out both;
+  animation: fade-in var(--dur-base) var(--ease-out) var(--beat) both;
+}
+
+.link-g.leaving {
+  animation: fade-out var(--dur-exit) var(--ease-exit) both;
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
 }
 
 @keyframes fade-in {
@@ -1487,66 +2407,173 @@ svg.stroke {
   }
 }
 
+/* Links are rails: two thin lines with a lighter core, a constant 8px wide on every screen. */
+.rail,
+.rail-core,
 .link {
   fill: none;
-  stroke: var(--track);
-  stroke-width: 11;
   stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.rail {
+  stroke: var(--rail);
+  stroke-width: 8px;
+}
+
+.rail-core {
+  stroke: var(--rail-core);
+  stroke-width: 5px;
 }
 
 .link.sync {
   stroke: var(--muted);
-  stroke-width: 2.5;
+  stroke-width: 2.5px;
   stroke-dasharray: 2 7;
-  opacity: 0.7;
 }
 
-.link.cut {
-  stroke: color-mix(in srgb, var(--dot-err) 30%, var(--track));
+.link-g.cut .rail,
+.link-g.cut .link {
+  stroke: color-mix(in srgb, var(--dot-err) 45%, var(--rail));
   stroke-dasharray: 12 10;
-  stroke-width: 5;
-  opacity: 1;
 }
 
-.cut-mark circle {
-  fill: var(--dot-err);
+.link-g.cut .rail-core {
+  opacity: 0;
 }
 
-.cut-mark path {
-  stroke: #fff;
+/* Traffic glow: a rail lights up as strongly as the traffic it carries, and reddens when most of it fails. */
+.link-flow {
+  fill: none;
+  stroke: var(--dot-req);
+  stroke-width: 5px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  transition: opacity var(--dur-base) var(--ease-linear);
+}
+
+.link-flow.failing {
+  stroke: var(--dot-err);
+}
+
+/* Marks on a rail (a cut network, an open breaker) scale in once. */
+.mark {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mark-in var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes mark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+.break-mark rect {
+  fill: var(--stage);
+}
+
+.break-mark path {
+  fill: none;
+  stroke: var(--bad);
   stroke-width: 2.4;
   stroke-linecap: round;
 }
 
-.link-label {
-  fill: var(--muted);
-  font: 600 11.5px var(--font-mono);
+.cut-mark circle {
+  fill: var(--bad);
+}
+
+.cut-mark path {
+  stroke: var(--on-bad);
+  stroke-width: 2.4;
+  stroke-linecap: round;
 }
 
 .node-pos {
-  transition: transform 0.6s var(--ease-out);
+  transition: transform var(--dur-switch) var(--ease-out), opacity var(--dur-base) var(--ease-linear);
 }
 
 .node {
   transform-box: fill-box;
   transform-origin: center;
-  animation: node-in 0.5s var(--ease-out) both;
+  transition: opacity var(--dur-base) var(--ease-linear);
+}
+
+/* A part a step adds enters on the second beat; a part a step removes shrinks a little and fades. */
+.node.entering {
+  animation: node-in var(--dur-base) var(--ease-out) var(--beat) both;
+}
+
+.node.leaving {
+  animation: node-leave var(--dur-exit) var(--ease-exit) both;
 }
 
 @keyframes node-in {
   from {
     opacity: 0;
-    transform: scale(0.9);
+    transform: scale(0.94);
   }
+}
+
+@keyframes node-leave {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+/* The scene intro, once per lesson: stations build in along the flow, 60 ms apart, and each link draws itself from
+   its upstream end. Parts the previous lesson already showed are simply there. */
+.stage[data-intro] .node:not(.known) {
+  animation: node-in var(--intro-node) var(--ease-out) calc(var(--i, 0) * var(--intro-step)) both;
+}
+
+.stage[data-intro] .link-g:not(.known) {
+  animation: none;
+}
+
+.stage[data-intro] .link-g.flow:not(.known) :is(.rail, .rail-core) {
+  animation: link-draw var(--intro-stroke) var(--ease-out) calc(var(--i, 0) * var(--intro-step) + var(--beat)) both;
+}
+
+.stage[data-intro] .link-g.sync:not(.known) {
+  animation: fade-in var(--intro-stroke) var(--ease-out) calc(var(--i, 0) * var(--intro-step) + var(--beat)) both;
+}
+
+.stage[data-intro] .link-g:not(.known) .link-flow {
+  visibility: hidden;
+}
+
+/* Rails keep a constant width on screen, so their dashes are measured on screen too: --len is the link's length in px. */
+@keyframes link-draw {
+  from {
+    stroke-dasharray: calc(var(--len) * 1px) calc(var(--len) * 1px);
+    stroke-dashoffset: calc(var(--len) * 1px);
+  }
+  to {
+    stroke-dasharray: calc(var(--len) * 1px) calc(var(--len) * 1px);
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Focus: what the narration points at stays; the rest of the stage steps back. */
+.stage[data-focus] .node-pos.dim {
+  opacity: 0.45;
+}
+
+.stage[data-focus] .link-g.dim {
+  opacity: 0.5;
 }
 
 .fresh-ring {
   fill: none;
-  stroke: var(--dot-req);
-  stroke-width: 3;
+  stroke: var(--accent);
+  stroke-width: 2.5;
   transform-box: fill-box;
   transform-origin: center;
-  animation: fresh 0.9s var(--ease-out) both;
+  animation: fresh var(--dur-switch) var(--ease-out) var(--beat) both;
   pointer-events: none;
 }
 
@@ -1561,17 +2588,18 @@ svg.stroke {
   }
 }
 
-.node .body {
+/* Stations: ink line art on a card one step lighter than the sheet, at a constant 1.5px stroke. */
+.node .body,
+.node .rim {
   fill: var(--card);
-  stroke: var(--card-line);
-  stroke-width: 2;
-  transition: stroke 0.25s, fill 0.25s;
+  stroke: var(--ink);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  transition: stroke var(--dur-base) var(--ease-out), fill var(--dur-base) var(--ease-out);
 }
 
 .node .rim {
   fill: none;
-  stroke: var(--card-line);
-  stroke-width: 2;
 }
 
 .node .ico {
@@ -1582,89 +2610,105 @@ svg.stroke {
   stroke-linejoin: round;
 }
 
+/* Sockets are embossed: a slightly sunken well with a hairline edge. */
 .node .socket {
   fill: var(--socket);
+  stroke: var(--socket-edge);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+/* The narration points at a station's workers: their sockets take an ink edge. */
+.node.spot-sockets .socket {
+  stroke: var(--ink);
+  stroke-width: 1.75px;
 }
 
 .node .tick {
-  stroke: var(--track);
+  stroke: var(--rule);
   stroke-width: 1.5;
 }
 
-.g-client .body,
-.g-bot .body {
-  fill: var(--ink);
-  stroke: var(--ink);
-}
-
-.g-client .ico,
-.g-bot .ico {
-  stroke: var(--paper);
+.node .platform {
+  fill: none;
+  stroke: var(--rail);
+  stroke-width: 2px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
 }
 
 .g-bot .body {
-  fill: color-mix(in srgb, var(--dot-err) 75%, var(--ink));
-  stroke: color-mix(in srgb, var(--dot-err) 75%, var(--ink));
+  fill: color-mix(in srgb, var(--dot-err) 9%, var(--card));
 }
 
 .g-queue .body {
   fill: var(--paper);
 }
 
+/* Stage text stays at its CSS size: the SVG scales by --k (px per unit) and each station by --ns. */
 .node-label {
   fill: var(--ink);
-  font: 700 13.5px var(--font-display);
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: calc(var(--label-px) / var(--k, 1) / var(--ns, 1));
 }
 
 .node-sub {
   fill: var(--muted);
-  font: 500 11px var(--font-mono);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-weight: 500;
+  font-size: calc(var(--sub-px) / var(--k, 1) / var(--ns, 1));
+}
+
+.link-label {
+  fill: var(--muted);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-weight: 500;
+  font-size: calc(var(--sub-px) / var(--k, 1));
 }
 
 .node-label,
-.node-sub,
-.link-label {
+.node-sub {
   paint-order: stroke;
   stroke: var(--stage);
-  stroke-width: 4px;
+  stroke-width: calc(4px / var(--k, 1) / var(--ns, 1));
   stroke-linejoin: round;
 }
 
-.stage-compact .node-label {
-  font-size: 16px;
+/* A label that has to lie across a rail sits on a plate in the sheet's colour; the rail runs under it. */
+.label-plate {
+  fill: var(--stage);
 }
 
-.stage-compact .node-sub {
-  font-size: 13px;
-}
-
-.stage-tall .node-label {
-  font-size: 16px;
-}
-
-.stage-tall .node-sub,
-.stage-tall .link-label,
-.stage-compact .link-label {
-  font-size: 13px;
+.link-label {
+  paint-order: stroke;
+  stroke: var(--stage);
+  stroke-width: calc(4px / var(--k, 1));
+  stroke-linejoin: round;
 }
 
 .node.hot .body {
   stroke: var(--dot-slow);
-  stroke-width: 3;
+  stroke-width: 2.5px;
 }
 
 .node.down .body {
   stroke: var(--dot-err);
   stroke-dasharray: 6 4;
-  fill: color-mix(in srgb, var(--dot-err) 9%, var(--card));
+  fill: color-mix(in srgb, var(--dot-err) 8%, var(--card));
 }
 
 .node.down .ico {
-  stroke: var(--dot-err);
+  stroke: var(--t-bad);
 }
 
 .node.down .node-sub {
   fill: var(--t-bad);
+}
+
+/* Stalled: no worker takes anything. A dashed ink edge, like a pause. */
+.node.stalled .body {
+  stroke-dasharray: 6 4;
 }
 
 .node.benched .body {
@@ -1675,6 +2719,44 @@ svg.stroke {
 .node.booting .body {
   stroke: var(--dot-req);
   stroke-dasharray: 5 5;
+}
+
+/* A crash: the station's frame drops a little and settles there while it is down. Booting: it rises into place. */
+.node .frame {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.node.down .frame {
+  animation: node-drop var(--dur-base) var(--ease-out) both;
+}
+
+.node.booting .frame {
+  animation: node-in var(--dur-switch) var(--ease-out) both;
+}
+
+@keyframes node-drop {
+  45% {
+    transform: translateY(3px);
+  }
+  to {
+    transform: translateY(1.5px);
+  }
+}
+
+/* A replica with a copy still on its way: a violet rule under its platform (violet, as in a stale answer). */
+.behind-mark {
+  fill: none;
+  stroke: var(--dot-stale);
+  stroke-width: 2.5px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-linear);
+}
+
+.behind-mark.on {
+  opacity: 1;
 }
 
 .node.draining {
@@ -1694,68 +2776,86 @@ svg.stroke {
   fill: var(--track);
 }
 
+.meter .fill {
+  transform-box: fill-box;
+  transform-origin: left center;
+  transition: transform var(--dur-base) var(--ease-linear);
+}
+
 .fill-good { fill: var(--dot-ok); }
 .fill-warn { fill: var(--dot-slow); }
 .fill-bad { fill: var(--dot-err); }
 .fill-cache { fill: var(--dot-req); }
 
+/* Shoulder badges: state on the right in a filled tone, role on the left as an outlined tag. */
+.badge {
+  animation: fade-in var(--dur-exit) var(--ease-out) both;
+}
+
 .badge rect {
   fill: var(--muted);
 }
 
-.badge-bad rect { fill: var(--dot-err); }
-.badge-warn rect { fill: var(--dot-slow); }
-.badge-good rect { fill: var(--dot-ok); }
-
 .badge text {
-  fill: #fff;
-  font: 700 10px var(--font-mono);
+  fill: var(--paper);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-weight: 700;
+  font-size: calc(var(--badge-px) / var(--k, 1) / var(--ns, 1));
   letter-spacing: 0.04em;
 }
 
-.note {
-  position: absolute;
-  top: 26px;
-  left: 50%;
-  z-index: 3;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: calc(100% - 140px);
-  margin: 0;
-  padding: 7px 13px 7px 11px;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--paper);
-  font: 700 13.5px/1.2 var(--font-display);
-  opacity: 0;
-  transform: translate(-50%, -6px);
-  transition: opacity 0.25s, transform 0.35s var(--ease-out);
-  pointer-events: none;
+.badge-bad rect { fill: var(--bad); }
+.badge-bad text { fill: var(--on-bad); }
+.badge-warn rect { fill: var(--warn); }
+.badge-warn text { fill: var(--on-warn); }
+.badge-good rect { fill: var(--good); }
+.badge-good text { fill: var(--on-good); }
+
+.badge-role rect {
+  fill: var(--card);
+  stroke: var(--ink);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
 }
 
-.hero-stage .note {
-  top: 12px;
+.badge-role text {
+  fill: var(--ink);
 }
 
-.note::before {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--dot-slow);
-  flex: none;
+/* The countdown to an armed event at this station (a stall ends in "0.6 s"): an outlined tag, dashed like a pause. */
+.badge-clock rect {
+  fill: var(--card);
+  stroke: var(--ink);
+  stroke-width: 1px;
+  stroke-dasharray: 3 2;
+  vector-effect: non-scaling-stroke;
 }
 
-.note.on {
-  opacity: 1;
-  transform: translate(-50%, 0);
+.badge-clock text {
+  fill: var(--ink);
 }
 
-.theatre .key {
-  top: 26px;
-  right: 26px;
+/* The breaker's pill: the marker slides along the foot between closed, testing and open. */
+.badge.pill {
+  animation: none;
 }
+
+.pill .pill-track,
+.pill .pill-marker {
+  fill: var(--on-tone-pill, var(--paper));
+}
+
+.pill .pill-track {
+  opacity: 0.35;
+}
+
+.pill .pill-marker {
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.pill.badge-good { --on-tone-pill: var(--on-good); }
+.pill.badge-warn { --on-tone-pill: var(--on-warn); }
+.pill.badge-bad { --on-tone-pill: var(--on-bad); }
 
 /* ------------------------------------------------------------------ capstone */
 
@@ -1764,36 +2864,41 @@ svg.stroke {
   grid-template-columns: 1fr 1fr;
 }
 
+/* Stage names are longer than step names: they wrap inside a two-by-two grid instead of shrinking to numbers. */
 .cap-stages .tab {
+  flex-wrap: nowrap;
   justify-content: flex-start;
   width: 100%;
   height: 100%;
+  min-height: 44px;
+  padding-block: 6px;
+  line-height: 1.2;
   text-align: left;
+  white-space: normal;
 }
 
-.cap-hint {
-  margin-top: 10px;
+.cap-stages .tab-n {
+  margin-block: 0;
 }
 
 .cap-hint summary {
   width: fit-content;
-  color: var(--dot-req);
-  font: 700 14.5px var(--font-display);
+  color: var(--t-req);
+  font: 700 var(--fs-ui) var(--font-body);
   cursor: pointer;
 }
 
 .cap-hint p {
   margin: 6px 0 0;
   color: var(--ink-2);
-  font-size: 15px;
+  font-size: var(--fs-body);
 }
 
 .cap-build {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 16px;
+  gap: 10px;
   padding: 12px 14px;
-  border-radius: 14px;
+  border-radius: var(--r-card);
   background: var(--paper);
 }
 
@@ -1806,14 +2911,14 @@ svg.stroke {
 }
 
 .stepper-label {
-  font: 700 14px/1.2 var(--font-display);
+  font: 700 var(--fs-ui)/1.2 var(--font-body);
 }
 
 .stepper-ctl {
   display: inline-flex;
   align-items: center;
   border: 1px solid var(--rule);
-  border-radius: 10px;
+  border-radius: var(--r-ctl);
   background: var(--surface);
 }
 
@@ -1850,9 +2955,9 @@ svg.stroke {
   flex: none;
   width: 46px;
   height: 28px;
-  border-radius: 999px;
+  border-radius: var(--r-round);
   background: var(--track);
-  transition: background 0.2s;
+  transition: background-color var(--dur-base) var(--ease-out);
 }
 
 .toggle-ui::after {
@@ -1862,14 +2967,14 @@ svg.stroke {
   left: 3px;
   width: 22px;
   height: 22px;
-  border-radius: 50%;
+  border-radius: var(--r-round);
   background: var(--surface);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
-  transition: transform 0.25s var(--ease-out);
+  box-shadow: 0 1px 3px rgb(21 23 28 / 0.3);
+  transition: transform var(--dur-base) var(--ease-out);
 }
 
 .toggle input:checked + .toggle-ui {
-  background: var(--dot-ok);
+  background: var(--good);
 }
 
 .toggle input:checked + .toggle-ui::after {
@@ -1877,7 +2982,7 @@ svg.stroke {
 }
 
 .toggle input:focus-visible + .toggle-ui {
-  outline: 3px solid var(--dot-req);
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -1893,7 +2998,7 @@ svg.stroke {
 
 .cap-cost span {
   color: var(--muted);
-  font: 600 12px var(--font-mono);
+  font: 600 var(--fs-caption) var(--font-mono);
 }
 
 .cap-cost strong {
@@ -1905,70 +3010,150 @@ svg.stroke {
   gap: 8px;
 }
 
+/* The target as two cells: each live value beside the line it must stay under. Neutral until there is data. */
 .cap-target {
-  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.cap-cell {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-ctl);
+  background: var(--paper);
+}
+
+.cap-cell-label {
   color: var(--ink-2);
-  font: 600 12.5px/1.4 var(--font-mono);
+  font: 700 var(--fs-meta)/1.2 var(--font-body);
 }
 
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.cap-cell .num {
+  color: var(--muted);
+  font: 700 19px/1.15 var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
-.chip {
-  padding: 5px 10px;
-  border-radius: 999px;
-  font: 600 13px/1.2 var(--font-mono);
-}
-
-.chip.pass {
-  background: color-mix(in srgb, var(--dot-ok) 16%, transparent);
+.cap-cell.pass .num {
   color: var(--t-ok);
 }
 
-.chip.fail {
-  background: color-mix(in srgb, var(--dot-err) 13%, transparent);
+.cap-cell.fail {
+  border-color: color-mix(in srgb, var(--bad) 45%, var(--rule));
+}
+
+.cap-cell.fail .num {
   color: var(--t-bad);
 }
 
+.cap-cell .target {
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1.2 var(--font-mono);
+}
+
+.hold-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .hold {
+  flex: 1;
   height: 10px;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--r-round);
   background: var(--track);
 }
 
 .hold-bar {
   display: block;
   height: 100%;
-  background: var(--dot-ok);
+  background: var(--good);
   transform-origin: left;
-  transition: transform 0.2s linear;
+  transition: transform 0.2s var(--ease-linear);
 }
 
 .hold-text {
+  flex: none;
   margin: 0;
-  font: 600 13px var(--font-mono);
+  font: 600 var(--fs-meta) var(--font-mono);
+  white-space: nowrap;
 }
 
 .cap-win {
   margin: 0;
   padding: 12px 14px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--dot-ok) 14%, var(--surface));
+  border-radius: var(--r-card);
+  background: color-mix(in srgb, var(--good) 14%, var(--surface));
   font-weight: 700;
 }
 
+/* The glossary: every term in plain words, with the lesson that shows it. */
+.glossary {
+  padding: var(--sp-8) 0 var(--sp-9);
+}
+
+.glossary h1 {
+  margin: 12px 0 0;
+  font: 600 clamp(2rem, 4.4vw, 3rem)/1.08 var(--font-guide), Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+.glossary .lede {
+  max-width: 36em;
+}
+
+.glossary-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: var(--sp-4);
+  margin: var(--sp-7) 0 0;
+}
+
+.glossary-list > div {
+  scroll-margin-top: 24px;
+  padding: var(--sp-4) var(--sp-4) var(--sp-4) 18px;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--ink);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.glossary-list dt {
+  font: 600 var(--fs-h3)/1.2 var(--font-guide), Georgia, serif;
+}
+
+.glossary-alias {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1.3 var(--font-mono);
+}
+
+.glossary-list dd {
+  margin: 8px 0 0;
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+}
+
+.glossary-where {
+  display: block;
+  margin-top: 10px;
+  font-size: var(--fs-meta);
+}
+
 .lost {
-  padding-top: 96px;
+  padding-top: var(--sp-9);
 }
 
 .lost h1 {
   margin: 12px 0;
   font-size: clamp(2rem, 5vw, 3.4rem);
-  font-weight: 900;
+  font-weight: 800;
   letter-spacing: -0.03em;
 }
 
@@ -1976,16 +3161,25 @@ svg.stroke {
 
 @media (max-width: 1180px) {
   .shell {
-    grid-template-columns: minmax(0, 1fr) 340px;
-  }
-  .slowmo {
-    display: none;
+    grid-template-columns: minmax(0, 1fr) 368px;
   }
 }
 
 @media (max-width: 1000px) {
   .bar-stops {
     display: none;
+  }
+}
+
+/* Short laptop screens (1280×720): a slimmer bar and dock and a smaller step title keep every problem and fix
+   panel from scrolling. */
+@media (max-height: 760px) and (min-width: 761px) {
+  .shell {
+    --bar-h: 52px;
+    --dock-h: 56px;
+  }
+  .step-title {
+    font-size: 22px;
   }
 }
 
@@ -2005,11 +3199,25 @@ svg.stroke {
   }
 }
 
-/* Phones (portrait): bar, stage, the scrolling panel, then the dock. The document itself never scrolls. */
-@media (max-width: 760px) {
+/* Phones and narrow windows (portrait): bar, stage, the headline number, the panel, then the dock. The panel
+   scrolls as one (its tabs stay put); the document itself never scrolls. The theatre gets 46svh so that, after the
+   beat strip, a phone's stage is still at least 0.85 as tall as it is wide: the stage's portrait layouts need that.
+   Small phones held sideways are narrow too; they take the landscape layout below instead. */
+@media (max-width: 760px) and (orientation: portrait), (max-width: 760px) and (min-height: 521px) {
   .shell {
+    --bar-h: 48px;
+    --dock-h: 56px;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 50px clamp(220px, 44svh, 440px) minmax(0, 1fr) auto;
+    grid-template-rows: var(--bar-h) 46svh 44px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "bar"
+      "theatre"
+      "summary"
+      "panel"
+      "dock";
+  }
+  .shell:not(:has(> .summary-row)) {
+    grid-template-rows: var(--bar-h) 46svh minmax(0, 1fr) auto;
     grid-template-areas:
       "bar"
       "theatre"
@@ -2017,8 +3225,8 @@ svg.stroke {
       "dock";
   }
   .bar {
-    gap: 10px;
-    padding: 0 6px 0 12px;
+    gap: 8px;
+    padding: 0 4px 0 12px;
   }
   .bar .brand-name,
   .bar-line {
@@ -2030,101 +3238,301 @@ svg.stroke {
   .theatre {
     padding: 8px 8px 6px;
   }
-  .theatre .stage {
-    inset: 8px 8px 6px;
-    border-radius: 14px;
+  /* The beat strip moves to the sheet's bottom edge and carries the clock. Phones have no room for a callout, so the
+     strip carries the beat's words: two lines of them, over a row with the step's place and the clock. */
+  .sheet {
+    --strip-row: 2;
+    --stage-row: 1;
+    grid-template-rows: minmax(0, 1fr) 56px;
+    border-radius: var(--r-card);
   }
-  .note {
-    top: 16px;
-    left: 16px;
-    max-width: calc(100% - 100px);
-    font-size: 12.5px;
-    transform: translate(0, -6px);
+  .beat,
+  .flight {
+    border-top: 1px solid var(--rule);
+    border-bottom: 0;
   }
-  .note.on {
-    transform: none;
+  .beat {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "text text text text"
+      "tone pips . clock";
+    align-items: center;
+    gap: 2px 10px;
+    padding: 5px 12px 4px;
   }
-  .theatre .key {
-    top: 16px;
-    right: 16px;
+  .beat-tone {
+    grid-area: tone;
+    font-size: var(--fs-caption);
   }
-  .stage-tag {
-    display: none;
+  .beat-text {
+    grid-area: text;
   }
-  .tab {
-    font-size: 13px;
+  .beat-text:not(:empty) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .beat-text > span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    line-height: 1.3;
+  }
+  .beat-pips {
+    grid-area: pips;
+  }
+  .beat .slowmo {
+    grid-area: clock;
+    display: block;
+  }
+  /* Two rows: what the request is doing, then its timeline and totals. The close button sits beside both. */
+  .flight {
+    position: relative;
+    flex-wrap: wrap;
+    align-content: center;
+    gap: 4px 10px;
+    padding: 4px 48px 4px 12px;
+  }
+  .flight-text {
+    flex: 1 1 60%;
+  }
+  .flight-bar {
+    order: 3;
+    flex: 1 1 30%;
+  }
+  .flight-sum {
+    order: 4;
+    gap: 6px;
+  }
+  .flight-close {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    width: 40px;
+    height: 40px;
+    translate: 0 -50%;
+  }
+  .summary-row {
+    display: block;
+  }
+  .summary {
+    border-bottom: 1px solid var(--rule);
   }
   .panel {
-    gap: 14px;
-    padding: 14px 16px 18px;
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     border-left: 0;
-    border-top: 1px solid var(--rule);
+  }
+  .panel-scroll {
+    overflow: visible;
+    padding: 0 16px 16px;
     scrollbar-gutter: auto;
+  }
+  .panel-head {
+    padding-top: 10px;
+    box-shadow: 0 8px 10px -10px rgb(21 23 28 / 0.3);
+  }
+  .panel-pin {
+    padding: 4px 16px 18px;
+    border-top: 0;
   }
   .dock {
     gap: 8px;
-    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
   }
-  .seg-speed,
+  .dock .slowmo,
   .dock-progress,
   .btn-back,
   .when-wide {
     display: none;
   }
-  .speed-cycle {
-    display: inline-flex;
-  }
   .btn-next {
-    padding: 0 16px;
+    gap: 6px;
+    padding: 0 12px;
   }
-  .why {
-    font-size: 14.5px;
-  }
-  .capstone .why {
-    display: none;
-  }
-  .panel > .tabs {
-    position: sticky;
-    top: -14px;
-    z-index: 2;
-    box-shadow: 0 6px 12px -8px rgb(18 24 38 / 0.25);
+  .btn-follow {
+    flex: none;
+    width: 40px;
+    padding: 0;
   }
   .step-title {
-    font-size: 19px;
-  }
-  .cap-build {
-    grid-template-columns: 1fr;
+    font-size: 21px;
   }
   .hero-fig {
     padding: 6px;
   }
   .site-nav a {
-    padding: 8px;
-    font-size: 14px;
+    padding: 0 var(--sp-2);
+    font-size: var(--fs-ui);
   }
 }
 
-/* Phones held sideways: the side-by-side layout, with a wider panel. */
+/* Phones held sideways: stage and panel side by side, the headline number pinned above the panel, and the
+   controls above the caption so the thing to press is in reach without scrolling. */
 @media (orientation: landscape) and (max-height: 520px) {
   .shell {
+    --bar-h: 44px;
+    --dock-h: 48px;
     grid-template-columns: minmax(0, 1fr) 44%;
-    grid-template-rows: 44px minmax(0, 1fr) 52px;
+    grid-template-rows: var(--bar-h) 44px minmax(0, 1fr) var(--dock-h);
+    grid-template-areas:
+      "bar bar"
+      "theatre summary"
+      "theatre panel"
+      "dock dock";
+  }
+  .shell:not(:has(> .summary-row)) {
+    grid-template-rows: var(--bar-h) minmax(0, 1fr) var(--dock-h);
     grid-template-areas:
       "bar bar"
       "theatre panel"
       "dock dock";
   }
+  .bar {
+    padding: 0 4px 0 12px;
+  }
   .bar-line,
-  .slowmo,
   .dock-progress {
     display: none;
+  }
+  .bar-title {
+    font-size: 17px;
+  }
+  .theatre {
+    padding: 6px;
+  }
+  /* The strip carries the beat's words here too (the stage is too small for a callout): two lines of them. */
+  .sheet {
+    grid-template-rows: 44px minmax(0, 1fr);
+    border-radius: var(--r-card);
+  }
+  .beat {
+    padding: 0 12px;
+  }
+  .beat:has(.beat-text:not(:empty)) .beat-tone {
+    display: none;
+  }
+  .beat-text:not(:empty) {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .beat-text > span {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    line-height: 1.3;
+  }
+  .flight-sum {
+    display: none;
+  }
+  .flight-close {
+    width: 40px;
+    height: 40px;
+  }
+  .summary-row {
+    display: block;
+    border-left: 1px solid var(--rule);
+  }
+  .summary {
+    padding: 0 14px;
+    border-top: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .panel {
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .panel-scroll {
+    overflow: visible;
+    padding: 0 14px 14px;
+    scrollbar-gutter: auto;
+  }
+  .panel-head {
+    padding-top: 8px;
+  }
+  .panel-pin {
+    padding: 4px 14px 14px;
+    border-top: 0;
+  }
+  .step-title {
+    font-size: 19px;
+  }
+  .step > * {
+    order: 2;
+  }
+  .step > .step-title {
+    order: 0;
+  }
+  .step > .controls {
+    order: 1;
+  }
+  .step > .hook {
+    order: -1;
+  }
+  .dock {
+    padding: 0 12px;
+  }
+  .when-wide {
+    display: none;
+  }
+  .btn-next {
+    height: 40px;
+  }
+}
+
+/* Touch: every control is at least 40px square (44px for the ones used most), without changing how it looks. */
+@media (pointer: coarse), (max-width: 760px), (orientation: landscape) and (max-height: 520px) {
+  .bar .brand {
+    justify-content: center;
+    min-width: 44px;
+    min-height: 40px;
+  }
+  .key-btn {
+    height: 40px;
+    min-width: 52px;
+  }
+  .key-close {
+    width: 40px;
+    height: 40px;
+  }
+  .seg span {
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .toggle,
+  .cap-hint summary {
+    min-height: 40px;
+  }
+  .cap-hint summary {
+    display: flex;
+    align-items: center;
+    min-width: 40px;
+  }
+  .knob-range input {
+    height: 40px;
+  }
+  .stepper-ctl button {
+    width: 40px;
+    height: 40px;
+  }
+  .icon-link {
+    width: 44px;
+    height: 40px;
+  }
+  .compare tbody th .mx {
+    display: flex;
+    align-items: center;
+    min-width: 40px;
+    min-height: 40px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
   *,
   *::before,
   *::after {

@@ -1,5 +1,6 @@
+import type { Sim } from "../sim/engine";
 import type { MetricSpec } from "../sim/metrics";
-import type { Call, ClientSpec, NodeSpec, SceneSpec } from "../sim/types";
+import type { Call, ClientSpec, NodeSpec, SceneSpec, ScriptEvent } from "../sim/types";
 import type { Action, ChoiceKnob, RangeKnob } from "./types";
 
 type At = [number, number];
@@ -94,6 +95,15 @@ export function range(n: number) {
 export const wave = (lo: number, hi: number, period: number) => (t: number) =>
   lo + (hi - lo) * (0.5 - 0.5 * Math.cos((2 * Math.PI * t) / period));
 
+/**
+ * Steady traffic with a rush every `period` ms: starting `from` ms into each period, it swells smoothly to `peak` and
+ * back over `length` ms, then holds at `base`.
+ */
+export const rush = (base: number, peak: number, from: number, length: number, period: number) => (t: number) => {
+  const u = (((t - from) % period) + period) % period;
+  return u < length ? base + (peak - base) * Math.sin((Math.PI * u) / length) ** 2 : base;
+};
+
 /** Quiet traffic with a short burst every `every` ms. */
 export const bursts = (base: number, peak: number, every: number, length: number) => (t: number) =>
   t % every < length ? peak : base;
@@ -183,3 +193,34 @@ export const crash = (id: string, name: string): Action => ({
   run: (sim, on) => sim.setUp(id, !on),
   isOn: (sim) => sim.nodes.get(id)?.up === false,
 });
+
+/**
+ * A fault the learner causes (a break beat, or its button), armed so it never runs by itself: `start` now, `end`
+ * `lastsMs` later. `at` is when the tests fire it. The button fires it in every step's world at once, so each world's
+ * script may do something different under the same labels (crash a big server here, one small one there).
+ */
+export function armed(
+  o: { node: string; at: number; lastsMs: number; start: string; end: string },
+  run: { start: (s: Sim) => void; end: (s: Sim) => void },
+): { loopMs: number; events: ScriptEvent[] } {
+  return {
+    loopMs: o.at + o.lastsMs + 1000,
+    events: [
+      { at: o.at, label: o.start, armed: true, node: o.node, run: run.start },
+      { at: o.at + o.lastsMs, label: o.end, armed: true, node: o.node, run: run.end },
+    ],
+  };
+}
+
+/** The button for an armed fault: fires it (or ends it early) in every world. */
+export const fault = (id: string, label: string, undo: string, start: string, end: string, isOn: (sim: Sim) => boolean): Action => ({
+  id,
+  label,
+  undo,
+  run: (sim, on) => void sim.fire(on ? start : end),
+  isOn,
+});
+
+/** An armed crash of `node`: down when fired, back `lastsMs` later. */
+export const armedCrash = (node: string, at: number, lastsMs: number, start: string, end: string) =>
+  armed({ node, at, lastsMs, start, end }, { start: (s) => s.setUp(node, false), end: (s) => s.setUp(node, true) });

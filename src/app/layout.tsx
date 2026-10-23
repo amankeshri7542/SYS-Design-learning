@@ -1,16 +1,17 @@
 import type { Metadata, Viewport } from "next";
-import { Atkinson_Hyperlegible_Next, Overpass, Overpass_Mono } from "next/font/google";
+import { Atkinson_Hyperlegible_Next, Newsreader, Overpass, Overpass_Mono } from "next/font/google";
 import "./globals.css";
 
-const display = Overpass({ subsets: ["latin"], weight: ["600", "700", "800", "900"], variable: "--font-display" });
+// All four faces are variable fonts: one file each covers every weight.
+const display = Overpass({ subsets: ["latin"], variable: "--font-display" });
+const guide = Newsreader({ subsets: ["latin"], axes: ["opsz"], variable: "--font-guide", fallback: ["Georgia", "serif"] });
 const body = Atkinson_Hyperlegible_Next({
   subsets: ["latin"],
-  weight: ["400", "700"],
   variable: "--font-body",
   adjustFontFallback: false,
   fallback: ["system-ui", "sans-serif"],
 });
-const mono = Overpass_Mono({ subsets: ["latin"], weight: ["500", "600"], variable: "--font-mono" });
+const mono = Overpass_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
   title: { default: "System Lab: watch systems work, then break", template: "%s · System Lab" },
@@ -21,14 +22,14 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f3f5f8" },
-    { media: "(prefers-color-scheme: dark)", color: "#0b0f17" },
+    { media: "(prefers-color-scheme: light)", color: "#f4f3ef" },
+    { media: "(prefers-color-scheme: dark)", color: "#0e1116" },
   ],
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`}>
+    <html lang="en" className={`${display.variable} ${guide.variable} ${body.variable} ${mono.variable}`}>
       <body>
         <a className="skip" href="#main">
           Skip to content

@@ -1,6 +1,7 @@
 import type { Sim } from "../sim/engine";
 import type { MetricSpec } from "../sim/metrics";
 import type { Call, NodeSpec, SceneSpec } from "../sim/types";
+import type { Beat } from "./beats";
 import { M, balancer, cache, database, lane, range, scene, server, users } from "./kit";
 
 export interface Arch {
@@ -12,6 +13,8 @@ export interface Arch {
 
 export interface CapStage {
   name: string;
+  /** Two beats as the stage opens: what changed, and the box to watch. */
+  beats: Beat[];
   brief: string;
   hint: string;
   users: number;
@@ -27,6 +30,10 @@ export const TARGET = { p95: 300, errors: 0.02 };
 export const STAGES: CapStage[] = [
   {
     name: "Launch day",
+    beats: [
+      { id: "users", when: { step: "enter" }, text: "Users send about 12 a second: short links, read back again and again.", focus: { nodes: ["u"] } },
+      { id: "watch", when: { wait: 0 }, text: "Watch Primary DB's meter: the box to keep under 100%.", focus: { nodes: ["db"] } },
+    ],
     brief: "A few hundred people are shortening links. Check that one server and one database hold the target.",
     hint: "Nothing to change yet. Watch the target hold and get used to the scene.",
     users: 12,
@@ -37,6 +44,10 @@ export const STAGES: CapStage[] = [
   },
   {
     name: "Featured on a blog",
+    beats: [
+      { id: "users", when: { step: "enter" }, text: "Traffic triples to 40 a second, mostly the same popular links.", focus: { nodes: ["u"] } },
+      { id: "watch", when: { wait: 0 }, text: "Watch Primary DB: it fills first. Repeated reads needn't reach it.", focus: { nodes: ["db"] } },
+    ],
     brief: "Traffic triples overnight. Nearly every request is a redirect: a read of the same popular links, again and again.",
     hint: "The database is the box at 100%. What lets repeated reads skip it entirely?",
     users: 40,
@@ -47,6 +58,10 @@ export const STAGES: CapStage[] = [
   },
   {
     name: "A link goes viral",
+    beats: [
+      { id: "users", when: { step: "enter" }, text: "One link is now more than a third of all traffic.", focus: { nodes: ["u"] } },
+      { id: "watch", when: { wait: 0 }, text: "Watch Server 1's sockets: one server only has so many workers.", focus: { nodes: ["s1"], sockets: true } },
+    ],
     brief: "One link is everywhere, more than a third of all traffic, and total traffic doubles again.",
     hint: "Watch which box fills first. However good the cache is, one server only has so many workers.",
     users: 85,
@@ -57,6 +72,10 @@ export const STAGES: CapStage[] = [
   },
   {
     name: "Under attack",
+    beats: [
+      { id: "users", when: { step: "enter" }, text: "A bot sends 90 a second, every one aimed at your servers.", focus: { nodes: ["bot"] } },
+      { id: "watch", when: { wait: 0 }, text: "Watch Server 1: it will crash, again and again.", focus: { nodes: ["s1"] } },
+    ],
     brief: "A bot hammers the API at 90 requests a second, and server 1 keeps crashing. Real users must not notice.",
     hint: "Shed the bot's traffic before it reaches the servers, and make sure losing one server still leaves enough.",
     users: 85,

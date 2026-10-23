@@ -7,6 +7,7 @@ import type {
   Op,
   Result,
   SceneSpec,
+  ScriptEvent,
 } from "./types";
 
 /** Fixed simulation step in simulated milliseconds. */
@@ -108,9 +109,12 @@ export interface NodeRt {
   waiters: Map<number, Req[]>;
   data: Map<number, number>;
   buckets: Map<string, { tokens: number; t: number }>;
-  breaker: { state: "closed" | "open" | "half"; fails: number; openedAt: number; trial: boolean };
+  /** `trialId`: the request sent as the half-open breaker's one trial (0 when none). */
+  breaker: { state: "closed" | "open" | "half"; fails: number; openedAt: number; trial: boolean; trialId: number };
   health: Map<string, { ok: boolean; fails: number; passes: number }>;
   load: number;
+  /** Running hot: its line passed twice its workers, and has not yet fallen back to its workers' count. */
+  hot: boolean;
   hits: Win;
   misses: Win;
   arrivals: Win;
@@ -130,6 +134,15 @@ export interface Note {
   text: string;
 }
 
+/** A logical request's first attempt leaving its client. */
+export interface Spawn {
+  t: number;
+  client: string;
+  key: number;
+  op: Op;
+  cost: number;
+}
+
 const SAMPLE_KEYS = 1000;
 
 export class Sim {
@@ -145,23 +158,39 @@ export class Sim {
   partitioned = false;
   blocked: Req[] = [];
   conflicts = 0;
+  /**
+   * Traffic per link (keyed by the two node ids, sorted, joined by "~"): requests sent along it and errors that came
+   * back along it. Output only, for the stage's flow glow (`flowOf` in metrics.ts).
+   */
+  links = new Map<string, { sent: number; failed: number }>();
+  /** Every first attempt, in order (only with `{ trace: true }`). A problem and its fix must produce the same trace. */
+  trace: Spawn[] = [];
   readonly windowMs: number;
   attempts: Win;
   logical: Win;
   retries: Win;
+  private tracing: boolean;
   private seq = 0;
   private truth = new Map<number, number>();
   private writtenIn = new Map<string, Set<number>>();
   private nextId = 1;
   private acc = 0;
-  private pending: { at: number; client: string; key: number; op: Op; first: number; attempt: number; cost: number }[] = [];
+  /** Retries waiting for their moment. */
+  private retrying: { at: number; client: string; key: number; op: Op; first: number; attempt: number; cost: number }[] = [];
   private retryRng: () => number;
   private cycleStart = 0;
   private cursor = 0;
+  /** The script's looping events (armed ones never loop). */
+  private loop: ScriptEvent[] = [];
+  /** Armed events that have been fired and are on their way, soonest first. */
+  private armed: { t: number; e: ScriptEvent }[] = [];
+  /** Clients send nothing until `start()` (a lesson introduces its parts before any traffic). */
+  private holding = false;
   private seed: number;
 
-  constructor(spec: SceneSpec) {
+  constructor(spec: SceneSpec, opts: { trace?: boolean } = {}) {
     this.spec = spec;
+    this.tracing = !!opts.trace;
     this.seed = spec.seed ?? 7;
     this.windowMs = spec.windowMs ?? 1000;
     this.attempts = new Win(this.windowMs);
@@ -175,6 +204,7 @@ export class Sim {
 
   reconfigure(spec: SceneSpec) {
     this.spec = spec;
+    this.loop = (spec.script?.events ?? []).filter((e) => !e.armed);
     const ids = new Set(spec.nodes.map((n) => n.id));
     const stranded: Req[] = [];
     for (const [id, rt] of this.nodes) {
@@ -241,9 +271,10 @@ export class Sim {
       waiters: new Map(),
       data: new Map(),
       buckets: new Map(),
-      breaker: { state: "closed", fails: 0, openedAt: 0, trial: false },
+      breaker: { state: "closed", fails: 0, openedAt: 0, trial: false, trialId: 0 },
       health: new Map(),
       load: 0,
+      hot: false,
       hits: new Win(this.windowMs),
       misses: new Win(this.windowMs),
       arrivals: new Win(this.windowMs),
@@ -314,6 +345,61 @@ export class Sim {
     if (this.notes.length > 20) this.notes.shift();
   }
 
+  /**
+   * Play the script's armed events once, starting with the one labelled `label`, `delayMs` from now: that event, then
+   * each later armed event at the same spacing as their `at`s. Firing again replaces whatever of that run is still on its
+   * way. False when the script has no such armed event.
+   */
+  fire(label: string, delayMs = 0): boolean {
+    const events = (this.spec.script?.events ?? []).filter((e) => e.armed);
+    const i = events.findIndex((e) => e.label === label);
+    if (i < 0) return false;
+    const run = events.slice(i);
+    const labels = new Set(run.map((e) => e.label));
+    this.armed = this.armed.filter((q) => !labels.has(q.e.label));
+    const at = this.t + Math.max(0, delayMs);
+    for (const e of run) this.armed.push({ t: at + (e.at - events[i].at), e });
+    this.armed.sort((a, b) => a.t - b.t);
+    this.runArmed();
+    return true;
+  }
+
+  /** Drop every armed event still on its way (an undo, or a restart of the story). */
+  cancel() {
+    this.armed = [];
+  }
+
+  /** Armed events still on their way: when each will run, and the station it happens to. */
+  get pending(): { at: number; label: string; node?: string }[] {
+    return this.armed.map((q) => ({ at: q.t, label: q.e.label, node: q.e.node }));
+  }
+
+  /**
+   * Stop clients sending anything new until `start()`. Their arrivals still come due and are drawn, only not sent, so
+   * the traffic after `start()` doesn't depend on when that is. Both worlds of a lesson hold and start together.
+   */
+  hold() {
+    this.holding = true;
+  }
+
+  /** Let clients send again. */
+  start() {
+    this.holding = false;
+  }
+
+  /** False while the clients are held back for a scene's introduction. */
+  get started() {
+    return !this.holding;
+  }
+
+  private runArmed() {
+    while (this.armed.length && this.armed[0].t <= this.t) {
+      const { e } = this.armed.shift()!;
+      e.run(this);
+      if (e.label) this.note(e.label);
+    }
+  }
+
   /** Current time including the partial tick, for smooth drawing between steps. */
   get now() {
     return this.t + this.acc;
@@ -342,7 +428,7 @@ export class Sim {
     }
     for (const n of this.list) {
       if (n.work.length) this.finish(n);
-      if (n.queue.length) this.start(n);
+      if (n.queue.length) this.take(n);
     }
     for (let i = 0; i < this.reqs.length; i++) {
       const r = this.reqs[i];
@@ -352,14 +438,17 @@ export class Sim {
   }
 
   private runScript() {
+    if (this.armed.length) this.runArmed();
     const s = this.spec.script;
-    if (!s || !s.events.length) return;
+    // This tick's events come from the script as it stands now, even if one of them swaps the scene's spec.
+    const loop = this.loop;
+    if (!s || !loop.length) return;
     if (this.t >= this.cycleStart + s.loopMs) {
       this.cycleStart += s.loopMs;
       this.cursor = 0;
     }
-    while (this.cursor < s.events.length && this.t >= this.cycleStart + s.events[this.cursor].at) {
-      const e = s.events[this.cursor++];
+    while (this.cursor < loop.length && this.t >= this.cycleStart + loop[this.cursor].at) {
+      const e = loop[this.cursor++];
       e.run(this);
       if (e.label) this.note(e.label);
     }
@@ -382,6 +471,10 @@ export class Sim {
       if (slots) {
         const util = Math.min(1, (n.work.length + n.held.length) / slots);
         n.load += (util - n.load) * 0.05;
+        // Hot on a line twice its workers (or saturated with any line); cool again once the line is back to its workers.
+        const hot = n.hot ? n.queue.length > slots : n.queue.length > slots * 2 || (n.load > 0.92 && n.queue.length > 0);
+        if (hot && !n.hot) this.effect("hot", n.spec.id);
+        n.hot = hot;
       }
       if (n.bootUntil && t >= n.bootUntil) {
         n.bootUntil = 0;
@@ -509,14 +602,16 @@ export class Sim {
         const key = c.hot && u < c.hot ? 0 : sampleCdf(n.cdf!, n.rng());
         const op: Op = c.writes && n.rng() < c.writes ? "write" : "read";
         const cost = c.heavy && n.rng() < c.heavy.share ? c.heavy.cost : 1;
-        this.spawn(n, key, op, t, 0, cost);
+        // Held clients keep their clock and their draws, and send nothing: whenever the traffic starts, it is the
+        // same traffic from then on.
+        if (!this.holding) this.spawn(n, key, op, t, 0, cost);
         n.nextArrival += this.gap(n, rate);
       }
     }
-    if (this.pending.length) {
-      const due = this.pending.filter((p) => p.at <= t);
+    if (this.retrying.length) {
+      const due = this.retrying.filter((p) => p.at <= t);
       if (due.length) {
-        this.pending = this.pending.filter((p) => p.at > t);
+        this.retrying = this.retrying.filter((p) => p.at > t);
         for (const p of due) {
           const n = this.nodes.get(p.client);
           if (n) this.spawn(n, p.key, p.op, p.first, p.attempt, p.cost);
@@ -571,6 +666,7 @@ export class Sim {
     if (timeout) r.deadline = this.t + timeout;
     this.attempts.add(this.t);
     if (attempt === 0) this.logical.add(this.t);
+    if (attempt === 0 && this.tracing) this.trace.push({ t: this.t, client: n.spec.id, key, op, cost });
     const target = n.spec.to?.[0];
     if (target) this.send(r, this.resolve(n, target));
   }
@@ -597,6 +693,14 @@ export class Sim {
     r.t1 = this.t + (ms ?? this.latency(from, to));
     const dest = this.nodes.get(to);
     if (dest) dest.incoming++;
+    if (r.op !== "probe") this.link(from, to).sent++;
+  }
+
+  private link(a: string, b: string) {
+    const key = a < b ? `${a}~${b}` : `${b}~${a}`;
+    let l = this.links.get(key);
+    if (!l) this.links.set(key, (l = { sent: 0, failed: 0 }));
+    return l;
   }
 
   private respond(r: Req, result?: Result) {
@@ -613,6 +717,7 @@ export class Sim {
     r.to = to;
     r.t0 = this.t;
     r.t1 = this.t + this.latency(from, to);
+    if (r.op !== "probe" && r.result === "error") this.link(from, to).failed++;
   }
 
   private arrive(r: Req) {
@@ -697,7 +802,9 @@ export class Sim {
   }
 
   private fail(n: NodeRt, r: Req) {
-    this.effect("drop", n.spec.id);
+    // Refused at a full line: it falls from the line's tail.
+    const full = n.queue.length >= (n.spec.queueMax ?? Infinity);
+    this.effect("drop", n.spec.id, full ? n.queue.length : undefined);
     if (r.detached) {
       r.phase = "gone";
       return;
@@ -823,7 +930,8 @@ export class Sim {
     return base * r.cost * (0.6 + 0.8 * n.rng());
   }
 
-  private start(n: NodeRt) {
+  /** Workers that are free take the next requests in line. */
+  private take(n: NodeRt) {
     if (n.spec.kind === "queue") return this.dispatch(n);
     if (!n.up || !n.on) return;
     const slots = n.spec.slots ?? Infinity;
@@ -885,7 +993,10 @@ export class Sim {
         this.effect("reject", n.spec.id);
         return this.respond(r, "fallback");
       }
-      if (b.state === "half") b.trial = true;
+      if (b.state === "half") {
+        b.trial = true;
+        b.trialId = r.id;
+      }
     }
     this.call(n, r, calls);
   }
@@ -993,6 +1104,7 @@ export class Sim {
       }
       b.fails = 0;
       b.trial = false;
+      b.trialId = 0;
       return;
     }
     b.fails++;
@@ -1000,6 +1112,7 @@ export class Sim {
       b.state = "open";
       b.openedAt = this.t;
       b.trial = false;
+      b.trialId = 0;
       this.effect("open", n.spec.id);
     }
   }
@@ -1009,6 +1122,7 @@ export class Sim {
     const ok = r.result === "ok";
     if (ok && (n.spec.capacity ?? 0) > 0) {
       n.cache.set(r.key, { seq: r.seq, exp: this.t + (n.spec.ttlMs ?? Infinity), last: this.t });
+      this.effect("fill", n.spec.id);
       this.evict(n);
     }
     const w = n.waiters.get(r.key);
@@ -1033,6 +1147,7 @@ export class Sim {
           lru = k;
         }
       n.cache.delete(lru);
+      this.effect("evict", n.spec.id);
     }
   }
 
@@ -1066,7 +1181,7 @@ export class Sim {
     this.retries.add(this.t);
     const base = p.baseMs ?? 100;
     const delay = p.mode === "now" ? 0 : this.retryRng() * base * Math.pow(2, r.attempt);
-    this.pending.push({
+    this.retrying.push({
       at: this.t + Math.max(TICK, delay),
       client: n.spec.id,
       key: r.key,
@@ -1106,8 +1221,8 @@ export class Sim {
     return out;
   }
 
-  private effect(kind: FxKind, node: string) {
-    this.fx.push({ t: this.t, kind, node });
+  private effect(kind: FxKind, node: string, slot?: number) {
+    this.fx.push(slot === undefined ? { t: this.t, kind, node } : { t: this.t, kind, node, slot });
   }
 }
 

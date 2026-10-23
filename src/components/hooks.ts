@@ -16,6 +16,8 @@ function media(query: string) {
 
 const narrow = media("(max-width: 640px)");
 const reducedMotion = media("(prefers-reduced-motion: reduce)");
+/** The touch layouts of globals.css (phones, and anything with a coarse pointer): every control there is 40px or more. */
+const touch = media("(pointer: coarse), (max-width: 760px), (orientation: landscape) and (max-height: 520px)");
 
 /** A first guess before the stage measures its box: "compact" on phones, "wide" elsewhere, null on the server. */
 export function useMode(): Mode | null {
@@ -28,6 +30,11 @@ export function useMode(): Mode | null {
 
 export function useReducedMotion(): boolean {
   return useSyncExternalStore(reducedMotion.subscribe, reducedMotion.get, () => false);
+}
+
+/** True on touch layouts, where small inline targets give way to 40px ones. */
+export function useTouch(): boolean {
+  return useSyncExternalStore(touch.subscribe, touch.get, () => false);
 }
 
 /** True while the element is (nearly) on screen. */

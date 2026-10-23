@@ -34,12 +34,22 @@ export interface MetricSpec {
   /** Explains the number in plain words (shown as a tooltip and to screen readers). */
   hint?: string;
   /** Override which direction is good news (e.g. more of the bot's requests turned away). */
-  better?: "low" | "high";
+  better?: Better;
+  /**
+   * What the number is judged against, in its own unit (ms for times, 0–1 for shares). Response times default to the
+   * scene's latency target; other metrics have none unless a lesson gives one.
+   */
+  target?: number;
+  /** The number read as a sentence, for the row's explainer. Defaults to a sentence for the metric's kind. */
+  explain?: (v: number | null, sim: Sim) => string;
 }
+
+/** Which direction is good news. Neutral metrics (how many servers are in use) never get a verdict. */
+export type Better = "low" | "high" | "neutral";
 
 type Unit = "ms" | "pct" | "rate" | "count" | "ratio";
 
-const META: Record<MetricId, { unit: Unit; better: "low" | "high" }> = {
+const META: Record<MetricId, { unit: Unit; better: Better }> = {
   p50: { unit: "ms", better: "low" },
   p95: { unit: "ms", better: "low" },
   errors: { unit: "pct", better: "low" },
@@ -51,9 +61,9 @@ const META: Record<MetricId, { unit: Unit; better: "low" | "high" }> = {
   util: { unit: "pct", better: "low" },
   peak: { unit: "pct", better: "low" },
   load: { unit: "rate", better: "low" },
-  inRotation: { unit: "count", better: "high" },
+  inRotation: { unit: "count", better: "neutral" },
   queue: { unit: "count", better: "low" },
-  servers: { unit: "count", better: "low" },
+  servers: { unit: "count", better: "neutral" },
   moved: { unit: "pct", better: "low" },
   amplify: { unit: "ratio", better: "low" },
   conflicts: { unit: "count", better: "low" },
@@ -98,8 +108,12 @@ export function measure(sim: Sim, m: MetricSpec): number | null {
       return share(sim, m, (r) => r === "rejected");
     case "fallback":
       return share(sim, m, (r) => r === "fallback");
-    case "answered":
-      return share(sim, m, (r) => r !== "error" && r !== "rejected");
+    case "answered": {
+      const s = share(sim, m, (r) => r !== "error" && r !== "rejected");
+      // Requests went out for a whole window and none came back: that is no answers at all, not "no data".
+      if (s === null && !m.tag && sim.t >= sim.windowMs * 2 && sim.logical.count(sim.t) > 0) return 0;
+      return s;
+    }
     case "stale":
       return share(sim, m, (r) => r === "stale", (r) => r === "ok" || r === "stale");
     case "throughput": {
@@ -213,6 +227,135 @@ export function toneOf(m: MetricSpec, v: number | null, sloMs: number): Tone {
   }
 }
 
-export function betterIs(m: MetricSpec) {
+export function betterIs(m: MetricSpec): Better {
   return m.better ?? META[m.id].better;
+}
+
+/** Response times, which are judged against the scene's latency target (`sloMs`). */
+export function isLatency(m: MetricSpec) {
+  return m.id === "p50" || m.id === "p95";
+}
+
+/** What a metric is judged against, if anything: its own target, or for a response time the scene's latency target. */
+export function targetOf(m: MetricSpec, sloMs: number): number | null {
+  return m.target ?? (isLatency(m) ? sloMs : null);
+}
+
+/** "target ≤ 400 ms" or "target ≥ 99%", or null for a metric with no target. */
+export function formatTarget(m: MetricSpec, sloMs: number): string | null {
+  const t = targetOf(m, sloMs);
+  if (t === null) return null;
+  return `target ${betterIs(m) === "high" ? "≥" : "≤"} ${formatMetric(m, t)}`;
+}
+
+const SAYS: Record<MetricId, (v: string) => string> = {
+  p50: (v) => `Half of all requests are answered within ${v}.`,
+  p95: (v) => `The slowest 1 in 20 requests takes ${v} or longer; the rest are faster.`,
+  errors: (v) => `${v} of requests failed or gave up waiting.`,
+  rejected: (v) => `${v} of requests were turned away on purpose.`,
+  stale: (v) => `${v} of answers were out of date.`,
+  fallback: (v) => `${v} were answered at once with a fallback instead of waiting.`,
+  throughput: (v) => `${v}: answers coming back each second.`,
+  hit: (v) => `${v} of reads were answered by the cache, without asking further.`,
+  util: (v) => `${v} of the workers are busy. Past about 70%, a line starts to form.`,
+  peak: (v) => `The busiest machine is ${v} busy.`,
+  load: (v) => `${v} arriving each second.`,
+  inRotation: (v) => `${v} servers are getting traffic.`,
+  queue: (v) => `${v} waiting in line right now.`,
+  servers: (v) => `${v} servers are running, and costing money.`,
+  moved: (v) => `${v} of keys changed owner at the last change of members.`,
+  amplify: (v) => `${v} attempts for every real request. ×1.0 means retries add no load.`,
+  conflicts: (v) => `${v} keys were written on both sides while the link was down.`,
+  answered: (v) => `${v} of requests got a real answer in the end.`,
+  jobWait: (v) => `The slowest 1 in 20 jobs takes ${v} or longer to finish.`,
+  unsynced: (v) => `${v} writes are waiting to be copied across.`,
+};
+
+/**
+ * The number read as plain sentences: what it says right now, what it is judged against, and over how much time it is
+ * measured (which is why it lags the scene a little).
+ */
+export function explainMetric(m: MetricSpec, v: number | null, sim: Sim): string[] {
+  const now = v === null ? "Nothing has been measured yet." : (m.explain?.(v, sim) ?? SAYS[m.id](formatMetric(m, v)));
+  const target = targetOf(m, sim.spec.sloMs);
+  const onScreen = sim.windowMs / (sim.spec.timeScale ?? 0.1) / 1000;
+  return [
+    now,
+    ...(target === null ? [] : [`The target is ${formatMetric(m, target)} or ${betterIs(m) === "high" ? "more" : "less"}.`]),
+    `Averaged over the last ${sim.windowMs} ms, which is ${Number.isInteger(onScreen) ? onScreen : onScreen.toFixed(1)} s on screen at 1×.`,
+  ];
+}
+
+/** A plain signed difference in the metric's own unit ("−1", "+52 ms", "+64 pts"), with no verdict. */
+export function formatDiff(m: MetricSpec, d: number): string {
+  const sign = d < 0 ? "−" : "+";
+  const a = Math.abs(d);
+  switch (META[m.id].unit) {
+    case "ms":
+      return `${sign}${formatMetric(m, a)}`;
+    case "pct": {
+      const p = a * 100;
+      return `${sign}${p < 1 ? "<1" : Math.round(p)} pts`;
+    }
+    case "rate":
+      return `${sign}${Math.round(a)}/s`;
+    case "ratio":
+      return `${sign}${a.toFixed(1)}`;
+    default:
+      return `${sign}${Math.round(a)}`;
+  }
+}
+
+/**
+ * A verdict row's change, relative to the first step: "−62%", "+38%", "−<1%" under half a percent, "×20" from ten
+ * times up, "new" from zero.
+ */
+export function formatChange(from: number, to: number): string {
+  // From nothing (or from so little that a ratio would mean nothing): "new".
+  if (Math.abs(from) < 1e-6 * Math.max(1, Math.abs(to))) return "new";
+  if (to / from >= 9.95) return `×${Math.round(to / from)}`;
+  const pct = Math.round((Math.abs(to - from) / from) * 100);
+  return `${to < from ? "−" : "+"}${pct < 1 ? "<1" : pct}%`;
+}
+
+/** How big a change is, from 0 to 1 (a doubling or more, or anything from zero, is 1): the length of its bar. */
+export function changeSize(from: number, to: number): number {
+  return Math.abs(from) < 1e-6 * Math.max(1, Math.abs(to)) ? 1 : Math.min(1, Math.abs(to - from) / Math.abs(from));
+}
+
+/** How much simulated time one second of screen time shows: "1 s on screen = 100 ms". */
+export function formatClock(timeScale: number, speed: number) {
+  return `1 s on screen = ${Math.round(1000 * timeScale * speed)} ms`;
+}
+
+/** Simulated ms over which a link's flow settles: short enough that a link visibly empties while a breaker is open. */
+const FLOW_TAU = 250;
+const flows = new WeakMap<Sim, Map<string, { t: number; sent: number; failed: number; rate: number; errors: number }>>();
+
+/**
+ * Traffic on the link between `a` and `b` (either way round): requests a second, smoothed over about a quarter of a
+ * simulated second, and the share of them that came back as errors. The stage reads it to light the rails.
+ */
+export function flowOf(sim: Sim, a: string, b: string): { rate: number; errors: number } {
+  const key = a < b ? `${a}~${b}` : `${b}~${a}`;
+  const now = sim.links.get(key) ?? { sent: 0, failed: 0 };
+  let seen = flows.get(sim);
+  if (!seen) flows.set(sim, (seen = new Map()));
+  const was = seen.get(key);
+  if (!was || sim.t < was.t) {
+    // First look (or the scene restarted): start from the average so far rather than from nothing.
+    const rate = sim.t > 0 ? (now.sent / sim.t) * 1000 : 0;
+    const errors = now.sent ? now.failed / now.sent : 0;
+    seen.set(key, { t: sim.t, sent: now.sent, failed: now.failed, rate, errors });
+    return { rate, errors };
+  }
+  const dt = sim.t - was.t;
+  if (dt > 0) {
+    const w = 1 - Math.exp(-dt / FLOW_TAU);
+    const sent = now.sent - was.sent;
+    was.rate += ((sent / dt) * 1000 - was.rate) * w;
+    if (sent > 0) was.errors += (Math.min(1, (now.failed - was.failed) / sent) - was.errors) * w;
+    Object.assign(was, { t: sim.t, sent: now.sent, failed: now.failed });
+  }
+  return { rate: was.rate, errors: was.errors };
 }
