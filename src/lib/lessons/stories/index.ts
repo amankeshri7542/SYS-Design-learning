@@ -8,6 +8,7 @@ type Load = () => Promise<{ default: StoryDef }>;
 
 export const STORY_MODULES: Record<string, Load> = {
   capstone: () => import("./capstone"),
+  "web-crawler": () => import("./web-crawler"),
 };
 
 const loaded = new Map<string, Promise<StoryDef>>();

@@ -99,7 +99,8 @@ test("home: on narrow screens the board filters by level and finds a lesson by a
   await expect(board.locator(".board-line details[open]")).toHaveCount(1);
   await board.getByRole("radio", { name: "Advanced" }).check();
   const shown = board.locator(".board-line details[open] li a");
-  await expect(shown).toHaveCount(LESSONS.filter((e) => e.level === "advanced").length);
+  // Every live entry at that level: lessons, and stories (on their own line).
+  await expect(shown).toHaveCount(COURSE.filter((e) => e.level === "advanced").length);
   await board.getByRole("radio", { name: "All" }).check();
   await board.getByRole("searchbox", { name: "Find a lesson" }).fill("thundering herd");
   await expect(shown).toHaveCount(1);

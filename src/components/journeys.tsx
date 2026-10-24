@@ -85,7 +85,7 @@ function SceneCaption({ meta }: { meta: LessonMeta }) {
   const last = def.stages[def.stages.length - 1];
   return (
     <figcaption>
-      A design that holds stage {def.stages.length}, “{last.name}”: bot and crashes included.
+      A design that holds stage {def.stages.length}, “{last.name}”.
     </figcaption>
   );
 }

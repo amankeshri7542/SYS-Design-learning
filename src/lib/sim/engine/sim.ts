@@ -78,6 +78,7 @@ export interface Sim {
   unblock(n: NodeRt): void;
   handOut(n: NodeRt, job: Req, to: string): void;
   signedIn(n: NodeRt, r: Req): boolean;
+  waitedOn(r: Req): boolean;
   clone(n: NodeRt, r: Req): Req;
   enqueue(n: NodeRt, r: Req): void;
   publish(n: NodeRt, r: Req): void;

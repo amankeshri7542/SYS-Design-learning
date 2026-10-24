@@ -805,9 +805,9 @@ Gates on 2026-10-24: typecheck, 227 unit tests, build, and the browser suite: 69
 | `tests/sim.test.ts` | modified | The three-scene ack test (fire, ack, ack plus idempotent), the queue-ack tests (architecture §2.3.6), back-pressure, outbox and partition-order tests. |
 
 **Acceptance:**
-- [ ] N2 shows all three behaviours on one stage: fire-and-forget loses messages, ack-and-resend delivers ≥99% with duplicates, and an idempotent receiver brings duplicates to zero.
-- [ ] A5's poison job reaches the dead-letter queue after the configured attempts and the line moves again.
-- [ ] S8 passes its per-stage tests.
+- [x] N2 shows fire-and-forget losing messages and ack-and-resend delivering with duplicates. The third behaviour, an idempotent receiver that brings duplicates to zero, is A4's fix rather than a third N2 step (see the N2 decisions).
+- [x] A5's poison job reaches the dead-letter queue after the configured attempts and the line moves again.
+- [x] S8 (built as S1, "Crawl the web") passes its per-stage tests.
 
 **Decisions made while building the M7 engine PR:**
 
@@ -843,6 +843,15 @@ Gates on 2026-10-24: typecheck, 265 unit tests, build, and the browser suite: 81
 - **A6 crashes the broker for 1.5 s.** The dual write saves orders whose events are then lost; the outbox relays them once the broker is back. `lostEvents` waits 3 s before counting an event as lost, which is longer than the relay's resend after an outage. The relay's rail (database to broker) and a dead-letter queue's rail are now drawn.
 - **A7 has three steps:** one consumer (it falls behind), three consumers sharing one log (fast, but an account's later event can finish first), and three partitions by account (fast and in order). It uses 126 accounts with some much busier than others (skew 1): the hash leaves no partition nearly empty, and busy accounts often have two events in flight. Each partition is read by its own consumer, with the next one as its fallback (six rails rather than nine), and keeps its events ordered with acks.
 - **Lost events, dead letters and reorders were proved in `tests/hooks.test.ts`** before any of these lessons used them.
+
+**Decisions made while building the S1 web crawler story:**
+
+Gates on 2026-10-24: typecheck, 268 unit tests, build, and the browser suite: 810 passed, 11 skipped, 1 failed and 2 did not run. The failure was the built-out capstone's frame budget (a p95 frame gap of 33 ms against 17), and the mobile budgets, which wait for it, did not run. Re-run alone, the budgets failed on this branch and, by as much (81–117 ms), on the previous commit, which had passed them: the machine was running other apps at a load average of 9–15. They are re-checked with the M8 engine. The full run also caught the board test counting advanced lessons when S1 is an advanced story; it now counts the catalog's advanced entries. The browser fixture waits for the document's hydration mark (`Hydrated` in the root layout) after loading any page, not only lessons. S1 was checked by eye at the four sizes, light and dark.
+
+- **S1 is "Crawl the web"**, in four stages: a first crawl, a slow web (more fetchers), fetchers that crash (ack when fetched, so no page is lost) and dead sites (a dead-letter queue, so dead links stop eating fetchers' time). Politeness and duplicate pages were left out; the story rides A1, N14 and A5, and its catalog entry says so.
+- **Five small engine additions, each tested:** a poison job also fails at the last server on its way (a dead website); a queue counts a copy that comes back answered as acknowledged, so a worker that calls on (a fetcher) acks by answering; an acknowledged copy that fails or is lost in a crash counts as a lost job; a server's give-up answer keeps the copy's identity; and a detached message that fails or is refused answers with its error when a blocking server is holding a worker for it (found by the catalog-wide invariants: the fetcher held a request that had ended until its call timed out). No earlier scene changes.
+- **The story runs at twice the course's pace** (`timeScale` 0.2) and counts losses over 4 s, longer than its crash loop. A backlog takes a few simulated seconds to build, and the stage test needs the previous design to fail within the stage's hold: with holds of 6, 10, 8 and 18 s, the previous designs fail after 1.6, 0 and 3.3 s (simulated) of stages 2–4, while each stage's own design holds the whole run. Half the links in stage 4 are dead.
+- **Fetchers wait on 8 pages each,** so the last stage needs 5 of them, which fits the journey card. The journey card's caption no longer says "bot and crashes included" for every story.
 
 ### M8 — Engine B2b (connections and real time) and 10 lessons (L)
 
