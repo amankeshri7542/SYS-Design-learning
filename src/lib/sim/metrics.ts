@@ -196,12 +196,12 @@ export function measure(sim: Sim, m: MetricSpec): number | null {
       return (sim.jobs.filter((j) => j.t > from).length * 1000) / sim.windowMs;
     }
     case "lostEvents": {
-      // Of the writes `nodes[0]` committed a while ago (long enough for their event to arrive), the share whose event
+      // Of the writes `nodes[0]` committed a while ago (3 s: long enough for a relayed event to arrive), the share whose event
       // `nodes[1]` never finished.
       const [src, dst] = nodes(sim, m.nodes);
       if (!src || !dst) return null;
       const got = new Set([...dst.done.values()].map((d) => d.id));
-      const until = sim.t - 2000;
+      const until = sim.t - 3000;
       const from = until - sim.windowMs * 4;
       let all = 0;
       let lost = 0;

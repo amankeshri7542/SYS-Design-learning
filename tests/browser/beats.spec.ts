@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 // Concept delivery: beats point at the thing as it happens, wait for the learner, ask before the break, and read the
 // same on every screen. The beats themselves are proved in tests/lessons.test.ts; these check the player around them.
