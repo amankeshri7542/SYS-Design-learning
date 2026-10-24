@@ -834,6 +834,16 @@ Gates on 2026-10-24: typecheck, 249 unit tests, build, and the browser suite: 74
 - **Edges:** N2 before A3 and D7. N15's curriculum prerequisite N6 joins when N6 is live (M8); for now N15 requires A1 only.
 - **The kit gained `queue()`.**
 
+**Decisions made while building A4, A5, A6 and A7:**
+
+Gates on 2026-10-24: typecheck, 265 unit tests, build, and the browser suite: 812 tests, of which 801 passed and 11 were skipped, the 4 frame budgets included. Earlier full runs each lost one or two different tests to timing under load. One cause was a click made before the page had hydrated, so the browser tests now share a fixture (`tests/browser/fixtures.ts`) that waits, after loading a lesson or story, until the stage has measured itself. A6 opens its reduced-motion still at 5 s, because lost events are only counted 3 s after an order. A4–A7 were checked by eye at the four sizes, light and dark.
+
+- **A4 is a payment retried after a timeout.** The ledger slows to 0.6 s while shoppers retry after 0.4 s, so the first charge lands after the retry has been sent. With keys, the ledger is idempotent (`idempotent: true`), and a repeat gets the first result back.
+- **A5's break spawns exactly one poison job,** the same in every world (an armed event calls `spawn` with `poison`), rather than turning poison on for a moment, which at 8 jobs a second sometimes produced none. Its button reads as on while that job is in the line or out with the worker. The worker sits 5 ms from its queue, so the ordered line keeps up until it's poisoned.
+- **A6 crashes the broker for 1.5 s.** The dual write saves orders whose events are then lost; the outbox relays them once the broker is back. `lostEvents` waits 3 s before counting an event as lost, which is longer than the relay's resend after an outage. The relay's rail (database to broker) and a dead-letter queue's rail are now drawn.
+- **A7 has three steps:** one consumer (it falls behind), three consumers sharing one log (fast, but an account's later event can finish first), and three partitions by account (fast and in order). It uses 126 accounts with some much busier than others (skew 1): the hash leaves no partition nearly empty, and busy accounts often have two events in flight. Each partition is read by its own consumer, with the next one as its fallback (six rails rather than nine), and keeps its events ordered with acks.
+- **Lost events, dead letters and reorders were proved in `tests/hooks.test.ts`** before any of these lessons used them.
+
 ### M8 — Engine B2b (connections and real time) and 10 lessons (L)
 
 **Goal:** windows and congestion control, connection setup and reuse, head-of-line blocking, L4 vs L7, held connections with push, heartbeats, and replica promotion.

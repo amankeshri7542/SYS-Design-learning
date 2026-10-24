@@ -30,6 +30,10 @@ export const SCENES: Record<string, Load> = {
   "message-queues": () => import("./message-queues"),
   "publish-subscribe": () => import("./publish-subscribe"),
   "retries-and-backoff": () => import("./retries-and-backoff"),
+  idempotency: () => import("./idempotency"),
+  "dead-letter-queues": () => import("./dead-letter-queues"),
+  outbox: () => import("./outbox"),
+  "partitioned-logs": () => import("./partitioned-logs"),
   // Resilience
   "rate-limiting": () => import("./rate-limiting"),
   "circuit-breakers": () => import("./circuit-breakers"),

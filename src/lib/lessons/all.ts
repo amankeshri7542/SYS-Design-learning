@@ -42,6 +42,10 @@ import gracefulShutdown from "./scenes/graceful-shutdown";
 import acknowledgements from "./scenes/acknowledgements";
 import deliveryGuarantees from "./scenes/delivery-guarantees";
 import backpressure from "./scenes/backpressure";
+import idempotency from "./scenes/idempotency";
+import deadLetterQueues from "./scenes/dead-letter-queues";
+import outbox from "./scenes/outbox";
+import partitionedLogs from "./scenes/partitioned-logs";
 import capstone from "./stories/capstone";
 
 export const SCENE_DEFS: Record<string, LessonScene> = {
@@ -81,6 +85,10 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
   acknowledgements,
   "delivery-guarantees": deliveryGuarantees,
   backpressure,
+  idempotency,
+  "dead-letter-queues": deadLetterQueues,
+  outbox,
+  "partitioned-logs": partitionedLogs,
 };
 
 export const STORY_DEFS: Record<string, StoryDef> = { capstone };

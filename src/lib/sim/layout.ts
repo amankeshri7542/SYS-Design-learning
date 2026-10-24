@@ -589,6 +589,9 @@ export function edgesOf(spec: SceneSpec): Edge[] {
   for (const n of spec.nodes) {
     const targets = [...flat(n.to), ...flat(n.calls?.read), ...flat(n.calls?.write)];
     if (n.leader) targets.push(n.leader);
+    // A queue's dead letters and a database's outbox relay travel rails of their own.
+    if (n.ack?.deadLetter) targets.push(n.ack.deadLetter);
+    if (n.outbox) targets.push(n.outbox.to);
     for (const t of targets) if (ids.has(t)) add(n.id, t, "flow");
     if (n.replicaOf && ids.has(n.replicaOf)) add(n.replicaOf, n.id, "sync");
     if (n.peer && ids.has(n.peer)) add(n.id, n.peer, "sync");
