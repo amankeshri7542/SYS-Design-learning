@@ -24,6 +24,12 @@ import retriesAndBackoff from "./scenes/retries-and-backoff";
 import scalingUpVsOut from "./scenes/scaling-up-vs-out";
 import sharding from "./scenes/sharding";
 import staleData from "./scenes/stale-data";
+import requestAndResponse from "./scenes/request-and-response";
+import latencyVsBandwidth from "./scenes/latency-vs-bandwidth";
+import timeoutsAndDeadlines from "./scenes/timeouts-and-deadlines";
+import pipeliningAndBatching from "./scenes/pipelining-and-batching";
+import nearestRegionAndFailover from "./scenes/nearest-region-and-failover";
+import dns from "./scenes/dns";
 import capstone from "./stories/capstone";
 
 export const SCENE_DEFS: Record<string, LessonScene> = {
@@ -45,6 +51,12 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
   "rate-limiting": rateLimiting,
   "circuit-breakers": circuitBreakers,
   autoscaling,
+  "request-and-response": requestAndResponse,
+  "latency-vs-bandwidth": latencyVsBandwidth,
+  "timeouts-and-deadlines": timeoutsAndDeadlines,
+  "pipelining-and-batching": pipeliningAndBatching,
+  "nearest-region-and-failover": nearestRegionAndFailover,
+  dns,
 };
 
 export const STORY_DEFS: Record<string, StoryDef> = { capstone };

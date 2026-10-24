@@ -3006,6 +3006,12 @@ svg.stroke {
   font: 600 var(--fs-ui)/1.2 var(--font-mono);
 }
 
+/* Where the time goes: a part's share of the whole, as a rule under its number (ink, never a dot colour). */
+.compare td.share {
+  background: linear-gradient(var(--share-ink), var(--share-ink)) right bottom 2px / calc(var(--share) * 100%) 3px no-repeat;
+  --share-ink: color-mix(in srgb, var(--ink) 38%, transparent);
+}
+
 .compare td.tone-good,
 .summary .num.tone-good { color: var(--t-ok); }
 .compare td.tone-warn,

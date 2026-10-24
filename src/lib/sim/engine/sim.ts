@@ -15,6 +15,7 @@ export interface Sim {
   autoscale(lb: NodeRt): void;
   callTimeouts(n: NodeRt): void;
   overload(n: NodeRt): void;
+  cancelLate(n: NodeRt): void;
   rollback(lb: NodeRt): void;
   giveUp(n: NodeRt, r: Req): void;
   recordBreaker(n: NodeRt, ok: boolean): void;
@@ -470,6 +471,7 @@ export class Sim {
       wait: 0,
       work: 0,
       queuedAt: 0,
+      xfer: 0,
     };
     this.reqs.push(r);
     return r;

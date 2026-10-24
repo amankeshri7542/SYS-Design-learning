@@ -30,6 +30,13 @@ export const SCENES: Record<string, Load> = {
   "rate-limiting": () => import("./rate-limiting"),
   "circuit-breakers": () => import("./circuit-breakers"),
   autoscaling: () => import("./autoscaling"),
+  // Networking
+  "request-and-response": () => import("./request-and-response"),
+  "latency-vs-bandwidth": () => import("./latency-vs-bandwidth"),
+  "timeouts-and-deadlines": () => import("./timeouts-and-deadlines"),
+  "pipelining-and-batching": () => import("./pipelining-and-batching"),
+  "nearest-region-and-failover": () => import("./nearest-region-and-failover"),
+  dns: () => import("./dns"),
 };
 
 /**

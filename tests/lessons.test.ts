@@ -102,7 +102,7 @@ test("the route: the dock's next stop follows the path, from its first live stop
   assert.equal(neighbours(COURSE[0].slug).prev, undefined);
   assert.equal(neighbours(COURSE[COURSE.length - 1].slug).next, undefined);
   for (let i = 1; i < COURSE.length; i++) assert.equal(neighbours(COURSE[i - 1].slug).next, COURSE[i]);
-  assert.equal(getLesson("request-and-response"), undefined, "a planned lesson has no page yet");
+  assert.equal(getLesson("acknowledgements"), undefined, "a planned lesson has no page yet");
   // Where to go next: the first stop not yet visited, after the one you were on.
   const visited = new Set(COURSE.slice(0, 3).map((e) => e.slug));
   assert.equal(nextFor(null, new Set()), COURSE[0]);
@@ -204,8 +204,9 @@ for (const lesson of lessons) {
       sim.step(5000);
       return sim.trace;
     };
+    // A few arrivals compared exactly are enough: some lessons send one request at a time, to be watched.
     const first = trace(specs[0]);
-    assert.ok(first.length > 50, `${lesson.slug}: the first step has traffic`);
+    assert.ok(first.length >= 5, `${lesson.slug}: the first step has traffic`);
     for (const i of compared) {
       for (const k of ["sloMs", "timeoutMs", "timeScale", "windowMs"] as const)
         assert.equal(specs[i][k], specs[0][k], `${lesson.slug}: “${lesson.figures[i].short}” has the same ${k}`);
