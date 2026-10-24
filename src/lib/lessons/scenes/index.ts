@@ -12,16 +12,20 @@ export const SCENES: Record<string, Load> = {
   "scaling-up-vs-out": () => import("./scaling-up-vs-out"),
   "load-balancing": () => import("./load-balancing"),
   "health-checks": () => import("./health-checks"),
+  "stateless-vs-stateful": () => import("./stateless-vs-stateful"),
+  "nines-and-error-budgets": () => import("./nines-and-error-budgets"),
   // Caching
   caching: () => import("./caching"),
   cdn: () => import("./cdn"),
   "stale-data": () => import("./stale-data"),
   "cache-stampede": () => import("./cache-stampede"),
+  "negative-caching": () => import("./negative-caching"),
   // Data
   "read-replicas": () => import("./read-replicas"),
   sharding: () => import("./sharding"),
   "consistent-hashing": () => import("./consistent-hashing"),
   "consistency-vs-availability": () => import("./consistency-vs-availability"),
+  indexes: () => import("./indexes"),
   // Async
   "message-queues": () => import("./message-queues"),
   "publish-subscribe": () => import("./publish-subscribe"),

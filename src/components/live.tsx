@@ -13,8 +13,9 @@ const HISTORY = 40;
 /** Where an answer's time goes: rows of these show, under each number, its share of the column's whole. */
 const SPLIT: MetricId[] = ["wire", "wait", "work"];
 
-/** A time part's share of the whole (travel + waiting + working) in one world, for its bar. */
+/** A time part's share of the whole (travel + waiting + working) in one world, or the error budget left: its bar. */
 function shareOf(m: MetricSpec, sim: Sim): number | undefined {
+  if (m.id === "budget") return measure(sim, m) ?? undefined;
   if (!SPLIT.includes(m.id)) return undefined;
   const v = measure(sim, m);
   const total = SPLIT.reduce((sum, id) => sum + (measure(sim, { ...m, id, label: id }) ?? 0), 0);

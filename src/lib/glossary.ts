@@ -36,6 +36,10 @@ const TERMS: Term[] = [
   { key: "capacity", name: "Capacity", alias: "throughput ceiling", short: "The most a part can finish each second: its workers divided by the time each request takes.", show: { lesson: "latency-and-throughput", focus: { nodes: ["app"], sockets: true } } },
   { key: "round-robin", name: "Round robin", short: "A balancer giving each server the next request in turn, whatever it is doing.", show: { lesson: "load-balancing", focus: { nodes: ["lb"] } } },
   { key: "health-check", name: "Health check", alias: "probe, ping", short: "A small request a balancer sends each server to see if it still answers.", show: { lesson: "health-checks", focus: { nodes: ["lb"] } } },
+  { key: "sticky-session", name: "Sticky session", alias: "session affinity", short: "A balancer sending each user to the same server every time, usually because their session lives there.", show: { lesson: "stateless-vs-stateful", focus: { nodes: ["lb"] } } },
+  { key: "stateless", name: "Stateless server", short: "A server that keeps nothing about users between requests, so any server can serve anyone.", show: { lesson: "stateless-vs-stateful", focus: { nodes: ["store"] } } },
+  { key: "availability", name: "Availability", alias: "uptime, SLI", short: "The share of requests answered well and on time, over a long window such as a month.", show: { lesson: "nines-and-error-budgets", focus: { metric: "Answered on time" } } },
+  { key: "error-budget", name: "Error budget", alias: "SLO budget", short: "The failures a target still allows: 99.9% over a month leaves about 43 minutes.", show: { lesson: "nines-and-error-budgets", focus: { metric: "Error budget left" } } },
   // Caching
   { key: "hit", name: "Cache hit", short: "The cache had a copy, so the answer came back without asking the database.", show: { lesson: "caching", focus: { nodes: ["cache"] } } },
   { key: "miss", name: "Cache miss", short: "The cache had no copy: the read goes on to the database, and the answer is kept for next time.", show: { lesson: "caching", focus: { nodes: ["cache"], link: ["cache", "db"] } } },
@@ -46,12 +50,17 @@ const TERMS: Term[] = [
   { key: "invalidation", name: "Invalidation", alias: "purge", short: "Deleting a cached copy as soon as the source changes, so the next read fetches it fresh." },
   { key: "stampede", name: "Cache stampede", alias: "thundering herd", short: "Many requests missing on the same popular item at once and rushing the database together.", show: { lesson: "cache-stampede", focus: { nodes: ["db"], dots: "waiting" } } },
   { key: "coalescing", name: "Request coalescing", alias: "single-flight", short: "Letting one miss fetch an item while the others for the same item wait for its answer.", show: { lesson: "cache-stampede", focus: { nodes: ["cache"] } } },
+  { key: "penetration", name: "Cache penetration", short: "Requests for things that don't exist: they miss every time and all reach the database.", show: { lesson: "negative-caching", focus: { link: ["cache", "db"] } } },
+  { key: "negative-cache", name: "Negative caching", short: "Keeping a “not found” answer for a short while, so the same missing id isn't looked up again.", show: { lesson: "negative-caching", focus: { nodes: ["cache"] } } },
+  { key: "existence-check", name: "Existence check", alias: "Bloom filter", short: "A compact list of every id that exists. It answers “no” at once, and “maybe” when unsure.", show: { lesson: "negative-caching", focus: { nodes: ["cache"] } } },
   // Data
   { key: "replica", name: "Replica", alias: "read replica, secondary", short: "A copy of a database that takes the primary's writes a moment later and answers reads.", show: { lesson: "read-replicas", focus: { nodes: ["r1"] } } },
   { key: "replication-lag", name: "Replication lag", short: "The moment between a write landing on the primary and its copy reaching a replica.", show: { lesson: "read-replicas", focus: { dots: "stale" } } },
   { key: "shard", name: "Shard", alias: "partition", short: "One database's slice of the keys, when the data is split across several by key.", show: { lesson: "sharding", focus: { nodes: ["d1", "d2", "d3"] } } },
   { key: "consistent-hashing", name: "Consistent hashing", alias: "hash ring", short: "Placing keys and nodes on a ring, so a node joining or leaving moves only its neighbours' keys.", show: { lesson: "consistent-hashing", focus: { nodes: ["router"] } } },
   { key: "leader", name: "Leader", alias: "primary", short: "The one copy that decides: every write goes through it, and the others follow.", show: { lesson: "consistency-vs-availability", focus: { nodes: ["dbUS"] } } },
+  { key: "table-scan", name: "Table scan", alias: "full scan", short: "Reading every row of a table to find the ones you want. Its cost grows with the table.", show: { lesson: "indexes", focus: { nodes: ["db"] } } },
+  { key: "index", name: "Index", alias: "B-tree", short: "A sorted structure that points straight at rows by a column's value. Reads get fast; writes do a little more.", show: { lesson: "indexes", focus: { nodes: ["db"] } } },
   // Async
   { key: "load-multiplier", name: "Load multiplier", alias: "retry amplification", short: "Attempts sent for every real request. Each retry adds one, so retries push it above ×1." },
   { key: "ghost", name: "Ghost request", short: "Work still waiting in a server's line for a user who already gave up. Serving it helps nobody.", show: { lesson: "retries-and-backoff", focus: { nodes: ["svc"], dots: "gaveup" } } },
