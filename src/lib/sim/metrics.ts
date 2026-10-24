@@ -20,7 +20,16 @@ export type MetricId =
   | "conflicts"
   | "answered"
   | "jobWait"
-  | "unsynced";
+  | "unsynced"
+  | "p99"
+  | "wasted"
+  | "lost"
+  | "availability"
+  | "budget"
+  | "wire"
+  | "wait"
+  | "work"
+  | "filtered";
 
 export interface MetricSpec {
   id: MetricId;
@@ -47,7 +56,7 @@ export interface MetricSpec {
 /** Which direction is good news. Neutral metrics (how many servers are in use) never get a verdict. */
 export type Better = "low" | "high" | "neutral";
 
-type Unit = "ms" | "pct" | "rate" | "count" | "ratio";
+type Unit = "ms" | "pct" | "rate" | "count" | "ratio" | "nines";
 
 const META: Record<MetricId, { unit: Unit; better: Better }> = {
   p50: { unit: "ms", better: "low" },
@@ -70,6 +79,15 @@ const META: Record<MetricId, { unit: Unit; better: Better }> = {
   answered: { unit: "pct", better: "high" },
   jobWait: { unit: "ms", better: "low" },
   unsynced: { unit: "count", better: "low" },
+  p99: { unit: "ms", better: "low" },
+  wasted: { unit: "pct", better: "low" },
+  lost: { unit: "pct", better: "low" },
+  availability: { unit: "nines", better: "high" },
+  budget: { unit: "pct", better: "high" },
+  wire: { unit: "ms", better: "low" },
+  wait: { unit: "ms", better: "low" },
+  work: { unit: "ms", better: "low" },
+  filtered: { unit: "pct", better: "high" },
 };
 
 function recent(sim: Sim, m: MetricSpec) {
@@ -98,10 +116,54 @@ export function measure(sim: Sim, m: MetricSpec): number | null {
   switch (m.id) {
     case "p50":
     case "p95":
+    case "p99":
       return percentile(
         recent(sim, m).filter((d) => d.result !== "rejected").map((d) => d.lat),
-        m.id === "p50" ? 0.5 : 0.95,
+        m.id === "p50" ? 0.5 : m.id === "p95" ? 0.95 : 0.99,
       );
+    case "wire":
+    case "wait":
+    case "work": {
+      // Where an answered request's time went, on average: the three add up to its whole time.
+      const d = recent(sim, m).filter((x) => x.result !== "error" && x.result !== "rejected");
+      return d.length ? d.reduce((s, x) => s + x[m.id as "wire" | "wait" | "work"], 0) / d.length : null;
+    }
+    case "wasted": {
+      const from = sim.t - sim.windowMs;
+      let all = 0;
+      let lost = 0;
+      for (const w of sim.workLog) {
+        if (w.t <= from) continue;
+        all += w.ms;
+        if (w.wasted) lost += w.ms;
+      }
+      return all ? lost / all : null;
+    }
+    case "lost": {
+      const all = sim.crossings.count(sim.t);
+      return all ? sim.lostCrossings.count(sim.t) / all : null;
+    }
+    case "availability": {
+      const all = sim.sloAll.count(sim.t);
+      return all ? sim.sloGood.count(sim.t) / all : null;
+    }
+    case "budget": {
+      // The error budget left: 1 while every answer is good, 0 once the misses reach what the target allows.
+      const all = sim.sloAll.count(sim.t);
+      if (!all) return null;
+      const bad = 1 - sim.sloGood.count(sim.t) / all;
+      const allowed = 1 - (sim.spec.sloTarget ?? 0.999);
+      return Math.max(0, 1 - bad / allowed);
+    }
+    case "filtered": {
+      let f = 0;
+      let all = 0;
+      for (const n of nodes(sim, m.nodes)) {
+        f += n.filtered.count(sim.t);
+        all += n.arrivals.count(sim.t);
+      }
+      return all ? f / all : null;
+    }
     case "errors":
       return share(sim, m, (r) => r === "error");
     case "rejected":
@@ -191,6 +253,12 @@ export function formatMetric(m: MetricSpec, v: number | null): string {
       return `${Math.round(v)}/s`;
     case "ratio":
       return `×${v.toFixed(1)}`;
+    case "nines": {
+      // Availability shows its nines: 99.9% is not 100%.
+      const p = v * 100;
+      if (p >= 100) return "100%";
+      return `${p >= 99.99 ? "99.99" : p >= 99.9 ? p.toFixed(2) : p >= 99 ? p.toFixed(1) : Math.round(p)}%`;
+    }
     default:
       return `${Math.round(v)}`;
   }
@@ -204,7 +272,15 @@ export function toneOf(m: MetricSpec, v: number | null, sloMs: number): Tone {
   switch (m.id) {
     case "p50":
     case "p95":
+    case "p99":
       return v <= sloMs ? "good" : v <= sloMs * 2 ? "warn" : "bad";
+    case "availability":
+      return v >= 0.999 ? "good" : v >= 0.99 ? "warn" : "bad";
+    case "budget":
+      return v > 0.5 ? "good" : v > 0 ? "warn" : "bad";
+    case "wasted":
+    case "lost":
+      return v < 0.02 ? "good" : v < 0.1 ? "warn" : "bad";
     case "errors":
     case "stale":
       return v < 0.01 ? "good" : v < 0.05 ? "warn" : "bad";
@@ -233,7 +309,7 @@ export function betterIs(m: MetricSpec): Better {
 
 /** Response times, which are judged against the scene's latency target (`sloMs`). */
 export function isLatency(m: MetricSpec) {
-  return m.id === "p50" || m.id === "p95";
+  return m.id === "p50" || m.id === "p95" || m.id === "p99";
 }
 
 /** What a metric is judged against, if anything: its own target, or for a response time the scene's latency target. */
@@ -269,6 +345,15 @@ const SAYS: Record<MetricId, (v: string) => string> = {
   answered: (v) => `${v} of requests got a real answer in the end.`,
   jobWait: (v) => `The slowest 1 in 20 jobs takes ${v} or longer to finish.`,
   unsynced: (v) => `${v} writes are waiting to be copied across.`,
+  p99: (v) => `The slowest 1 in 100 requests takes ${v} or longer; the rest are faster.`,
+  wasted: (v) => `${v} of the workers' time went to requests whose caller had already given up.`,
+  lost: (v) => `${v} of the messages sent were lost on the way.`,
+  availability: (v) => `${v} of requests were answered, and on time, over the long window.`,
+  budget: (v) => `${v} of the error budget is left: the misses the target allows before it is broken.`,
+  wire: (v) => `${v} on average spent travelling over links.`,
+  wait: (v) => `${v} on average spent waiting in line.`,
+  work: (v) => `${v} on average spent being worked on.`,
+  filtered: (v) => `${v} of lookups were for keys that don't exist, answered by the existence check.`,
 };
 
 /**
@@ -301,6 +386,8 @@ export function formatDiff(m: MetricSpec, d: number): string {
       return `${sign}${Math.round(a)}/s`;
     case "ratio":
       return `${sign}${a.toFixed(1)}`;
+    case "nines":
+      return `${sign}${(a * 100).toFixed(a < 0.01 ? 2 : 1)} pts`;
     default:
       return `${sign}${Math.round(a)}`;
   }

@@ -21,7 +21,28 @@ export type Result = "ok" | "stale" | "fallback" | "rejected" | "error";
 /** A call target: one node, or a pool picked round-robin among healthy members. */
 export type Call = string | string[];
 
-export type Algo = "round-robin" | "random" | "least" | "hash" | "ring";
+/** `nearest`: the healthy target with the shortest link. `weighted`: at random, in proportion to `weights` (canaries). */
+export type Algo = "round-robin" | "random" | "least" | "hash" | "ring" | "nearest" | "weighted";
+
+/**
+ * A link's behaviour, beyond its latency. Loss and jitter are decided by a hash of what is crossing which link (the
+ * logical request, its attempt and how many links it has crossed), never by when, so a problem and its fix lose the
+ * same crossings.
+ */
+export interface LinkSpec {
+  /** One-way latency in ms. Without it, the latency comes from the distance on the stage. */
+  ms?: number;
+  /** Each crossing takes up to this much longer or shorter, uniformly. */
+  jitterMs?: number;
+  /** The share of crossings lost on the way (0–1). A scene with loss needs a timeout, or lost requests wait forever. */
+  loss?: number;
+  /** Crossings in flight at once; the rest wait at the start of the link (a narrow pipe). */
+  parallel?: number;
+  /** Extra ms per unit of payload (`cost`): bandwidth. The payload is a write's request or a read's answer. */
+  perCostMs?: number;
+  /** Text drawn on the link. */
+  label?: string;
+}
 
 export interface ClientSpec {
   /** Requests per (simulated) second, constant or a function of time in ms. */
@@ -41,8 +62,12 @@ export interface ClientSpec {
     baseMs?: number;
     /** Retries allowed as a share of fresh requests in the window (a retry budget). */
     budget?: number;
+    /** A retry gets a fresh timeout (default), or keeps what is left of the first attempt's ("shared": one deadline). */
+    deadline?: "fresh" | "shared";
   };
   tag?: string;
+  /** Share of requests for keys that don't exist: they always miss a cache, unless it remembers "not found". */
+  absent?: number;
 }
 
 export interface NodeSpec {
@@ -83,6 +108,43 @@ export interface NodeSpec {
   blocking?: boolean;
   breaker?: { threshold: number; cooldownMs: number };
   callTimeoutMs?: number;
+
+  /** Service time per operation, overriding `serviceMs` (an index makes reads cheap and writes dearer). */
+  serviceBy?: Partial<Record<"read" | "write", number>>;
+  /** A share of requests take `mult` times as long (the slow tail). */
+  tail?: { share: number; mult: number };
+  /** Share of completed requests that fail (a bad deploy). */
+  failRate?: number;
+  /** Turn requests away at once when the line or the load is past a mark; tags in `keep` are never shed. */
+  shed?: { queueAbove?: number; loadAbove?: number; keep?: string[] };
+  /** Which request in line a free worker takes: the oldest (default) or the newest. */
+  order?: "fifo" | "lifo";
+  /** Tags served first, most important first; within a tag, `order` holds. */
+  priority?: string[];
+  /** Workers reserved per tag; untagged work uses the rest. A slow dependency can't take every worker. */
+  bulkheads?: Record<string, number>;
+  /** Balancer: route by the request's tag to its own targets (an L7 gateway's path routing). */
+  byTag?: Record<string, Call[]>;
+  /**
+   * `honour`: refuse work that can't finish before the request's deadline, turn away work for a request already
+   * abandoned, and stop waiting on a downstream call once the deadline passes. `ignore` (default): work on regardless.
+   */
+  deadlines?: "honour" | "ignore";
+  /** Balancer, `algo: "weighted"`: each target's share of the traffic (default 1). */
+  weights?: Record<string, number>;
+  /** Balancer: stop sending to `target` once its share of errors over the window passes `errorsAbove` (a canary). */
+  rollback?: { target: string; errorsAbove: number };
+  /** Shown as a badge ("v2"). */
+  version?: string;
+  /**
+   * Crash when the line or the load stays past a mark for `forMs`; come back after `restartMs` with a cold ramp:
+   * workers return over `warmMs`.
+   */
+  overload?: { queueAbove?: number; loadAbove?: number; forMs: number; restartMs: number; warmMs: number };
+  /** Cache: also remember "not found", for this long. */
+  negativeTtlMs?: number;
+  /** Cache or database: an existence check answers most requests for absent keys at once; `fp` slip through. */
+  bloom?: { fp: number };
 }
 
 export interface ScriptEvent {
@@ -109,8 +171,8 @@ export interface SceneSpec {
   timeScale?: number;
   /** Network latency per layout unit of distance. */
   msPerUnit?: number;
-  /** Latency overrides, keyed "a>b" (applies both ways). */
-  links?: Record<string, number>;
+  /** Latency (or a whole link's behaviour), keyed "a>b" (applies both ways). */
+  links?: Record<string, number | LinkSpec>;
   /** Text shown on a link, keyed like `links`. */
   linkLabels?: Record<string, string>;
   /** Events on a loop, and armed events that play once when fired (`sim.fire`). */
@@ -122,6 +184,9 @@ export interface SceneSpec {
   stillMs?: number;
   /** Fixed wide-layout height; otherwise the stage fits its nodes. */
   wideH?: number;
+  /** Availability is measured over this long (default ten metric windows), against `sloTarget` (default 0.999). */
+  sloWindowMs?: number;
+  sloTarget?: number;
 }
 
 export type FxKind =
@@ -141,7 +206,11 @@ export type FxKind =
   /** A full cache pushed its least recently used entry out. */
   | "evict"
   /** A node started running hot: its line grew past twice its workers. */
-  | "hot";
+  | "hot"
+  /** A crossing was lost on a link (`Fx.link` says where). */
+  | "lost"
+  /** An existence check answered "not found" without a lookup. */
+  | "filtered";
 
 export interface Fx {
   t: number;
@@ -149,4 +218,6 @@ export interface Fx {
   node: string;
   /** For a drop at a full waiting line: the slot it would have taken (the line's tail). */
   slot?: number;
+  /** For a crossing lost on a link: the link, and how far along it the request was. */
+  link?: { from: string; to: string; frac: number };
 }
