@@ -417,8 +417,9 @@ export function placeAll(scene: Scene, frame: Frame, within?: Rect): { placed: M
   const labels = new Map<string, Rect>();
   const out = new Map<string, Placed>();
   let hits = 0;
-  // Clear of every other station and label shown in a step with this one.
+  // Clear of its own shoulder badges, and of every other station and label shown in a step with this one.
   const clear = (a: (typeof boxes)[number], r: Rect) =>
+    a.solid.slice(1).every((q) => !overlaps(r, q, margin)) &&
     boxes.every((b) => b === a || !scene.together(a.key, b.key) || b.solid.every((q) => !overlaps(r, q, margin))) &&
     [...labels].every(([key, l]) => key === a.key || !scene.together(a.key, key) || !overlaps(r, l, margin));
   for (const a of boxes) {

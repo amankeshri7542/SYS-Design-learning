@@ -19,8 +19,8 @@ export function SiteHeader() {
     <header className="site-head">
       <Brand />
       <nav className="site-nav" aria-label="Site">
-        <Link href="/#route">Route map</Link>
-        <Link href="/learn/capstone">Capstone</Link>
+        <Link href="/#route">Map</Link>
+        <Link href="/#journeys">Journeys</Link>
         <Link href="/glossary">Glossary</Link>
       </nav>
     </header>

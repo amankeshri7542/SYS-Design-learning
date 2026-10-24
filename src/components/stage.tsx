@@ -192,6 +192,7 @@ export function Stage({
   focus,
   callout,
   follow,
+  remember = true,
 }: {
   sim: Sim;
   spec: SceneSpec;
@@ -207,6 +208,8 @@ export function Stage({
   callout?: { id: string; text: string; waiting: boolean } | null;
   /** The request being followed: it gets a halo, and every other request steps back. */
   follow?: number | null;
+  /** Leave its stations for the next lesson's intro to skip. Off for previews, which no lesson follows. */
+  remember?: boolean;
 }) {
   const scene = useMemo(() => (frameSpecs ? combine(frameSpecs) : sceneOf(spec)), [frameSpecs, spec]);
   const edges = useMemo(() => edgesOf(spec), [spec]);
@@ -253,6 +256,8 @@ export function Stage({
   const mountedAt = useRef(0);
   const specRef = useRef(spec);
   specRef.current = spec;
+  const rememberRef = useRef(remember);
+  rememberRef.current = remember;
   const run = intro.run;
   useEffect(() => {
     if (!run) return;
@@ -263,7 +268,7 @@ export function Stage({
     mountedAt.current = performance.now();
     return () => {
       // A real unmount, not a development double-mount: remember what this stage showed.
-      if (performance.now() - mountedAt.current > 300) lastStage = new Set(specRef.current.nodes.map(sigOf));
+      if (rememberRef.current && performance.now() - mountedAt.current > 300) lastStage = new Set(specRef.current.nodes.map(sigOf));
     };
   }, []);
 

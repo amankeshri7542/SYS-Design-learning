@@ -63,8 +63,8 @@
   --l-resilience-ink: #7a5410;
   --l-operating: #7a2f5e;
   --l-operating-ink: #7a2f5e;
-  --l-capstone: #15171c;
-  --l-capstone-ink: #15171c;
+  --l-stories: #15171c;
+  --l-stories-ink: #15171c;
 
   /* Type: signage (Overpass, 16px and up), the guide's voice (Newsreader), body and UI (Atkinson), numbers (Overpass Mono) */
   --fs-caption: 12px;
@@ -176,8 +176,8 @@
     --l-resilience-ink: #d2a043;
     --l-operating: #d888b8;
     --l-operating-ink: #d888b8;
-    --l-capstone: #ecebe6;
-    --l-capstone-ink: #ecebe6;
+    --l-stories: #ecebe6;
+    --l-stories-ink: #ecebe6;
 
     --e-raised: 0 1px 0 rgb(0 0 0 / 0.25), 0 18px 40px -24px rgb(0 0 0 / 0.75);
     --e-sheet: inset 0 1px 0 rgb(255 255 255 / 0.03);
@@ -586,13 +586,15 @@ svg.stroke {
 
 /* ------------------------------------------------------------------ home */
 
-.hero {
+/* The masthead: the promise and where to start on the left, the live scene on the right. About 58% of the screen, so
+   the route begins above the fold. */
+.masthead {
   display: grid;
-  grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(340px, 0.92fr) minmax(0, 1.38fr);
   align-items: center;
-  gap: 28px 44px;
-  min-height: calc(100svh - 62px);
-  padding-block: clamp(20px, 4vh, 48px);
+  gap: var(--sp-6) var(--sp-7);
+  min-height: min(58svh, 620px);
+  padding-block: clamp(24px, 4.5vh, 48px) clamp(20px, 3vh, 36px);
 }
 
 .eyebrow {
@@ -603,23 +605,24 @@ svg.stroke {
   text-transform: uppercase;
 }
 
-.hero h1 {
-  margin: 14px 0 0;
-  font-size: clamp(2.4rem, 3.7vw, 3.75rem);
+.masthead h1 {
+  margin: 0;
+  font-size: clamp(2.4rem, 3.6vw, 3.6rem);
   font-weight: 800;
   line-height: 0.98;
   letter-spacing: -0.035em;
 }
 
-.hero h1 span {
+.masthead h1 span {
   display: block;
   color: var(--muted);
 }
 
 .lede {
-  margin: 18px 0 0;
+  max-width: 34em;
+  margin: var(--sp-4) 0 0;
   color: var(--ink-2);
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   line-height: 1.5;
 }
 
@@ -627,35 +630,64 @@ svg.stroke {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 22px;
+  margin-top: var(--sp-5);
 }
 
-.dot-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  margin: 26px 0 0;
-  padding: 0;
+/* The lines as an index: roundel, name, and a pip per lesson that fills once it is visited. */
+.line-index {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, max-content));
+  gap: 2px var(--sp-5);
+  margin: var(--sp-5) 0 0;
+  padding: var(--sp-4) 0 0;
+  border-top: 1px solid var(--rule);
   list-style: none;
-  color: var(--ink-2);
-  font: 600 var(--fs-meta)/1.2 var(--font-body);
 }
 
-.dot-strip li {
-  display: inline-flex;
+.line-index a {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  min-height: 40px;
+  color: var(--ink);
+  text-decoration: none;
 }
 
-.dot-strip .dot {
-  width: 16px;
-  height: 16px;
+.line-index .roundel-sm {
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+}
+
+.li-name {
+  font: 700 15px/1.2 var(--font-display);
+}
+
+.line-index a:hover .li-name {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.li-pips {
+  display: flex;
+  gap: 4px;
+}
+
+.li-pips i {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-round);
+  box-shadow: inset 0 0 0 1.5px var(--lc);
+}
+
+.li-pips i.on {
+  background: var(--lc);
 }
 
 .hero-fig {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  height: clamp(360px, 70svh, 660px);
+  height: clamp(340px, 52svh, 540px);
   margin: 0;
   padding: 10px;
   border: 1px solid var(--rule);
@@ -693,30 +725,414 @@ svg.stroke {
   display: none;
 }
 
-.route {
-  margin-top: clamp(48px, 8vh, 96px);
+/* Sections: a heading and one line saying what the section is for. */
+.route,
+.journeys,
+.read {
+  margin-top: clamp(40px, 7vh, 88px);
+  scroll-margin-top: 64px;
 }
 
-.route-head {
+.section-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 8px 32px;
-  margin-bottom: 28px;
+  margin-bottom: var(--sp-5);
 }
 
 .section-h {
   margin: 0;
-  font-size: clamp(1.9rem, 3.4vw, 2.6rem);
+  font-size: clamp(1.9rem, 3.2vw, 2.5rem);
   font-weight: 800;
   letter-spacing: -0.03em;
 }
 
 .section-sub {
-  max-width: 58ch;
+  max-width: 60ch;
   margin: 0;
   color: var(--ink-2);
+}
+
+/* The interview fast lane: a plain ordered list, in columns. */
+.fast-lane {
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--rule);
+}
+
+.fast-lane h3 {
+  margin: 0 0 var(--sp-3);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.fast-lane ol {
+  columns: 4 220px;
+  column-gap: var(--sp-6);
+  margin: 0;
+  padding-left: 1.6em;
+  font-size: var(--fs-ui);
+}
+
+.fast-lane li {
+  break-inside: avoid;
+  padding: 3px 0;
+}
+
+.fast-lane li::marker {
+  color: var(--muted);
+  font: 500 var(--fs-caption) var(--font-mono);
+}
+
+.fast-lane a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.fast-lane a:hover {
+  text-decoration: underline;
+}
+
+.fast-lane .stop-code {
+  display: inline-block;
+  min-width: 2.4em;
+  color: var(--lc-ink);
+  font: 600 var(--fs-caption) var(--font-mono);
+}
+
+/* A small live scene: a station's preview, a journey's finished design. The stage fills it. */
+.mini-scene {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.mini-scene > .stage {
+  position: absolute;
+  inset: 0;
+}
+
+/* A code in a line's ink colour: a station on a card. */
+.code-chip {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: var(--r-chip);
+  background: var(--lc-ink);
+  color: var(--paper);
+  font: 600 var(--fs-caption)/1.25 var(--font-mono);
+  letter-spacing: 0;
+  vertical-align: 0.15em;
+}
+
+/* Journeys: one card each, the brief and its stops beside its finished design running. */
+.journey-cards {
+  display: grid;
+  gap: var(--sp-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.journey-card {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.72fr) minmax(0, 1.5fr);
+  gap: var(--sp-6);
+  padding: var(--sp-5);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sheet);
+  background: var(--surface);
+}
+
+.journey-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.journey-title {
+  margin: 0;
+  font: 600 clamp(1.5rem, 2.2vw, 1.9rem)/1.15 var(--font-guide), Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+.journey-title .code-chip {
+  margin-right: 6px;
+}
+
+.journey-why {
+  margin: var(--sp-3) 0 0;
+  color: var(--ink-2);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+}
+
+.journey-sub {
+  margin: var(--sp-5) 0 var(--sp-2);
+  color: var(--ink-2);
+  font: 700 var(--fs-meta)/1.2 var(--font-body);
+}
+
+.journey-stops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.journey-stops a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 3px 12px 3px 4px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-round);
+  color: var(--ink);
+  font-size: var(--fs-meta);
+  text-decoration: none;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.journey-stops a:hover,
+.journey-stops .seen a {
+  border-color: var(--lc);
+}
+
+.roundel-xs {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-round);
+  background: var(--lc-ink);
+  color: var(--paper);
+  font: 800 12px/1 var(--font-display);
+}
+
+.journey-stop-code {
+  color: var(--lc-ink);
+  font: 600 var(--fs-caption) var(--font-mono);
+}
+
+.journey-go {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-4);
+  margin-top: auto;
+  padding-top: var(--sp-5);
+}
+
+.journey-facts {
+  color: var(--muted);
+  font: 500 var(--fs-meta) var(--font-mono);
+}
+
+.journey-scene {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin: 0;
+}
+
+.journey-scene .sheet {
+  grid-template-rows: minmax(0, 1fr);
+  height: clamp(300px, 34vw, 440px);
+  border-radius: var(--r-card);
+}
+
+.journey-scene figcaption {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+
+/* How to read a scene: each mark on its own short rail, shown happening once as the list comes into view. */
+.specimens {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
+  gap: var(--sp-3) var(--sp-6);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.specimen {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-4);
+  min-height: 56px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.specimen svg {
+  display: block;
+  width: 200px;
+  height: 46px;
+  overflow: visible;
+}
+
+.specimen p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-ui);
+  line-height: 1.4;
+}
+
+.specimen strong {
+  color: var(--ink);
+}
+
+.spec-user,
+.spec-station {
+  fill: var(--card);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+
+.spec-rail,
+.spec-core {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.spec-rail {
+  stroke: var(--rail);
+  stroke-width: 8;
+}
+
+.spec-core {
+  stroke: var(--rail-core);
+  stroke-width: 5;
+}
+
+.spec-target path {
+  stroke: var(--t-warn);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 3;
+}
+
+.spec-target text {
+  fill: var(--muted);
+  font: 500 11px var(--font-mono);
+}
+
+.spec-gate {
+  stroke: var(--ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+
+.m-req { fill: var(--dot-req); }
+.m-slow { fill: var(--dot-slow); }
+.m-ok { fill: var(--dot-ok); }
+.m-stale { fill: var(--dot-stale); }
+.m-turned { fill: var(--dot-turned); }
+.m-err { fill: var(--dot-err); }
+
+.spec-gaveup {
+  fill: none;
+  stroke: var(--dot-err);
+  stroke-width: 1.8;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Where each mark rests: the moment that tells its story. */
+.spec-mover {
+  transform: translate(var(--rest), 20px);
+}
+
+.spec-late .m-before {
+  opacity: 0;
+}
+
+.spec-failed .spec-mover {
+  transform: translate(var(--rest), 29px) rotate(24deg);
+}
+
+/* Requests travel at an even pace; a mark changing state does it at once, where it happens. */
+.specimens.playing .spec-mover {
+  animation: spec-travel 1.5s var(--ease-linear) calc(var(--i) * 180ms) both;
+}
+
+@keyframes spec-travel {
+  from {
+    transform: translate(var(--from), 20px);
+  }
+}
+
+.specimens.playing .spec-late .m-before {
+  animation: spec-swap-out 1.5s var(--ease-linear) calc(var(--i) * 180ms) both;
+}
+
+.specimens.playing .spec-late .m-after {
+  animation: spec-swap-in 1.5s var(--ease-linear) calc(var(--i) * 180ms) both;
+}
+
+@keyframes spec-swap-out {
+  0%,
+  52% {
+    opacity: 1;
+  }
+}
+
+@keyframes spec-swap-in {
+  0%,
+  52% {
+    opacity: 0;
+  }
+}
+
+.specimens.playing .spec-turned .spec-mover {
+  animation-name: spec-turn-back;
+}
+
+@keyframes spec-turn-back {
+  0% {
+    transform: translate(var(--from), 20px);
+  }
+  55% {
+    transform: translate(78px, 20px);
+  }
+}
+
+.specimens.playing .spec-failed .spec-mover {
+  animation-name: spec-fall;
+}
+
+@keyframes spec-fall {
+  0% {
+    transform: translate(var(--from), 20px);
+  }
+  72% {
+    transform: translate(var(--rest), 20px) rotate(0deg);
+  }
+}
+
+.specimens.playing .spec-gaveup {
+  animation: spec-give-up 1.5s var(--ease-out) calc(var(--i) * 180ms) both;
+}
+
+@keyframes spec-give-up {
+  0%,
+  66% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+.btn-replay {
+  margin-top: var(--sp-4);
 }
 
 /* ------------------------------------------------------------------ dots & key */
@@ -858,13 +1274,6 @@ svg.stroke {
 
 /* ------------------------------------------------------------------ route map */
 
-.route-svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  overflow: visible;
-}
-
 .line-networking { --lc: var(--l-networking); --lc-ink: var(--l-networking-ink); }
 .line-foundations { --lc: var(--l-foundations); --lc-ink: var(--l-foundations-ink); }
 .line-caching { --lc: var(--l-caching); --lc-ink: var(--l-caching-ink); }
@@ -872,29 +1281,121 @@ svg.stroke {
 .line-async { --lc: var(--l-async); --lc-ink: var(--l-async-ink); }
 .line-resilience { --lc: var(--l-resilience); --lc-ink: var(--l-resilience-ink); }
 .line-operating { --lc: var(--l-operating); --lc-ink: var(--l-operating-ink); }
-.line-capstone { --lc: var(--l-capstone); --lc-ink: var(--l-capstone-ink); }
+.line-stories { --lc: var(--l-stories); --lc-ink: var(--l-stories-ink); }
+
+/* The poster: line heads that stay put, beside a frame that pans when the map is wider than the page. */
+.route-poster {
+  position: relative;
+  display: grid;
+  grid-template-columns: 188px minmax(0, 1fr);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+
+.poster-heads {
+  border-right: 1px solid var(--rule);
+}
+
+.poster-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: var(--sp-4);
+}
+
+.poster-head strong {
+  display: block;
+  font: 800 18px/1.15 var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.poster-blurb {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.roundel-lg {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--r-round);
+  background: var(--lc);
+  color: var(--paper);
+  font: 800 19px/1 var(--font-display);
+}
+
+.poster-frame {
+  --fade-l: 0px;
+  --fade-r: 0px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  mask-image: linear-gradient(to right, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent);
+}
+
+/* More map beyond an edge: that edge fades out, so the frame reads as one that pans. */
+.poster-frame[data-more-left] {
+  --fade-l: 48px;
+}
+
+.poster-frame[data-more-right] {
+  --fade-r: 72px;
+}
+
+.route-svg {
+  display: block;
+  max-width: none;
+  overflow: visible;
+}
+
+/* Zones are fare bands: the middle one tinted, each with its name and count, and a dashed edge between them. */
+.zone-band {
+  fill: transparent;
+}
+
+.zone-2 .zone-band {
+  fill: color-mix(in srgb, var(--ink) 3.5%, transparent);
+}
+
+.zone-edge {
+  stroke: var(--rule);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 6;
+}
+
+.zone-label {
+  fill: var(--muted);
+  font: 600 var(--fs-caption) var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.zone-name {
+  fill: var(--ink);
+  font: 800 17px var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.zone-count {
+  fill: var(--muted);
+  font: 500 var(--fs-caption) var(--font-mono);
+  letter-spacing: 0;
+}
 
 .route-line .track {
   fill: none;
   stroke: var(--lc);
   stroke-width: 9;
   stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.roundel {
-  fill: var(--lc);
-}
-
-.roundel-letter {
-  fill: var(--paper);
-  font: 800 19px var(--font-display);
-}
-
-.route-name {
-  fill: var(--ink);
-  font: 800 19px var(--font-display);
-  letter-spacing: -0.01em;
 }
 
 .station {
@@ -939,12 +1440,31 @@ svg.stroke {
 
 .station-name {
   fill: var(--ink);
-  font: 700 14.5px var(--font-body);
+  font: 700 14px var(--font-body);
+}
+
+/* Best seen after another lesson first: a lighter ring and a quieter name. Never locked. */
+.station.early .station-dot {
+  stroke: color-mix(in srgb, var(--lc) 42%, var(--paper));
+}
+
+.station.early .station-name {
+  fill: var(--muted);
 }
 
 .station:hover .station-name,
 .station:focus-visible .station-name {
   text-decoration: underline;
+}
+
+.next-flag rect {
+  fill: var(--ink);
+}
+
+.next-flag text {
+  fill: var(--paper);
+  font: 700 11px var(--font-mono);
+  letter-spacing: 0.08em;
 }
 
 .station:focus-visible,
@@ -955,27 +1475,31 @@ svg.stroke {
 .station:focus-visible .hit {
   stroke: var(--accent);
   stroke-width: 2.5;
-  rx: 12;
+}
+
+/* A journey: its terminal on the last row, and (shown) a dashed ink route through the stations it rides. */
+.terminal {
+  cursor: pointer;
 }
 
 .terminal-pill {
-  fill: var(--paper);
+  fill: var(--surface);
   stroke: var(--ink);
-  stroke-width: 3.5;
+  stroke-width: 2.5;
 }
 
-.terminal-dot {
-  fill: var(--lc);
-}
-
-.terminal-kicker {
-  fill: var(--muted);
-  font: 600 var(--fs-meta) var(--font-mono);
+.terminal-code {
+  fill: var(--ink);
+  font: 600 var(--fs-caption) var(--font-mono);
 }
 
 .terminal-name {
   fill: var(--ink);
-  font: 800 19px var(--font-display);
+  font: 800 15px var(--font-display);
+}
+
+.terminal.early .terminal-pill {
+  stroke: var(--muted);
 }
 
 .terminal:hover .terminal-name,
@@ -987,30 +1511,339 @@ svg.stroke {
   stroke: var(--accent);
 }
 
-.route-list {
-  display: none;
+.journey-route {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.5;
+  stroke-dasharray: 1 7;
+  stroke-linecap: round;
+  animation: fade-in var(--dur-base) var(--ease-out) both;
+}
+
+.journey-stop {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: stop-in var(--dur-base) var(--ease-out) both;
+}
+
+@keyframes stop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+.poster-tools {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3) var(--sp-5);
+  padding: var(--sp-3) 0;
+  border-top: 1px solid var(--rule);
+}
+
+.poster-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
   margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+
+.key-stop {
+  width: 14px;
+  height: 14px;
+  margin-left: 12px;
+  border: 3.5px solid var(--ink-2);
+  border-radius: var(--r-round);
+  background: var(--paper);
+}
+
+.key-stop:first-child {
+  margin-left: 0;
+}
+
+.key-stop.seen {
+  background: var(--ink-2);
+}
+
+.key-stop.early {
+  border-color: color-mix(in srgb, var(--ink-2) 42%, var(--paper));
+}
+
+.journey-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.chip-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-round);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: 600 var(--fs-meta)/1 var(--font-body);
+  transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.chip-toggle:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.chip-toggle[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* A station's card: under (or over) the station, never covering it; a picture of the lesson, not a control. */
+.preview {
+  position: absolute;
+  z-index: 6;
+  width: 360px;
+  padding: 12px 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  box-shadow: var(--e-raised);
+  pointer-events: none;
+  transform-origin: top center;
+  animation: pop-in var(--dur-base) var(--ease-out) both;
+}
+
+.preview[data-side="above"] {
+  translate: 0 -100%;
+  transform-origin: bottom center;
+}
+
+.preview-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font: 500 var(--fs-caption) var(--font-mono);
+}
+
+.preview-title {
+  margin: 6px 0 0;
+  font: 600 20px/1.2 var(--font-guide), Georgia, serif;
+}
+
+.preview-scene {
+  height: 184px;
+  margin: 10px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-ctl);
+  background: var(--stage);
+}
+
+.preview-why {
+  display: -webkit-box;
+  overflow: hidden;
+  margin: 10px 0 0;
+  color: var(--ink-2);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.preview-after {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-caption);
+}
+
+/* The board (phones): a level filter, a search, and the lines as collapsible groups. */
+.route-board {
+  display: none;
+}
+
+.board-tools {
+  display: grid;
+  gap: var(--sp-2);
+}
+
+.board-levels {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.board-levels span {
+  min-height: 40px;
+  padding: 0 4px;
+  font: 600 var(--fs-meta)/1.1 var(--font-body);
+}
+
+.board-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-ctl);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.board-search:focus-within {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.board-search svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.board-search input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 16px var(--font-body);
+  outline: none;
+}
+
+.board-search input::placeholder {
+  color: var(--muted);
+}
+
+.board-found {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+}
+
+.board-lines {
+  margin: var(--sp-2) 0 0;
   padding: 0;
   list-style: none;
 }
 
-.route-row-head {
+.board-line {
+  border-top: 1px solid var(--rule);
+}
+
+.board-line summary {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
-  margin: 0;
+  min-height: 60px;
+  cursor: pointer;
+  list-style: none;
 }
 
-.route-row-head strong {
-  display: block;
-  font: 800 19px/1.2 var(--font-display);
+.board-line summary::-webkit-details-marker {
+  display: none;
 }
 
-.route-blurb {
+.board-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.board-name strong {
   display: block;
+  font: 800 18px/1.2 var(--font-display);
+}
+
+.board-count {
   color: var(--muted);
-  font-size: var(--fs-ui);
-  line-height: 1.4;
+  font: 500 var(--fs-caption) var(--font-mono);
+}
+
+.board-chevron {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  color: var(--muted);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.board-line details[open] .board-chevron {
+  transform: rotate(180deg);
+}
+
+.board-line details > ol {
+  margin: 0 0 var(--sp-4) 14px;
+  padding: 2px 0;
+  border-left: 6px solid var(--lc);
+  list-style: none;
+}
+
+.board-line a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 4px 0;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.stop-dot {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-left: -12px;
+  border: 4px solid var(--lc);
+  border-radius: var(--r-round);
+  background: var(--paper);
+}
+
+.board-line a.seen .stop-dot {
+  background: var(--lc);
+}
+
+.board-line a.early .stop-dot {
+  border-color: color-mix(in srgb, var(--lc) 42%, var(--paper));
+}
+
+.stop-code {
+  flex: none;
+  width: 30px;
+  color: var(--lc-ink);
+  font: 600 var(--fs-caption) var(--font-mono);
+}
+
+.stop-text {
+  display: grid;
+  min-width: 0;
+}
+
+.stop-name {
+  font: 700 16px/1.25 var(--font-display);
+}
+
+.stop-meta {
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1.4 var(--font-mono);
+}
+
+.stop-next {
+  color: var(--t-req);
+  font-weight: 700;
 }
 
 /* Small roundels carry their letter at under 16px, so they sit on the line's ink colour. */
@@ -1025,46 +1858,6 @@ svg.stroke {
   color: var(--paper);
   font: 800 15px/1 var(--font-display);
   text-decoration: none;
-}
-
-.route-row > ol {
-  margin: 8px 0 22px 12px;
-  padding: 2px 0;
-  list-style: none;
-  border-left: 6px solid var(--lc);
-}
-
-.route-row a {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 46px;
-  color: var(--ink);
-  text-decoration: none;
-}
-
-.stop-dot {
-  width: 18px;
-  height: 18px;
-  margin-left: -12px;
-  border: 4px solid var(--lc);
-  border-radius: var(--r-round);
-  background: var(--paper);
-  flex: none;
-}
-
-.route-row a.seen .stop-dot {
-  background: var(--lc);
-}
-
-.stop-code {
-  width: 22px;
-  color: var(--lc-ink);
-  font: 600 var(--fs-caption) var(--font-mono);
-}
-
-.stop-name {
-  font: 700 16px/1.25 var(--font-display);
 }
 
 /* ------------------------------------------------------------------ lesson shell: bar · theatre | panel · dock */
@@ -1184,6 +1977,45 @@ svg.stroke {
   display: flex;
   flex: none;
   gap: 2px;
+}
+
+/* The shell before a lesson's scenes arrive (a client navigation that wasn't fetched ahead): the same frame, empty. */
+.sk-bar {
+  grid-area: bar;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.sk-theatre {
+  grid-area: theatre;
+  display: grid;
+  min-height: 0;
+  padding: 14px;
+}
+
+.sk-sheet {
+  border: 1px solid var(--rule);
+  border-radius: var(--r-sheet);
+  background: var(--stage);
+}
+
+.sk-panel {
+  grid-area: panel;
+  min-height: 0;
+  padding: 16px 20px;
+  border-left: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+.sk-dock {
+  grid-area: dock;
+  border-top: 1px solid var(--rule);
+  background: var(--surface);
 }
 
 /* The theatre holds one sheet: the beat strip along its top edge and the stage. Following a request, the flight strip
@@ -2294,7 +3126,7 @@ svg.stroke {
   text-align: right;
 }
 
-/* metric list (hero, capstone) */
+/* metric list (hero, stories) */
 
 .mlist {
   display: grid;
@@ -2857,15 +3689,15 @@ svg.stroke {
 .pill.badge-warn { --on-tone-pill: var(--on-warn); }
 .pill.badge-bad { --on-tone-pill: var(--on-bad); }
 
-/* ------------------------------------------------------------------ capstone */
+/* ------------------------------------------------------------------ stories (the story player) */
 
-.cap-stages {
+.story-stages {
   display: grid;
   grid-template-columns: 1fr 1fr;
 }
 
 /* Stage names are longer than step names: they wrap inside a two-by-two grid instead of shrinking to numbers. */
-.cap-stages .tab {
+.story-stages .tab {
   flex-wrap: nowrap;
   justify-content: flex-start;
   width: 100%;
@@ -2877,24 +3709,24 @@ svg.stroke {
   white-space: normal;
 }
 
-.cap-stages .tab-n {
+.story-stages .tab-n {
   margin-block: 0;
 }
 
-.cap-hint summary {
+.story-hint summary {
   width: fit-content;
   color: var(--t-req);
   font: 700 var(--fs-ui) var(--font-body);
   cursor: pointer;
 }
 
-.cap-hint p {
+.story-hint p {
   margin: 6px 0 0;
   color: var(--ink-2);
   font-size: var(--fs-body);
 }
 
-.cap-build {
+.story-build {
   display: grid;
   gap: 10px;
   padding: 12px 14px;
@@ -2986,7 +3818,7 @@ svg.stroke {
   outline-offset: 2px;
 }
 
-.cap-cost {
+.story-cost {
   grid-column: 1 / -1;
   display: flex;
   align-items: baseline;
@@ -2996,28 +3828,28 @@ svg.stroke {
   border-top: 1px solid var(--rule);
 }
 
-.cap-cost span {
+.story-cost span {
   color: var(--muted);
   font: 600 var(--fs-caption) var(--font-mono);
 }
 
-.cap-cost strong {
+.story-cost strong {
   font: 700 19px/1.1 var(--font-mono);
 }
 
-.cap-status {
+.story-status {
   display: grid;
   gap: 8px;
 }
 
 /* The target as two cells: each live value beside the line it must stay under. Neutral until there is data. */
-.cap-target {
+.story-target {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
-.cap-cell {
+.story-cell {
   display: grid;
   gap: 2px;
   padding: 8px 10px;
@@ -3026,30 +3858,30 @@ svg.stroke {
   background: var(--paper);
 }
 
-.cap-cell-label {
+.story-cell-label {
   color: var(--ink-2);
   font: 700 var(--fs-meta)/1.2 var(--font-body);
 }
 
-.cap-cell .num {
+.story-cell .num {
   color: var(--muted);
   font: 700 19px/1.15 var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-.cap-cell.pass .num {
+.story-cell.pass .num {
   color: var(--t-ok);
 }
 
-.cap-cell.fail {
+.story-cell.fail {
   border-color: color-mix(in srgb, var(--bad) 45%, var(--rule));
 }
 
-.cap-cell.fail .num {
+.story-cell.fail .num {
   color: var(--t-bad);
 }
 
-.cap-cell .target {
+.story-cell .target {
   color: var(--muted);
   font: 500 var(--fs-caption)/1.2 var(--font-mono);
 }
@@ -3083,7 +3915,7 @@ svg.stroke {
   white-space: nowrap;
 }
 
-.cap-win {
+.story-win {
   margin: 0;
   padding: 12px 14px;
   border-radius: var(--r-card);
@@ -3183,19 +4015,53 @@ svg.stroke {
   }
 }
 
+/* Narrow screens: the board replaces the poster, the masthead stacks, and a journey's scene goes under its brief. */
 @media (max-width: 900px) {
-  .route-svg {
+  .route-poster {
     display: none;
   }
-  .route-list {
+  .route-board {
     display: block;
   }
-  .hero {
-    grid-template-columns: 1fr;
+  .masthead {
+    grid-template-columns: minmax(0, 1fr);
     min-height: 0;
   }
   .hero-fig {
-    height: clamp(340px, 60svh, 560px);
+    height: clamp(320px, 56svh, 520px);
+  }
+  .journey-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Phones: the hero is the scene's front half in a short sheet, so the route is a thumb away. The stage stays a
+   little taller than it is wide: its vertical layout reads at full size where a wide one can't. */
+@media (max-width: 640px) {
+  .hero-fig {
+    height: auto;
+  }
+  .hero-stage {
+    height: min(400px, calc(100vw + 24px));
+  }
+  .line-index {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .journey-card {
+    padding: var(--sp-4);
+  }
+  .journey-scene .sheet {
+    height: 460px;
+  }
+  .specimen {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 8px 0 10px;
+  }
+  .specimen svg {
+    width: 100%;
+    max-width: 260px;
+    height: auto;
   }
 }
 
@@ -3505,10 +4371,10 @@ svg.stroke {
     min-height: 40px;
   }
   .toggle,
-  .cap-hint summary {
+  .story-hint summary {
     min-height: 40px;
   }
-  .cap-hint summary {
+  .story-hint summary {
     display: flex;
     align-items: center;
     min-width: 40px;

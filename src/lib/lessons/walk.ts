@@ -1,11 +1,13 @@
 // Walk a lesson's beats headlessly, as a learner would on the default settings: read each beat, answer the prediction,
 // press each break when asked, and move on when a step's beats are done. The tests use it to prove every beat really
-// happens and every prediction is true; `npm run tune -- --beats` prints it.
+// happens and every prediction is true; `npm run tune -- --beats` prints it. `claimOf` measures the lesson's claim, for
+// the fix-beats-the-problem test and `npm run tune -- --json`.
 
 import { Sim } from "../sim/engine";
-import { formatMetric, measure } from "../sim/metrics";
+import { betterIs, formatMetric, measure, type MetricSpec } from "../sim/metrics";
+import type { SceneSpec } from "../sim/types";
 import { BeatRunner, fillIn, stepGrid, type Focus } from "./beats";
-import { beatsOf, buildSteps, defaultsOf, holdsTraffic, type Lesson } from "./types";
+import { beatsOf, buildSteps, defaultsOf, headlineOf, holdsTraffic, type Lesson } from "./types";
 
 export interface Walked {
   step: number;
@@ -86,4 +88,55 @@ export function walk(lesson: Lesson, { capMs = 20000 }: { capMs?: number } = {})
     }
   });
   return { fired, missing, prediction: p ? { ...raw, holds: p.holds(raw.before, raw.after) } : null, sims };
+}
+
+// ------------------------------------------------------------------------------------------------ the claim
+
+/**
+ * Step a scene by `ms`, firing its armed script as a learner's break would: the first armed event at its own `at`
+ * (the rest of that run follows by itself).
+ */
+export function stepFiring(sim: Sim, ms: number) {
+  const first = sim.spec.script?.events.find((e) => e.armed);
+  const end = sim.t + ms;
+  if (first && sim.t < first.at && first.at <= end) {
+    sim.step(first.at - sim.t);
+    sim.fire(first.label);
+  }
+  sim.step(end - sim.t);
+}
+
+/** Average a metric over a run, after the scene's warm-up. */
+export function averageOf(spec: SceneSpec, metric: MetricSpec, ms = 7000) {
+  const sim = new Sim(spec);
+  const values: number[] = [];
+  for (let t = 0; t < ms; t += 100) {
+    stepFiring(sim, 100);
+    if (t < 800) continue;
+    const v = measure(sim, metric);
+    if (v !== null) values.push(v);
+  }
+  return values.reduce((a, b) => a + b, 0) / values.length;
+}
+
+/** Lessons whose fault and recovery need a longer run before the averages say what the lesson claims. */
+const CLAIM_MS: Record<string, number> = { "consistent-hashing": 9000, "consistency-vs-availability": 9000 };
+
+/**
+ * A lesson's teaching claim: how far its second step beats its first on the headline metric, averaged over a run with
+ * the break fired. `gain` is the share by which it is better (above 0.08 is the bar). Null for an explore step, or
+ * when the headline is not one of the second step's metrics.
+ */
+export function claimOf(lesson: Lesson): { metric: MetricSpec; problem: number; fix: number; gain: number } | null {
+  const [problem, fix] = lesson.figures;
+  if (!fix || fix.tone === "explore") return null;
+  const label = headlineOf(lesson.figures);
+  const metric = fix.metrics.find((m) => m.label === label);
+  if (!metric) return null;
+  const [without, withFix] = buildSteps([problem, fix], [defaultsOf(problem), defaultsOf(fix)]);
+  const ms = CLAIM_MS[lesson.slug] ?? 7000;
+  const a = averageOf(withFix, metric, ms);
+  const b = averageOf(without, metric, ms);
+  const gain = betterIs(metric) === "low" ? (b - a) / Math.max(b, 1e-9) : (a - b) / Math.max(a, 1e-9);
+  return { metric, problem: b, fix: a, gain };
 }

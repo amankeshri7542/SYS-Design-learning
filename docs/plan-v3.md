@@ -1,6 +1,6 @@
 # System Lab v3 plan
 
-- **Status:** proposed, 2026-10-22. M0, M1, M2 and M3 built 2026-10-22. M4a and M4b built 2026-10-23.
+- **Status:** proposed, 2026-10-22. M0, M1, M2 and M3 built 2026-10-22. M4a and M4b built 2026-10-23. M5 built 2026-10-24.
 - **Planned with:** Claude Fable 5.1. **To be built with:** Claude Opus 5.5, one milestone per session.
 - **Research behind it:** `docs/research/` holds five reports. Read the one a milestone points to before starting it.
   - `design-audit.md`: visual and UX audit, art direction, home and player layouts, component inventory.
@@ -675,10 +675,32 @@ Gates on 2026-10-23: typecheck, 126 unit tests, build, and the browser suite (43
 - **Line colours** for N and O join the tokens now, with their ink variants, even though those lines are empty until M6.
 
 **Acceptance:**
-- [ ] The home page's JavaScript no longer includes any lesson's `build` code (check with `npx next experimental-analyze -o`).
-- [ ] Every existing URL still loads.
-- [ ] The map shows three zone bands at 1440 px and a collapsible board at 390 px.
-- [ ] The capstone behaves exactly as before on `StoryPlayer` (its test is unchanged).
+- [x] The home page's JavaScript no longer includes any lesson's `build` code. After `npx next experimental-analyze -o`, the first-load chunks of `/` and `/learn/[slug]` hold the catalog but no scene text; each lesson's scenes are a chunk of their own of 4–8 KB raw. First load is 192 KB gzipped for `/` and 191 KB for a lesson page, plus its scene.
+- [x] Every existing URL still loads: the per-lesson browser test opens all 18 lessons and the capstone on every project.
+- [x] The map shows three zone bands at 1440 px (a browser test checks a station sits in its level's band) and a collapsible board at 390 px (a test filters it by level and searches it).
+- [x] The capstone behaves as before on `StoryPlayer`. Its stage-clearing test runs for every story with the same rule and the same designs; the browser checks are the same, run for every story.
+
+Gates on 2026-10-24: typecheck, 134 unit tests, build, and the browser suite: 452 tests, of which 436 passed and 11 were skipped in the full run; the 4 frame budgets passed in their own run, and one keyboard test that lost a race under load (`]`, then `[`) now pauses the scene first and passes 16 of 16. Screenshots of the home page, the map with a station card, the journey card, a lesson and the story player at 1440×900, 1280×720, 390×844 and 844×390, light and dark, were checked by eye.
+
+**Decisions made while building M5:**
+- **Final codes follow the row-order rule literally.** Consistency vs availability is D7, not D5: as an advanced lesson it comes after connection pools (D5) and failover (D6). "Shifts by one" holds for the old D1–D3 only. The other moves from working codes: latency vs bandwidth N3, handshakes N4, DNS N5, windows N6, push vs poll N7, timeouts N8, congestion N9, head-of-line N10, L4/L7 N11, pipelining N13, delivery guarantees N14, backpressure N15, nearest region N16; negative caching C5, write strategies C6; cascading failures R6, cold caches R7, hedged requests R8.
+- **Stories are numbered in §6.3's row order, which is their build order**, so their codes arrive without gaps: web crawler S1, video premiere S2, chat S3, flash sale S4, ride matching S5, news feed S6, payments S7, click counting S8.
+- **The catalog holds the planned course too** (`status: "planned"`): each entry's title, why, level, minutes, tags and prerequisites from the curriculum. The snapshot, the path and the prerequisite graph are checked against one list, and `npm run new-lesson` turns an entry live. Planned entries have no page and are not drawn. The owner chose a map of live lessons only.
+- **A live entry's prerequisites are live ones only**, or the map would dim it for good. The curriculum's edges to lessons not built yet are comments in `catalog.ts`, to add when they land: N1 before F1, D1 before D2, N2 before A3 and D7, N8 before R2.
+- **A story's `requires` are the lessons it rides, in ride order**, rather than a separate `stops` field. The map draws the journey's route and its card lists the stops without loading the story's code. The capstone rides C1, F3, F4, D2 and R1.
+- **`StoryDef`**: `controls` (counts and switches), `start`, `cost`, `scene`, `targets`, `metrics`, `stages`, `win` and an optional `lead` for the strip ("40 a second"). Each stage carries `params` (what it throws at the system) and the `solution` it was made for, which the tests use. `holds()` keeps the capstone's rule: a missing response time fails, and failures are always measured once a response time is.
+- **A lesson page reads its scenes with `use()` on a cached promise that records how it settled**, rather than `React.lazy`: a scene is data, not a component. A module fetched ahead (the next stop, once the page is idle) renders at once with no fallback. The story player alone is `React.lazy`, so lesson pages don't carry it.
+- **Static HTML still holds each lesson in full.** The prerender waits for the scene; React swaps it in for the shell fallback within the first frame (measured: under 20 ms on the production build). The fallback has class names of its own and is `inert`, so nothing finds or focuses it in that moment, and the visit is recorded outside the Suspense boundary.
+- **`all.ts` loads everything at once** for the tests, `tune`, `new-lesson` and the glossary page (a server component, so it ships nothing). No client component imports it.
+- **Next stop follows the path.** After the capstone it is D7, the one advanced lesson live; D7 ends the course for now, and its Recap points at the route map.
+- **The poster** is generated from the catalog: columns of 120 px, zones as bands (the middle one tinted), line heads beside a frame that pans. It fits 1440 px without panning at M5; at 1280 px it pans, and the edge with more map fades out. The next stop wears a START or NEXT flag. A station whose prerequisites aren't visited has a lighter ring and a muted name, never a lock.
+- **Station cards are pictures, not controls**: `aria-hidden`, no links, one at a time, shown on hover (after 140 ms) or keyboard focus. The station's own link carries its words, its visited state and what it is best seen after. Mini scenes don't feed the lesson-to-lesson intro (`Stage remember={false}`).
+- **The phone hero is the scene's front half** (users, balancer, three servers, the same traffic, crash and beats) in a sheet a little taller than wide. In the planned 200 px ticker the full scene's labels collided; the stage's vertical layout reads at full size.
+- **Layout fix found by the journey card:** a label no longer settles on its own station's shoulder badge. The check had looked only at other stations' badges.
+- **The home page has no eyebrow over its heading**: "an animated field guide" moved into the lede. "How to read a scene" shows each of the seven marks happening once, on its own short rail, as the list comes into view (no loop), with a button to play them again; under reduced motion each rests at the moment that tells its story.
+- **The masthead's line index** (each line's roundel, name and a pip per lesson, filled once visited) is the plan's "continue card and per-line progress", folded into the masthead so returning visitors don't push the map down. The start button reads "Continue at …" once anything is visited.
+- **`LineId` "capstone" became "stories"** (tokens `--l-stories`). `Line` gained no `level` or `order`: a line spans levels, and `LINES` is in the map's order.
+- **Not built:** a still of the next lesson in the continue card on phones (the start button carries it), and a story-specific stage-fit sweep of each stage's solution (the journey card exercises the built-out capstone at three sizes by eye).
 
 ### How M6–M10 run
 

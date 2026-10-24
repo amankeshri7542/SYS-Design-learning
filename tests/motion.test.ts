@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { getLesson } from "../src/lib/lessons";
+import { lessonOf } from "../src/lib/lessons/all";
 import { defaultsOf } from "../src/lib/lessons/types";
 import { Sim } from "../src/lib/sim/engine";
 import { flowOf, measure } from "../src/lib/sim/metrics";
@@ -35,7 +35,7 @@ function watch(spec: SceneSpec, ms: number, each?: (sim: Sim) => void) {
 }
 
 const figure = (slug: string, i: number) => {
-  const f = getLesson(slug)!.figures[i];
+  const f = lessonOf(slug)!.figures[i];
   return f.build(defaultsOf(f));
 };
 
