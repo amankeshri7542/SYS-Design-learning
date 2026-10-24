@@ -16,6 +16,18 @@ export interface Term {
 }
 
 const TERMS: Term[] = [
+  // Networking
+  { key: "request", name: "Request", alias: "call, HTTP request", short: "A message asking a server for something. It has to travel there before any work starts.", show: { lesson: "request-and-response", focus: { link: ["u", "app"] } } },
+  { key: "response", name: "Response", alias: "reply, answer", short: "The server's message back with the answer. It travels the same distance home.", show: { lesson: "request-and-response", focus: { link: ["u", "app"] } } },
+  { key: "round-trip", name: "Round trip", alias: "RTT, round-trip time", short: "Out and back across a link: twice its one-way time, before any work is counted.", show: { lesson: "request-and-response", focus: { link: ["u", "app"] } } },
+  { key: "bandwidth", name: "Bandwidth", alias: "throughput of a link, Mb/s", short: "How many bits a link sends each second. A big answer takes size ÷ bandwidth to send.", show: { lesson: "latency-vs-bandwidth", focus: { link: ["u", "app"] } } },
+  { key: "latency", name: "Latency", alias: "delay, ping", short: "How long the first bit takes to arrive: set by distance and the route, not by link speed.", show: { lesson: "latency-vs-bandwidth", focus: { link: ["u", "app"] } } },
+  { key: "bdp", name: "Bandwidth-delay product", alias: "BDP", short: "Bandwidth times round trip: how much data is on the wire at once when it is kept full." },
+  { key: "deadline", name: "Deadline", alias: "deadline propagation, timeout budget", short: "The moment a request stops being worth answering. Passed along, every hop can drop work past it.", show: { lesson: "timeouts-and-deadlines", focus: { nodes: ["api", "db"] } } },
+  { key: "n-plus-one", name: "N+1 problem", alias: "N+1 queries", short: "Fetching a list one item per call: each item costs a whole round trip, one after another.", show: { lesson: "pipelining-and-batching", focus: { link: ["app", "db"] } } },
+  { key: "batching", name: "Batching", alias: "batch query, pipelining", short: "Sending many items in one request, so they share one round trip instead of paying one each.", show: { lesson: "pipelining-and-batching", focus: { metric: "Database trips" } } },
+  { key: "anycast", name: "Anycast", alias: "geo routing, latency routing", short: "One address announced from many regions: the network delivers each user to the nearest one that answers.", show: { lesson: "nearest-region-and-failover", focus: { nodes: ["deu", "dus"] } } },
+  { key: "dns", name: "DNS", alias: "Domain Name System, resolver", short: "The internet's phone book: it turns a name like example.com into the address of a server.", show: { lesson: "dns", focus: { nodes: ["root", "tld", "auth"] } } },
   // Foundations
   { key: "worker", name: "Worker", alias: "thread, connection", short: "One request a server can work on at a time. A server has a fixed number, drawn as sockets.", show: { lesson: "latency-and-throughput", focus: { nodes: ["app"], sockets: true } } },
   { key: "queue", name: "Queue", alias: "waiting line, backlog", short: "Requests waiting their turn because every worker is busy. Waiting is most of what “slow” means.", show: { lesson: "latency-and-throughput", focus: { nodes: ["app"], dots: "waiting" } } },

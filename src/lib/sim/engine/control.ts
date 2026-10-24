@@ -29,6 +29,7 @@ const control: Partial<Sim> & ThisType<Sim> = {
         n.breaker.trial = false;
       }
       if ((n.spec.callTimeoutMs || n.spec.deadlines === "honour") && n.held.length) this.callTimeouts(n);
+      if (n.spec.deadlines === "honour" && n.work.length) this.cancelLate(n);
       if (n.spec.health && t >= n.nextProbe) {
         n.nextProbe = t + n.spec.health.everyMs;
         for (const id of this.flat(n.spec.to)) this.probe(n, id);
@@ -36,6 +37,21 @@ const control: Partial<Sim> & ThisType<Sim> = {
       if (n.spec.autoscale && t >= n.nextScale) this.autoscale(n);
       if (n.spec.overload) this.overload(n);
       if (n.spec.rollback) this.rollback(n);
+    }
+  },
+
+  /**
+   * Honouring deadlines: work for a request whose deadline has passed (or whose caller gave up on it) stops now. The
+   * time already spent is wasted; the worker is free at once, and the request is turned away.
+   */
+  cancelLate(n: NodeRt) {
+    for (const r of [...n.work]) {
+      if (r.deadline > this.t && !r.abandoned && !r.orphanAt) continue;
+      n.work.splice(n.work.indexOf(r), 1);
+      const ms = this.t - r.started;
+      r.work += ms;
+      this.workLog.push({ t: this.t, ms, wasted: true });
+      this.refuse(n, r);
     }
   },
 
