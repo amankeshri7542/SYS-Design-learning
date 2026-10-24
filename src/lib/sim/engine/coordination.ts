@@ -102,15 +102,18 @@ const coordination: Partial<Sim> & ThisType<Sim> = {
     }
   },
 
-  /** A quorum coordinator: a write numbered and sent to every replica, answered (and counted the latest) at `w`; a read sent to `r` of them in turn. */
+  /** A quorum coordinator: a write numbered and sent to every replica, answered (and counted the latest) at `w`; a read sent to `r` of the live ones in turn. */
   quorumDone(n: NodeRt, r: Req) {
     const q = n.spec.quorum!;
     if (r.op === "write") {
       r.seq = ++this.seq;
       return this.scatter(n, r, q.replicas, q.w, "repl");
     }
-    const start = n.rr++ % q.replicas.length;
-    const ask = Array.from({ length: Math.min(q.r, q.replicas.length) }, (_, i) => q.replicas[(start + i) % q.replicas.length]);
+    // A read asks `r` of the replicas that are up, in turn (too few up: it fails).
+    const live = q.replicas.filter((id) => this.nodes.get(id)?.up);
+    if (live.length < q.r) return this.respond(r, "error");
+    const start = n.rr++ % live.length;
+    const ask = Array.from({ length: q.r }, (_, i) => live[(start + i) % live.length]);
     this.scatter(n, r, ask, ask.length, "read");
   },
 

@@ -524,7 +524,8 @@ export class Sim {
     const events = (this.spec.script?.events ?? []).filter((e) => e.armed);
     const i = events.findIndex((e) => e.label === label);
     if (i < 0) return false;
-    const run = events.slice(i);
+    const end = events.findIndex((e, j) => j >= i && e.ends);
+    const run = events.slice(i, end < 0 ? undefined : end + 1);
     const labels = new Set(run.map((e) => e.label));
     this.armed = this.armed.filter((q) => !labels.has(q.e.label));
     const at = this.t + Math.max(0, delayMs);

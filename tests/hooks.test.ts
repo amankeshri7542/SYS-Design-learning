@@ -1373,3 +1373,15 @@ test("property: every request is accounted for and nothing leaks, with every coo
     "batch 3",
   );
 });
+
+test("an armed run stops after an event that ends it, so one script holds two separate faults", () => {
+  const order: string[] = [];
+  const ev = (at: number, label: string, ends?: true) => ({ at, label, armed: true as const, ends, run: () => void order.push(label) });
+  const sim = new Sim(scene([client("u", 5, "s"), server("s")], { script: { loopMs: 1e9, events: [ev(100, "crash"), ev(300, "back", true), ev(500, "cut"), ev(700, "heal", true)] } }));
+  sim.fire("crash");
+  sim.step(1000);
+  assert.deepEqual(order, ["crash", "back"], "the crash's run ends with its recovery");
+  sim.fire("cut");
+  sim.step(1000);
+  assert.deepEqual(order, ["crash", "back", "cut", "heal"]);
+});

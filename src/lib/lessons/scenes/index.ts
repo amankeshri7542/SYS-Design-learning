@@ -28,6 +28,9 @@ export const SCENES: Record<string, Load> = {
   indexes: () => import("./indexes"),
   "connection-pools": () => import("./connection-pools"),
   failover: () => import("./failover"),
+  quorums: () => import("./quorums"),
+  "leader-election": () => import("./leader-election"),
+  "locks-and-double-booking": () => import("./locks-and-double-booking"),
   // Async
   "message-queues": () => import("./message-queues"),
   "publish-subscribe": () => import("./publish-subscribe"),
@@ -36,6 +39,7 @@ export const SCENES: Record<string, Load> = {
   "dead-letter-queues": () => import("./dead-letter-queues"),
   outbox: () => import("./outbox"),
   "partitioned-logs": () => import("./partitioned-logs"),
+  sagas: () => import("./sagas"),
   // Resilience
   "rate-limiting": () => import("./rate-limiting"),
   "circuit-breakers": () => import("./circuit-breakers"),
@@ -44,6 +48,7 @@ export const SCENES: Record<string, Load> = {
   bulkheads: () => import("./bulkheads"),
   "cascading-failures": () => import("./cascading-failures"),
   "cold-caches-and-herds": () => import("./cold-caches-and-herds"),
+  "hedged-requests": () => import("./hedged-requests"),
   // Networking
   "request-and-response": () => import("./request-and-response"),
   "latency-vs-bandwidth": () => import("./latency-vs-bandwidth"),

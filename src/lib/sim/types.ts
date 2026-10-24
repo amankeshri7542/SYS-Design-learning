@@ -308,6 +308,8 @@ export interface ScriptEvent {
   armed?: true;
   /** The station the event happens to: while it is on its way, that station shows a countdown chip. */
   node?: string;
+  /** Armed: a run fired from this event or an earlier one stops after it, so one script can hold two separate faults. */
+  ends?: true;
 }
 
 export interface SceneSpec {

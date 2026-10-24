@@ -56,6 +56,11 @@ import heartbeats from "./scenes/heartbeats";
 import connectionPools from "./scenes/connection-pools";
 import failover from "./scenes/failover";
 import coldCachesAndHerds from "./scenes/cold-caches-and-herds";
+import quorums from "./scenes/quorums";
+import leaderElection from "./scenes/leader-election";
+import locksAndDoubleBooking from "./scenes/locks-and-double-booking";
+import hedgedRequests from "./scenes/hedged-requests";
+import sagas from "./scenes/sagas";
 import capstone from "./stories/capstone";
 import webCrawler from "./stories/web-crawler";
 import videoPremiere from "./stories/video-premiere";
@@ -112,6 +117,11 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
   "connection-pools": connectionPools,
   failover,
   "cold-caches-and-herds": coldCachesAndHerds,
+  quorums,
+  "leader-election": leaderElection,
+  "locks-and-double-booking": locksAndDoubleBooking,
+  "hedged-requests": hedgedRequests,
+  sagas,
 };
 
 export const STORY_DEFS: Record<string, StoryDef> = { capstone, "web-crawler": webCrawler, "video-premiere": videoPremiere, chat };
