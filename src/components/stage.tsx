@@ -14,6 +14,7 @@ import {
   fitSub,
   glyphOf,
   labelSpot,
+  linkLabel,
   nodeKey,
   pathD,
   placeAll,
@@ -602,23 +603,28 @@ export function Stage({
         }
       }
 
-      // Effects. Rings for a station changing state (and a faint one for a cache's hit or miss); drops fall from a full
-      // line's tail; a miss's copy slides into the cache's bar, and an eviction drops out of the cache.
+      // Effects. Rings for a station changing state (and a faint one for a cache's hit or miss, or a lookup the existence
+      // check answered); drops fall from a full line's tail; a message lost on its link leaves a cross where it vanished;
+      // a miss's copy slides into the cache's bar, and an eviction drops out of the cache.
       for (const f of sim.fx) {
         if (f.t <= s.lastFx) continue;
         const b = L.boxes.get(f.node);
         const n = sim.nodes.get(f.node);
         if (!b || !n) continue;
-        const drawn = RINGS.has(f.kind) || FAINT.has(f.kind) || f.kind === "drop" || f.kind === "fill" || f.kind === "evict";
+        const drawn = RINGS.has(f.kind) || FAINT.has(f.kind) || f.kind === "drop" || f.kind === "lost" || f.kind === "fill" || f.kind === "evict";
         if (!drawn) continue;
         // Rings at most one per node and kind every 250 ms (hits and misses share one budget); the rest a little faster.
         const key = `${f.node}:${FAINT.has(f.kind) ? "outcome" : f.kind}`;
-        if (real - (s.throttle.get(key) ?? 0) < (RINGS.has(f.kind) || FAINT.has(f.kind) ? 250 : f.kind === "drop" ? 70 : 90)) continue;
+        if (real - (s.throttle.get(key) ?? 0) < (RINGS.has(f.kind) || FAINT.has(f.kind) ? 250 : f.kind === "drop" || f.kind === "lost" ? 70 : 90)) continue;
         s.throttle.set(key, real);
         const fx: FxDraw = { kind: f.kind, x: b.x, y: b.y, r: Math.max(b.w, b.h) / 2, born: real, vx: (Math.random() - 0.5) * 70, vy: -70 - Math.random() * 40 };
         if (f.kind === "drop" && f.slot !== undefined) {
           const cap = caps.get(f.node) ?? 1;
           Object.assign(fx, queueSpot(n, b, Math.max(0, Math.min(f.slot, cap - 1)), mode, pitch));
+        } else if (f.kind === "lost" && f.link) {
+          const e = path(f.link.from, f.link.to);
+          if (!e) continue;
+          Object.assign(fx, bezier(e.c, e.tA + (e.tB - e.tA) * f.link.frac));
         } else if (f.kind === "fill" || f.kind === "evict") {
           const sc = L.frame.scale;
           const cap = n.spec.capacity ?? 1;
@@ -757,7 +763,7 @@ function StageSvg({
 }) {
   const { frame, boxes } = layout;
   const k = frame.k;
-  const lbViews = [...sim.nodes.values()].filter((n) => n.spec.health);
+  const lbViews = [...sim.nodes.values()].filter((n) => n.spec.health || n.spec.rollback);
   // Armed events on their way: the station they will happen to counts down to them, in the system's own time.
   const due = new Map<string, number>();
   for (const p of sim.pending) if (p.node && !due.has(p.node)) due.set(p.node, Math.max(0, p.at - sim.t));
@@ -853,7 +859,7 @@ function StageSvg({
               broken={broken}
               mid={mid}
               angle={(Math.atan2(ahead.y - mid.y, ahead.x - mid.x) * 180) / Math.PI}
-              text={spec.linkLabels?.[`${e.a}>${e.b}`] ?? spec.linkLabels?.[`${e.b}>${e.a}`]}
+              text={linkLabel(spec, e.a, e.b)}
               upright={Math.abs(b.x - a.x) < Math.abs(b.y - a.y)}
               k={k}
               glow={glow}
@@ -891,7 +897,7 @@ function StageSvg({
               badge={view.badge?.text}
               tone={view.badge?.tone}
               pill={view.pill}
-              role={n.leader ? "FOLLOWER" : leaders.has(n.id) ? "LEADER" : undefined}
+              role={n.version ?? (n.leader ? "FOLLOWER" : leaders.has(n.id) ? "LEADER" : undefined)}
               meter={m?.kind}
               level={m?.level}
               meterTone={m?.tone}
@@ -1178,10 +1184,11 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
   if (!n.ready) return { cls: "draining", sub: "draining" };
   const benched = lbs.some((lb) => sim.flat(lb.spec.to).includes(s.id) && lb.health.get(s.id)?.ok === false);
   if (!n.up) {
-    const sub = s.sink ? "paused · jobs wait" : s.downMode === "hang" ? "not responding" : benched ? "down · taken out" : "down";
+    const sub = s.sink ? "paused · jobs wait" : n.restartAt ? "restarting…" : s.downMode === "hang" ? "not responding" : benched ? "down · taken out" : "down";
     return { cls: "down", sub, badge: { text: "DOWN", tone: "bad" } };
   }
   if (benched) return { cls: "benched", sub: "rejoining…" };
+  if (lbs.some((lb) => lb.rolledBack.has(s.id))) return { cls: "benched", sub: "rolled back" };
   let sub = "";
   const slots = s.slots ?? 0;
   const busy = n.work.length + n.held.length;
@@ -1214,10 +1221,16 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
     default:
       if (!slots) sub = n.queue.length ? `stalled · ${n.queue.length} waiting` : "stalled";
       else if (n.queue.length) sub = `${n.queue.length} waiting`;
-      else sub = `${busy}/${slots} busy`;
+      else {
+        // Just back from a crash under load: fewer workers until it has warmed up.
+        const can = sim.slotsOf(n);
+        sub = can < slots ? `warming up · ${busy}/${can} busy` : `${busy}/${slots} busy`;
+      }
   }
   const pill = s.breaker ? n.breaker.state : undefined;
-  const badge = s.kind === "db" && s.leader && sim.partitioned ? { text: "CUT OFF", tone: "bad" } : undefined;
+  // Shedding holds its badge a moment past each refusal, so it doesn't flicker as the line crosses the mark.
+  const shedding = s.shed && sim.t - n.shedAt < 300;
+  const badge = s.kind === "db" && s.leader && sim.partitioned ? { text: "CUT OFF", tone: "bad" } : shedding ? { text: "SHEDDING", tone: "warn" } : undefined;
   // A station with no workers at all is stalled: news, even before a line forms.
   const stalled = (s.kind === "server" || s.kind === "db") && !slots && !s.sink;
   return { cls: n.hot ? "hot" : stalled ? "stalled" : "", sub, badge, pill };

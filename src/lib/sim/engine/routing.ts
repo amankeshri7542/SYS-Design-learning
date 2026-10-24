@@ -5,17 +5,20 @@ import { Sim } from "./sim";
 
 /** Routing: a balancer picks a target, a limiter spends a token, a pool picks a member, and a hash picks an owner. */
 const routing: Partial<Sim> & ThisType<Sim> = {
-  candidates(n: NodeRt) {
-    return this.flat(n.spec.to).filter((id) => {
+  /** The targets a balancer may send this request to: those for its tag, on, ready, healthy and not rolled back. */
+  candidates(n: NodeRt, r?: Req) {
+    const pool = (r && n.spec.byTag?.[r.tag]) || n.spec.to;
+    return this.flat(pool).filter((id) => {
       const s = this.nodes.get(id);
       if (!s || !s.on || !s.ready) return false;
+      if (n.rolledBack.has(id)) return false;
       if (n.spec.health) return n.health.get(id)?.ok ?? true;
       return true;
     });
   },
 
   route(n: NodeRt, r: Req) {
-    const c = this.candidates(n);
+    const c = this.candidates(n, r);
     if (!c.length) return this.fail(n, r);
     let pick: string;
     switch (n.spec.algo) {
@@ -35,6 +38,17 @@ const routing: Partial<Sim> & ThisType<Sim> = {
       case "ring":
         pick = ownerOf(r.key, c, n.spec.algo);
         break;
+      case "nearest":
+        // The healthy target with the shortest link from here (anycast, geo routing).
+        pick = c.reduce((best, id) => (this.latency(n.spec.id, id) < this.latency(n.spec.id, best) ? id : best));
+        break;
+      case "weighted": {
+        // At random, in proportion to each target's weight: a canary gets its few percent.
+        const w = (id: string) => n.spec.weights?.[id] ?? 1;
+        let u = n.rng() * c.reduce((sum, id) => sum + w(id), 0);
+        pick = c.find((id) => (u -= w(id)) < 0) ?? c[c.length - 1];
+        break;
+      }
       default:
         pick = c[n.rr++ % c.length];
     }

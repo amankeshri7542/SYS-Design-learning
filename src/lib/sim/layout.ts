@@ -65,12 +65,28 @@ export interface Scene {
   together: (a: string, b: string) => boolean;
 }
 
+/** A rail's caption: its link's `label`, or the scene's `linkLabels` entry, written either way round. */
+export function linkLabel(spec: SceneSpec, a: string, b: string): string | undefined {
+  for (const key of [`${a}>${b}`, `${b}>${a}`]) {
+    const l = spec.links?.[key];
+    const text = (typeof l === "object" ? l.label : undefined) ?? spec.linkLabels?.[key];
+    if (text) return text;
+  }
+}
+
+/** Every rail caption a scene gives, from either source. */
+function labelsOf(spec: SceneSpec): Record<string, string> {
+  const out = { ...spec.linkLabels };
+  for (const [key, l] of Object.entries(spec.links ?? {})) if (typeof l === "object" && l.label) out[key] = l.label;
+  return out;
+}
+
 export function combine(specs: SceneSpec[]): Scene {
   // Keep every distinct position: a node that moves between steps must fit in the frame in both places.
   const nodes = new Map<string, NodeSpec>();
   for (const s of specs) for (const n of s.nodes) nodes.set(nodeKey(n), n);
   const heights = specs.map((s) => s.wideH).filter((h): h is number => !!h);
-  const links = Object.assign({}, ...specs.map((s) => s.linkLabels ?? {}));
+  const links = Object.assign({}, ...specs.map(labelsOf));
   const keys = specs.map((s) => new Set(s.nodes.map(nodeKey)));
   return {
     spec: { ...specs[0], nodes: [...nodes.values()], wideH: heights.length ? Math.max(...heights) : undefined, linkLabels: links },
@@ -228,7 +244,7 @@ export function frameFor(scene: Scene, mode: Mode, fit?: Fit): Frame {
   for (const step of scene.steps) {
     const at = new Map(step.nodes.map((n) => [n.id, placed.get(nodeKey(n))!]));
     for (const e of edgesOf(step)) {
-      const text = step.linkLabels?.[`${e.a}>${e.b}`] ?? step.linkLabels?.[`${e.b}>${e.a}`];
+      const text = linkLabel(step, e.a, e.b);
       const a = at.get(e.a);
       const b = at.get(e.b);
       if (text && a && b) rects.push(linkLabelRect(text, a, b, mode, k));
@@ -469,14 +485,14 @@ export function badgeBox(chars: number, k: number, scale: number) {
 }
 
 /**
- * The longest state badge (DOWN, OPEN, TESTING, CUT OFF) and left-shoulder badge (LEADER, FOLLOWER, or the countdown to
- * an armed event, "0.8 s") a node can wear.
+ * The longest state badge (DOWN, OPEN, TESTING, CUT OFF, SHEDDING) and left-shoulder badge (LEADER, FOLLOWER, a
+ * version such as v2, or the countdown to an armed event, "0.8 s") a node can wear.
  */
 function badgeChars(n: NodeSpec, spec: SceneSpec) {
   const leads = spec.nodes.some((m) => m.leader === n.id);
   const armed = spec.script?.events.some((e) => e.armed && e.node === n.id);
-  const role = n.leader ? 8 : leads ? 6 : armed ? 5 : 0;
-  const state = n.breaker || n.leader ? 7 : n.kind === "server" || n.kind === "db" || n.kind === "cache" ? 4 : 0;
+  const role = Math.max(n.leader ? 8 : leads ? 6 : 0, armed ? 5 : 0, n.version?.length ?? 0);
+  const state = n.shed ? 8 : n.breaker || n.leader ? 7 : n.kind === "server" || n.kind === "db" || n.kind === "cache" ? 4 : 0;
   return { state, role };
 }
 
@@ -487,6 +503,7 @@ function badgeChars(n: NodeSpec, spec: SceneSpec) {
 export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
   const pool = spec.nodes.find((m) => m.autoscale && flat(m.to).includes(n.id));
   const checked = spec.nodes.some((m) => m.health && flat(m.to).includes(n.id));
+  const canary = spec.nodes.some((m) => m.rollback?.target === n.id);
   const states = pool ? ["starting…", "standby", "draining"] : [];
   const all = (): string[] => {
     switch (n.kind) {
@@ -510,7 +527,8 @@ export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
         const down = n.sink ? "paused · jobs wait" : n.downMode === "hang" ? "not responding" : checked ? "down · taken out" : "down";
         // Clients give up long before a line reaches three digits; a queue node can hold more and says so.
         const work = n.slots ? ["99 waiting", `${n.slots}/${n.slots} busy`] : ["stalled · 99 waiting"];
-        return [...work, down, ...(checked ? ["rejoining…"] : []), ...states];
+        const overload = n.overload && n.slots ? ["restarting…", `warming up · ${n.slots}/${n.slots} busy`] : [];
+        return [...work, down, ...(checked ? ["rejoining…"] : []), ...(canary ? ["rolled back"] : []), ...overload, ...states];
       }
     }
   };
@@ -522,6 +540,7 @@ const SHORT: [RegExp, string][] = [
   [/^not responding$/, "hanging"],
   [/^down · taken out$/, "taken out"],
   [/^stalled · (\d+) waiting$/, "stalled · $1"],
+  [/^warming up · (\d+\/\d+) busy$/, "warming · $1"],
   [/^target (\d+)% busy$/, "target $1%"],
   [/^(\d+)\/s per client$/, "$1/s each"],
   [/^key → (\d+) nodes$/, "$1 nodes"],

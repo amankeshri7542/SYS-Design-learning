@@ -1,5 +1,5 @@
 import { hashStr, mulberry32, zipfCdf } from "../rng";
-import type { Call, Fx, FxKind, NodeSpec, Op, Result, SceneSpec, ScriptEvent } from "../types";
+import type { Call, Fx, FxKind, LinkSpec, NodeSpec, Op, Result, SceneSpec, ScriptEvent } from "../types";
 import { TICK, Win, type Done, type NodeRt, type Note, type Req, type Spawn } from "./model";
 import { SAMPLE_KEYS, sameTargets } from "./ring";
 
@@ -14,6 +14,8 @@ export interface Sim {
   healthResult(lb: NodeRt, target: string, ok: boolean): void;
   autoscale(lb: NodeRt): void;
   callTimeouts(n: NodeRt): void;
+  overload(n: NodeRt): void;
+  rollback(lb: NodeRt): void;
   giveUp(n: NodeRt, r: Req): void;
   recordBreaker(n: NodeRt, ok: boolean): void;
 
@@ -21,13 +23,17 @@ export interface Sim {
   rate(n: NodeRt): number;
   gap(n: NodeRt, rate: number): number;
   arrivals(): void;
-  spawn(n: NodeRt, key: number, op: Op, first: number, attempt: number, cost: number): void;
+  spawn(n: NodeRt, key: number, op: Op, first: number, attempt: number, cost: number, extra?: { logicalId?: number; absent?: boolean; deadline?: number }): void;
   finishAtClient(n: NodeRt, r: Req): void;
   timeout(r: Req): void;
   retry(n: NodeRt, r: Req): boolean;
 
   // transport.ts
   latency(a: string, b: string): number;
+  linkOf(a: string, b: string): LinkSpec | undefined;
+  cross(r: Req, from: string, to: string, ms: number): void;
+  vanish(r: Req): void;
+  release(r: Req): void;
   send(r: Req, to: string, ms?: number): void;
   link(a: string, b: string): { sent: number; failed: number };
   respond(r: Req, result?: Result): void;
@@ -35,7 +41,7 @@ export interface Sim {
   unwind(r: Req): void;
 
   // routing.ts
-  candidates(n: NodeRt): string[];
+  candidates(n: NodeRt, r?: Req): string[];
   route(n: NodeRt, r: Req): void;
   limit(n: NodeRt, r: Req): void;
   resolve(n: NodeRt, call: Call): string;
@@ -45,6 +51,7 @@ export interface Sim {
   lookup(n: NodeRt, r: Req): void;
   fill(n: NodeRt, r: Req): void;
   evict(n: NodeRt): void;
+  existence(n: NodeRt, r: Req): boolean;
 
   // data.ts
   setPartition(on: boolean): void;
@@ -56,12 +63,16 @@ export interface Sim {
   // work.ts
   enter(n: NodeRt, r: Req): void;
   park(n: NodeRt, r: Req): void;
+  unpark(r: Req): void;
   fail(n: NodeRt, r: Req): void;
   admit(n: NodeRt, r: Req): void;
+  refuse(n: NodeRt, r: Req): void;
   clone(n: NodeRt, r: Req): Req;
   enqueue(n: NodeRt, r: Req): void;
   publish(n: NodeRt, r: Req): void;
   service(n: NodeRt, r: Req): number;
+  slotsOf(n: NodeRt): number;
+  next(n: NodeRt): number;
   take(n: NodeRt): void;
   dispatch(n: NodeRt): void;
   finish(n: NodeRt): void;
@@ -98,6 +109,16 @@ export class Sim {
   attempts: Win;
   logical: Win;
   retries: Win;
+  /** Crossings of every link, and those lost on the way (the `lost` metric). */
+  crossings: Win;
+  lostCrossings: Win;
+  /** Service time spent, and whether it went to a request someone had already given up on (the `wasted` metric). */
+  workLog: { t: number; ms: number; wasted: boolean }[] = [];
+  /** Answers over the availability window: all of them, and those answered well and on time. */
+  sloAll: Win;
+  sloGood: Win;
+  /** Each link's crossings in flight, one way, by when they end (links with `parallel`). */
+  linkBusy = new Map<string, number[]>();
   tracing: boolean;
   seq = 0;
   truth = new Map<number, number>();
@@ -105,7 +126,7 @@ export class Sim {
   nextId = 1;
   acc = 0;
   /** Retries waiting for their moment. */
-  retrying: { at: number; client: string; key: number; op: Op; first: number; attempt: number; cost: number }[] = [];
+  retrying: { at: number; client: string; key: number; op: Op; first: number; attempt: number; cost: number; logicalId: number; absent: boolean; deadline: number }[] = [];
   retryRng: () => number;
   cycleStart = 0;
   cursor = 0;
@@ -125,6 +146,10 @@ export class Sim {
     this.attempts = new Win(this.windowMs);
     this.logical = new Win(this.windowMs);
     this.retries = new Win(this.windowMs);
+    this.crossings = new Win(this.windowMs);
+    this.lostCrossings = new Win(this.windowMs);
+    this.sloAll = new Win(spec.sloWindowMs ?? this.windowMs * 10);
+    this.sloGood = new Win(spec.sloWindowMs ?? this.windowMs * 10);
     this.retryRng = mulberry32(this.seed ^ 0x9e3779b9);
     this.reconfigure(spec);
   }
@@ -214,12 +239,37 @@ export class Sim {
       movedAt: -1e9,
       rng,
       cdf: spec.client ? zipfCdf(spec.client.keys ?? 1, spec.client.skew ?? 0) : null,
+      spawned: 0,
+      filtered: new Win(this.windowMs),
+      overSince: -1,
+      restartAt: 0,
+      coldFrom: -1e9,
+      results: new Map(),
+      rolledBack: new Set(),
+      shedAt: -1e9,
     };
     if (spec.client) {
       const r = this.rate(rt);
       rt.nextArrival = this.t + (r > 0 ? this.gap(rt, r) : 50);
     }
     return rt;
+  }
+
+  /** Take a node out of service gracefully: no new requests reach it, the ones it has finish, then it stops. */
+  drain(id: string) {
+    const n = this.nodes.get(id);
+    if (n) n.ready = false;
+  }
+
+  /** Start a node (again): it comes up cold and takes traffic once `warmupMs` has passed. */
+  boot(id: string, warmupMs: number) {
+    const n = this.nodes.get(id);
+    if (!n) return;
+    n.up = n.on = true;
+    n.ready = false;
+    n.bootUntil = this.t + Math.max(TICK, warmupMs);
+    n.load = 0;
+    this.effect("boot", id);
   }
 
   /** Crash (false) or restore (true) a node. */
@@ -237,9 +287,19 @@ export class Sim {
         for (const r of [...n.held]) this.giveUp(n, r);
       }
     } else {
-      for (const r of n.parked) r.phase = "gone";
+      for (const r of n.parked) this.unpark(r);
       n.parked = [];
     }
+  }
+
+  /**
+   * Every request this node is holding on to, whatever the container: its line, its workers, the calls its workers wait
+   * on, requests hung on it, and readers waiting on a cache fill. A new container must be listed here.
+   */
+  holds(n: NodeRt): Req[] {
+    const out = [...n.queue, ...n.work, ...n.held, ...n.parked.filter((r) => r.phase === "parked")];
+    for (const w of n.waiters.values()) out.push(...w);
+    return out;
   }
 
   /** Drop a key from every cache (used to stage a cache stampede). */
@@ -329,7 +389,9 @@ export class Sim {
     this.arrivals();
     for (let i = 0; i < this.reqs.length; i++) {
       const r = this.reqs[i];
-      if (r.phase === "travel" && r.t1 <= t) this.arrive(r);
+      if (r.phase !== "travel") continue;
+      if (r.lostAt && r.lostAt <= t) this.vanish(r);
+      else if (r.t1 <= t) this.arrive(r);
     }
     for (const n of this.list) {
       if (n.work.length) this.finish(n);
@@ -364,6 +426,7 @@ export class Sim {
     const from = this.t - this.windowMs * 2;
     if (this.done.length && this.done[0].t < from) this.done = this.done.filter((d) => d.t >= from);
     if (this.jobs.length && this.jobs[0].t < from) this.jobs = this.jobs.filter((d) => d.t >= from);
+    if (this.workLog.length && this.workLog[0].t < from) this.workLog = this.workLog.filter((d) => d.t >= from);
     if (this.fx.length > 120) this.fx = this.fx.slice(-80);
   }
 
@@ -398,13 +461,25 @@ export class Sim {
       orphanAt: "",
       cost: 1,
       probeOf: "",
+      logicalId: 0,
+      hop: 0,
+      lostAt: 0,
+      sentAt: 0,
+      absent: false,
+      wire: 0,
+      wait: 0,
+      work: 0,
+      queuedAt: 0,
     };
     this.reqs.push(r);
     return r;
   }
 
   record(r: Req, result: Result) {
-    this.done.push({ t: this.t, lat: this.t - r.first, result, tag: r.tag, op: r.op });
+    const lat = this.t - r.first;
+    this.done.push({ t: this.t, lat, result, tag: r.tag, op: r.op, wire: r.wire, wait: r.wait, work: r.work });
+    this.sloAll.add(this.t);
+    if ((result === "ok" || result === "stale" || result === "fallback") && lat <= this.spec.sloMs) this.sloGood.add(this.t);
   }
 
   flat(calls: Call[] | undefined): string[] {

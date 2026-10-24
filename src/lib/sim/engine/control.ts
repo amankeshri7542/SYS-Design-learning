@@ -28,12 +28,51 @@ const control: Partial<Sim> & ThisType<Sim> = {
         n.breaker.state = "half";
         n.breaker.trial = false;
       }
-      if (n.spec.callTimeoutMs && n.held.length) this.callTimeouts(n);
+      if ((n.spec.callTimeoutMs || n.spec.deadlines === "honour") && n.held.length) this.callTimeouts(n);
       if (n.spec.health && t >= n.nextProbe) {
         n.nextProbe = t + n.spec.health.everyMs;
         for (const id of this.flat(n.spec.to)) this.probe(n, id);
       }
       if (n.spec.autoscale && t >= n.nextScale) this.autoscale(n);
+      if (n.spec.overload) this.overload(n);
+      if (n.spec.rollback) this.rollback(n);
+    }
+  },
+
+  /** Crash when the line or the load stays past its mark for long enough; come back later, cold. */
+  overload(n: NodeRt) {
+    const o = n.spec.overload!;
+    if (!n.up) {
+      if (n.restartAt && this.t >= n.restartAt) {
+        n.restartAt = 0;
+        this.setUp(n.spec.id, true);
+        n.coldFrom = this.t;
+      }
+      return;
+    }
+    const over = (o.queueAbove !== undefined && n.queue.length > o.queueAbove) || (o.loadAbove !== undefined && n.load > o.loadAbove);
+    if (!over) n.overSince = -1;
+    else if (n.overSince < 0) n.overSince = this.t;
+    else if (this.t - n.overSince >= o.forMs) {
+      n.overSince = -1;
+      n.restartAt = this.t + o.restartMs;
+      this.setUp(n.spec.id, false);
+      this.note(`${n.spec.label} crashed under load`);
+    }
+  },
+
+  /** A canary whose answers are failing more than allowed: the balancer stops sending it anything. */
+  rollback(lb: NodeRt) {
+    const rb = lb.spec.rollback!;
+    if (lb.rolledBack.has(rb.target)) return;
+    const s = lb.results.get(rb.target);
+    if (!s) return;
+    const err = s.err.count(this.t);
+    const all = err + s.ok.count(this.t);
+    if (all >= 5 && err / all > rb.errorsAbove) {
+      lb.rolledBack.add(rb.target);
+      this.effect("open", lb.spec.id);
+      this.note(`${this.nodes.get(rb.target)?.spec.label ?? rb.target} rolled back`);
     }
   },
 
@@ -89,9 +128,11 @@ const control: Partial<Sim> & ThisType<Sim> = {
     }
   },
 
+  /** Stop waiting on a call that took too long, or (honouring deadlines) whose caller's deadline has passed. */
   callTimeouts(n: NodeRt) {
-    const limit = n.spec.callTimeoutMs!;
-    for (const r of [...n.held]) if (this.t - r.calledAt >= limit) this.giveUp(n, r);
+    const limit = n.spec.callTimeoutMs ?? Infinity;
+    const honour = n.spec.deadlines === "honour";
+    for (const r of [...n.held]) if (this.t - r.calledAt >= limit || (honour && r.deadline <= this.t)) this.giveUp(n, r);
   },
 
   /** Stop waiting on a downstream call: the original becomes a ghost, an error answer leaves from here. */
@@ -106,6 +147,7 @@ const control: Partial<Sim> & ThisType<Sim> = {
       attempt: r.attempt,
       deadline: r.deadline,
       abandoned: r.abandoned,
+      logicalId: r.logicalId,
       detached: r.detached,
       stack: r.stack.slice(0, depth + 1).map((f) => ({ ...f, calls: [] })),
       at: n.spec.id,

@@ -7,7 +7,7 @@ import { formatMetric, measure, type MetricId, type MetricSpec } from "../sim/me
 import type { FxKind } from "../sim/types";
 
 /** The dot kinds a scene shows: its local key. Shapes and colours are fixed (CLAUDE.md). */
-export type DotKind = "req" | "late" | "ok" | "stale" | "turned" | "failed" | "gaveup" | "copy" | "job" | "probe";
+export type DotKind = "req" | "late" | "ok" | "stale" | "turned" | "failed" | "gaveup" | "copy" | "job" | "probe" | "lost";
 
 /** What a beat points at. What it names stays bright; the rest of the stage steps back. */
 export interface Focus {

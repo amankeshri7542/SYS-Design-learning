@@ -14,6 +14,7 @@ export const DOTS: { kind: DotKind; shape: string; cls: string; name: string; te
   { kind: "copy", shape: "hollow", cls: "copy", name: "Copy", text: "A write on its way to a replica, which is behind until it lands." },
   { kind: "job", shape: "square", cls: "req", name: "Job", text: "Work left on a queue or sent to a subscriber, waiting for a worker." },
   { kind: "probe", shape: "ring-sm", cls: "copy", name: "Health check", text: "A small ping from a balancer, asking a server if it is up." },
+  { kind: "lost", shape: "cross", cls: "err", name: "Lost", text: "A message that vanished on its way. Whoever waits for it gives up in time." },
 ];
 
 export function Dot({ shape, cls }: { shape: string; cls: string }) {
@@ -26,6 +27,7 @@ export function Dot({ shape, cls }: { shape: string; cls: string }) {
       {shape === "ring" && <circle r="4.8" className="ring" />}
       {shape === "ring-sm" && <circle r="3" className="ring" />}
       {shape === "hollow" && <rect x="-3.6" y="-3.6" width="7.2" height="7.2" rx="1" className="hollow" />}
+      {shape === "cross" && <path d="M-4.2-4.2L4.2 4.2M4.2-4.2L-4.2 4.2" className="cross" />}
     </svg>
   );
 }
@@ -36,7 +38,7 @@ export function Dot({ shape, cls }: { shape: string; cls: string }) {
  * shuts it and gives focus back to the Key button.
  */
 export function KeyPopover({ dots }: { dots?: DotKind[] }) {
-  const here = dots?.length ? DOTS.filter((d) => dots.includes(d.kind)) : DOTS.filter((d) => d.kind !== "job" && d.kind !== "probe");
+  const here = dots?.length ? DOTS.filter((d) => dots.includes(d.kind)) : DOTS.filter((d) => d.kind !== "job" && d.kind !== "probe" && d.kind !== "lost");
   const rest = dots?.length ? DOTS.filter((d) => !dots.includes(d.kind)) : [];
   const pop = useRef<HTMLDivElement>(null);
   const close = useRef<HTMLButtonElement>(null);

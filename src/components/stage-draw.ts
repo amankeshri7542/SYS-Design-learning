@@ -242,15 +242,20 @@ export interface FxDraw {
 
 /** Effects that say a node changed state: each draws one ring. */
 export const RINGS = new Set<FxKind>(["crash", "recover", "open", "close", "boot", "hot"]);
-/** A cache's hits and misses: on the dot first (a hit pops, a miss's copy slides in), with a faint ring as a second cue. */
-export const FAINT = new Set<FxKind>(["hit", "miss"]);
+/**
+ * A cache's hits and misses: on the dot first (a hit pops, a miss's copy slides in), with a faint ring as a second cue.
+ * A lookup the existence check answered ("no such key") gets the hit's faint ring.
+ */
+export const FAINT = new Set<FxKind>(["hit", "miss", "filtered"]);
 
 const LIFE: Partial<Record<FxKind, number>> = {
   drop: DUR.hero,
+  lost: 700,
   evict: 700,
   fill: DUR.base + DUR.fast,
   hit: 400,
   miss: 400,
+  filtered: 400,
   crash: 1100,
   recover: 1100,
   boot: DUR.hero,
@@ -290,6 +295,23 @@ export function drawFx(ctx: CanvasRenderingContext2D, f: FxDraw, real: number, P
       }
       break;
     }
+    case "lost": {
+      // Lost on its link: a red cross opens where the message vanished, and fades. Not a diamond, which is an answer
+      // that failed: nothing answered this one, and whoever waits for it will give up.
+      const d = R * 0.55 * (reduced ? 1 : 0.7 + 0.3 * easeOut(Math.min(1, age / DUR.base)));
+      ctx.globalAlpha = 1 - u;
+      ctx.strokeStyle = P.err;
+      ctx.lineWidth = Math.max(1.6, R * 0.34);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(f.x - d, f.y - d);
+      ctx.lineTo(f.x + d, f.y + d);
+      ctx.moveTo(f.x + d, f.y - d);
+      ctx.lineTo(f.x - d, f.y + d);
+      ctx.stroke();
+      ctx.lineCap = "butt";
+      break;
+    }
     case "evict": {
       // Pushed out of a full cache: a chip of its bar drops from the bottom edge. A flat chip in ink, never a dot's
       // shape or colour, because an evicted entry is data, not a request.
@@ -314,11 +336,12 @@ export function drawFx(ctx: CanvasRenderingContext2D, f: FxDraw, real: number, P
       break;
     }
     case "hit":
-    case "miss": {
+    case "miss":
+    case "filtered": {
       // Faint and small: one at a time per cache, so a busy cache never wears a stack of rings.
       const grow = reduced ? 0 : 12 * easeOut(u);
       ctx.globalAlpha = (1 - u) * 0.45;
-      ctx.strokeStyle = f.kind === "hit" ? P.ok : P.slow;
+      ctx.strokeStyle = f.kind === "miss" ? P.slow : P.ok;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(f.x, f.y, f.r * 0.62 + grow, 0, TAU);
