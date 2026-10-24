@@ -1,6 +1,6 @@
 import { hashStr, mulberry32, zipfCdf } from "../rng";
 import type { Call, Fx, FxKind, LinkSpec, NodeSpec, Op, Result, SceneSpec, ScriptEvent } from "../types";
-import { TICK, Win, type Done, type NodeRt, type Note, type Req, type Spawn } from "./model";
+import { TICK, Win, type Conn, type Done, type Frame, type NodeRt, type Note, type Req, type Spawn } from "./model";
 import { SAMPLE_KEYS, sameTargets } from "./ring";
 
 /**
@@ -26,7 +26,7 @@ export interface Sim {
   rate(n: NodeRt): number;
   gap(n: NodeRt, rate: number): number;
   arrivals(): void;
-  spawn(n: NodeRt, key: number, op: Op, first: number, attempt: number, cost: number, extra?: { logicalId?: number; absent?: boolean; poison?: boolean; deadline?: number }): void;
+  spawn(n: NodeRt, key: number, op: Op, first: number, attempt: number, cost: number, extra?: { logicalId?: number; absent?: boolean; poison?: boolean; deadline?: number; page?: number; news?: number }): void;
   finishAtClient(n: NodeRt, r: Req): void;
   timeout(r: Req): void;
   retry(n: NodeRt, r: Req): boolean;
@@ -36,6 +36,7 @@ export interface Sim {
   linkOf(a: string, b: string): LinkSpec | undefined;
   cross(r: Req, from: string, to: string, ms: number): void;
   vanish(r: Req): void;
+  lossOf(r: Req, span: number): void;
   release(r: Req): void;
   send(r: Req, to: string, ms?: number): void;
   link(a: string, b: string): { sent: number; failed: number };
@@ -46,6 +47,7 @@ export interface Sim {
   // routing.ts
   candidates(n: NodeRt, r?: Req): string[];
   route(n: NodeRt, r: Req): void;
+  forward(n: NodeRt, r: Req, pick: string): void;
   limit(n: NodeRt, r: Req): void;
   resolve(n: NodeRt, call: Call): string;
   owners(spec: NodeSpec): string[];
@@ -91,6 +93,41 @@ export interface Sim {
   complete(n: NodeRt, r: Req): void;
   call(n: NodeRt, r: Req, calls: Call[]): void;
   back(n: NodeRt, r: Req): void;
+
+  // connections.ts
+  dial(n: NodeRt, r: Req, to: string): void;
+  openConn(n: NodeRt, to: string): Conn;
+  shake(n: NodeRt, c: Conn): void;
+  shaken(n: NodeRt, r: Req): void;
+  dropConn(n: NodeRt, c: Conn, failed: boolean): void;
+  hangUp(n: NodeRt, f: Frame, abandoned?: boolean): void;
+  pump(n: NodeRt): void;
+  goOut(n: NodeRt, r: Req): void;
+  abort(n: NodeRt, r: Req): void;
+  tidyConns(n: NodeRt): void;
+  connsLost(id: string): void;
+  connKey(r: Req): string;
+  admitConn(n: NodeRt, r: Req): boolean;
+  resend(r: Req): void;
+  windowOf(n: NodeRt): number;
+  flown(n: NodeRt, r: Req, ok: boolean): void;
+  updateWindows(n: NodeRt): void;
+
+  // realtime.ts
+  opens(n: NodeRt): void;
+  subscribe(n: NodeRt, user: number): void;
+  holdSub(n: NodeRt, r: Req): void;
+  fanOut(n: NodeRt, r: Req): void;
+  heard(n: NodeRt, r: Req): void;
+  subEnded(n: NodeRt, r: Req): void;
+  expireSubs(n: NodeRt): void;
+  heartbeats(n: NodeRt): void;
+  beatResult(n: NodeRt, r: Req, ok: boolean): void;
+
+  // data.ts (failover)
+  replicaOf(n: NodeRt): string | undefined;
+  promote(lb: NodeRt, id: string): void;
+  toPrimary(n: NodeRt, r: Req): void;
 }
 
 /**
@@ -129,8 +166,8 @@ export class Sim {
   /** Answers over the availability window: all of them, and those answered well and on time. */
   sloAll: Win;
   sloGood: Win;
-  /** Each link's crossings in flight, one way, by when they end (links with `parallel`). */
-  linkBusy = new Map<string, number[]>();
+  /** Each link's crossings in flight or waiting for a lane, one way: when each starts and ends (links with `parallel`). */
+  linkBusy = new Map<string, { s: number; e: number }[]>();
   /** Which server holds each user's session (`client:key`), for servers that keep sessions in memory. */
   sessionOf = new Map<string, string>();
   /** Jobs accepted and then lost (a worker died after acking on receipt, a queue dropped or lost them), redelivered, dead-lettered, and finished out of order for their key. */
@@ -140,6 +177,33 @@ export class Sim {
   reordered: Win;
   /** The latest-born job finished so far for each key, to spot jobs finished out of order. */
   lastDone = new Map<number, number>();
+  /** Connections opened (a handshake each), and how long each request waited at its sender before going out. */
+  handshakes: Win;
+  sendWaits: { t: number; ms: number }[] = [];
+  connSeq = 0;
+  /** Pages loaded (clients with `page`): when each finished, and how long the whole page took. */
+  pageLog: { t: number; lat: number }[] = [];
+  pageSeq = 0;
+  /** News: every item published (its number and when), and every delivery of one to a user (how long after). */
+  news: { seq: number; t: number }[] = [];
+  newsSeq = 0;
+  newsLog: { t: number; lag: number }[] = [];
+  /** Answers to polls, and those that had nothing new. */
+  polls: Win;
+  empty: Win;
+  /** Users waiting to open a connection again. */
+  resubs: { at: number; client: string; user: number }[] = [];
+  /** Heartbeats: how long after its server went down each dead connection was given up on; connections given up on while their server was fine. */
+  detects: { t: number; ms: number }[] = [];
+  falseAlarms: Win;
+  /** Writes acknowledged and then lost when a replica was promoted over the primary that took them. */
+  lostAcked: Win;
+  /** Writes waiting at a primary for their replicas' copies (`replication: "sync"`): copies still to confirm. */
+  syncWait = new Map<number, { write: Req; left: number }>();
+  /** Replicas promoted (and old primaries demoted) at run time copy from someone new: overrides of `replicaOf`. */
+  repoint = new Map<string, string | undefined>();
+  /** Writes that failed while waiting for their copies: never acknowledged, so never counted lost (by write number). */
+  unacked = new Set<number>();
   tracing: boolean;
   seq = 0;
   truth = new Map<number, number>();
@@ -147,7 +211,7 @@ export class Sim {
   nextId = 1;
   acc = 0;
   /** Retries waiting for their moment. */
-  retrying: { at: number; client: string; key: number; op: Op; first: number; attempt: number; cost: number; logicalId: number; absent: boolean; poison: boolean; deadline: number }[] = [];
+  retrying: { at: number; client: string; key: number; op: Op; first: number; attempt: number; cost: number; logicalId: number; absent: boolean; poison: boolean; deadline: number; page: number; news: number }[] = [];
   retryRng: () => number;
   cycleStart = 0;
   cursor = 0;
@@ -175,6 +239,11 @@ export class Sim {
     this.redelivered = new Win(this.windowMs);
     this.deadLettered = new Win(this.windowMs);
     this.reordered = new Win(this.windowMs);
+    this.handshakes = new Win(this.windowMs);
+    this.polls = new Win(this.windowMs);
+    this.empty = new Win(this.windowMs);
+    this.falseAlarms = new Win(this.windowMs);
+    this.lostAcked = new Win(this.windowMs);
     this.retryRng = mulberry32(this.seed ^ 0x9e3779b9);
     this.reconfigure(spec);
   }
@@ -279,6 +348,27 @@ export class Sim {
       waiting: [],
       outbox: [],
       nextRelay: 0,
+      conns: [],
+      sendq: [],
+      accepted: 0,
+      flying: 0,
+      cwnd: spec.client?.window?.size ?? Infinity,
+      ssthresh: spec.client?.window?.max ?? 32,
+      peerWindow: Infinity,
+      srtt: 0,
+      cutAt: -1e9,
+      starved: new Set(),
+      pins: new Map(),
+      subs: [],
+      latest: 0,
+      subOf: new Map(),
+      beats: new Map(),
+      seen: new Map(),
+      pages: new Map(),
+      primary: "",
+      downAt: -1e9,
+      zeroAt: -1,
+      opened: false,
     };
     if (spec.client) {
       const r = this.rate(rt);
@@ -311,8 +401,24 @@ export class Sim {
     n.up = up;
     this.effect(up ? "recover" : "crash", id);
     if (!up) {
+      n.downAt = this.t;
       n.cache.clear();
       n.sessions.clear();
+      // Every connection to it closes, and its own connections die with it: what waits to go out fails.
+      this.connsLost(id);
+      for (const k of [...n.conns]) this.dropConn(n, k, false);
+      n.accepted = 0;
+      for (const r of n.sendq.splice(0)) this.abort(n, r);
+      // Its subscribers' connections close: they open new ones. A hung server keeps them open, and silent.
+      if (n.spec.downMode !== "hang") for (const r of n.subs.splice(0)) this.respond(r, "error");
+      // A primary that replicates on purpose loses the copies still on their way, and the writes waiting for them fail.
+      if (n.spec.replication) {
+        for (const q of this.reqs) if (q.op === "repl" && q.phase === "travel" && q.dir === 1 && q.from === id && !q.lostAt) q.lostAt = this.t + TICK;
+        for (const r of n.waiting.splice(0)) {
+          this.unacked.add(r.seq);
+          this.respond(r, "error");
+        }
+      }
       // A worker's copies from a queue that keeps jobs until acked die with it: the queue hands them out again, unless
       // they were acked on receipt, in which case they are lost.
       if (n.spec.sink) {
@@ -333,16 +439,21 @@ export class Sim {
     } else {
       for (const r of n.parked) this.unpark(r);
       n.parked = [];
+      // A cache warmed before it serves comes back holding the hottest keys.
+      if (n.spec.prewarm && (n.spec.capacity ?? 0) > 0)
+        for (let k = 0; k < Math.min(n.spec.prewarm, n.spec.capacity!); k++)
+          n.cache.set(k, { seq: this.truth.get(k) ?? 0, exp: this.t + (n.spec.ttlMs ?? Infinity), last: this.t });
     }
   }
 
   /**
    * Every request this node is holding on to, whatever the container: its line, its workers, the calls its workers wait
-   * on, requests hung on it, readers waiting on a cache fill, a queue's jobs out with workers, and producers held back
-   * by back-pressure. A new container must be listed here.
+   * on, requests hung on it, readers waiting on a cache fill, a queue's jobs out with workers, producers held back by
+   * back-pressure, requests waiting at a sender to go out, and subscribers' connections held open. A new container
+   * must be listed here.
    */
   holds(n: NodeRt): Req[] {
-    const out = [...n.queue, ...n.work, ...n.held, ...n.parked.filter((r) => r.phase === "parked"), ...n.waiting];
+    const out = [...n.queue, ...n.work, ...n.held, ...n.parked.filter((r) => r.phase === "parked"), ...n.waiting, ...n.sendq, ...n.subs];
     for (const w of n.waiters.values()) out.push(...w);
     for (const e of n.inflight.values()) out.push(e.job);
     return out;
@@ -473,6 +584,12 @@ export class Sim {
     if (this.done.length && this.done[0].t < from) this.done = this.done.filter((d) => d.t >= from);
     if (this.jobs.length && this.jobs[0].t < from) this.jobs = this.jobs.filter((d) => d.t >= from);
     if (this.workLog.length && this.workLog[0].t < from) this.workLog = this.workLog.filter((d) => d.t >= from);
+    if (this.sendWaits.length && this.sendWaits[0].t < from) this.sendWaits = this.sendWaits.filter((d) => d.t >= from);
+    if (this.pageLog.length && this.pageLog[0].t < from) this.pageLog = this.pageLog.filter((d) => d.t >= from);
+    if (this.newsLog.length && this.newsLog[0].t < from) this.newsLog = this.newsLog.filter((d) => d.t >= from);
+    if (this.detects.length && this.detects[0].t < from) this.detects = this.detects.filter((d) => d.t >= from);
+    // News items are kept a little longer: how far they reached is judged a second after each was published.
+    if (this.news.length && this.news[0].t < from - 2000) this.news = this.news.filter((d) => d.t >= from - 2000);
     if (this.fx.length > 120) this.fx = this.fx.slice(-80);
     // Idempotency notes are kept 30 s: long past any retry or redelivery the scenes make.
     if (this.t % 1000 === 0) for (const n of this.list) for (const [k, v] of n.done) if (v.t < this.t - 30_000) n.done.delete(k);
@@ -525,6 +642,17 @@ export class Sim {
       acked: false,
       relay: false,
       deadLetter: false,
+      resent: 0,
+      page: 0,
+      news: 0,
+      window: -1,
+      syncFor: 0,
+      flew: false,
+      polled: false,
+      hand: 0,
+      beat: false,
+      rto: 0,
+      outAt: 0,
     };
     this.reqs.push(r);
     return r;
@@ -533,6 +661,12 @@ export class Sim {
   record(r: Req, result: Result) {
     const lat = this.t - r.first;
     this.done.push({ t: this.t, lat, result, tag: r.tag, op: r.op, wire: r.wire, wait: r.wait, work: r.work });
+    // The last of a page's requests to finish finishes the page.
+    const page = r.page ? this.nodes.get(r.client)?.pages.get(r.page) : undefined;
+    if (page && --page.left === 0) {
+      this.nodes.get(r.client)!.pages.delete(r.page);
+      this.pageLog.push({ t: this.t, lat: this.t - page.t0 });
+    }
     this.sloAll.add(this.t);
     if ((result === "ok" || result === "stale" || result === "fallback") && lat <= this.spec.sloMs) this.sloGood.add(this.t);
   }

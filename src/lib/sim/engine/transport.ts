@@ -1,6 +1,6 @@
 import { hashStr, mix } from "../rng";
 import type { Result } from "../types";
-import type { Req } from "./model";
+import { TICK, type Req } from "./model";
 import { Sim } from "./sim";
 
 /**
@@ -39,6 +39,8 @@ const transport: Partial<Sim> & ThisType<Sim> = {
     r.sentAt = this.t;
     r.hop++;
     r.xfer = 0;
+    r.resent = 0;
+    r.rto = 0;
     if (r.op !== "probe") this.crossings.add(this.t);
     const L = this.linkOf(from, to);
     if (L) {
@@ -50,22 +52,49 @@ const transport: Partial<Sim> & ThisType<Sim> = {
       }
       if (L.jitterMs) ms = Math.max(1, ms + L.jitterMs * (2 * fate(key, r, 2) - 1));
       if (L.parallel) {
-        const busy = (this.linkBusy.get(key) ?? []).filter((end) => end > this.t).sort((a, b) => a - b);
-        if (busy.length >= L.parallel) start = busy[busy.length - L.parallel];
-        busy.push(start + ms);
+        const busy = (this.linkBusy.get(key) ?? []).filter((x) => x.e > this.t).sort((a, b) => a.e - b.e);
+        if (busy.length >= L.parallel) start = busy[busy.length - L.parallel].e;
+        // The link's buffer is full: dropped where it would have joined the line for a lane.
+        if (L.buffer !== undefined && start > this.t && busy.filter((x) => x.s > this.t).length >= L.buffer) {
+          r.t0 = this.t;
+          r.t1 = this.t + ms;
+          r.lostAt = this.t + TICK;
+          if (r.op !== "probe") this.lostCrossings.add(this.t);
+          return;
+        }
+        busy.push({ s: start, e: start + ms });
         this.linkBusy.set(key, busy);
       }
-      if (L.loss && fate(key, r, 0) < L.loss) {
-        r.lostAt = start + (0.35 + 0.5 * fate(key, r, 1)) * ms;
-        if (r.op !== "probe") this.lostCrossings.add(this.t);
-      }
+      r.t0 = start;
+      r.t1 = start + ms;
+      // On a connection that resends what it loses, a loss only delays the crossing.
+      const f = r.stack[r.stack.length - 1];
+      const owner = f?.conn ? this.nodes.get(f.id) : undefined;
+      const k = owner?.conns.find((c) => c.id === f.conn);
+      if (k) r.rto = owner!.spec.connect?.rtoMs ?? 0;
+      this.lossOf(r, ms);
+      // A multiplexed connection still waiting on a resend: this answer waits behind it.
+      if (k && k.stall.until > this.t && r.t1 > k.stall.from && r.t1 < k.stall.until) r.t1 = k.stall.until;
+      return;
     }
     r.t0 = start;
     r.t1 = start + ms;
   },
 
+  /** Whether this crossing (or this resend of it) is lost on its link, decided by its fate; if so, where it vanishes. */
+  lossOf(r: Req, span: number) {
+    const L = this.linkOf(r.from, r.to);
+    if (!L?.loss || r.resent > 8) return;
+    const key = `${r.from}>${r.to}`;
+    const salt = r.resent ? 16 + 2 * r.resent : 0;
+    if (fate(key, r, salt) >= L.loss) return;
+    r.lostAt = r.t0 + (0.35 + 0.5 * fate(key, r, salt + 1)) * span;
+    if (r.op !== "probe") this.lostCrossings.add(this.t);
+  },
+
   /** A crossing lost on its link never arrives. Whoever waits for it gives up in time (and may send it again). */
   vanish(r: Req) {
+    if (r.rto) return this.resend(r);
     const frac = r.t1 > r.t0 ? (r.lostAt - r.t0) / (r.t1 - r.t0) : 0.5;
     this.fx.push({ t: this.t, kind: "lost", node: r.to, link: { from: r.from, to: r.to, frac } });
     r.lostAt = 0;
@@ -110,7 +139,14 @@ const transport: Partial<Sim> & ThisType<Sim> = {
   respond(r: Req, result?: Result) {
     if (result && !r.result) r.result = result;
     const from = r.stack.pop()!.id;
-    if (this.nodes.get(from)?.spec.replies === "ack") r.ack = true;
+    const node = this.nodes.get(from);
+    if (node?.spec.replies === "ack") r.ack = true;
+    // A receiver that advertises its room says on every answer how much it has left, and owes a sender told "none" a
+    // word when there is some again.
+    if (node?.spec.advertise && r.op !== "probe") {
+      r.window = Math.max(0, node.spec.advertise.high - node.queue.length);
+      if (!r.window) node.starved.add(r.stack.map((f) => f.id).join(">"));
+    }
     if (!r.stack.length) {
       r.phase = "gone";
       return;

@@ -7,10 +7,11 @@ import type { SceneSpec } from "./types";
 /**
  * Logical requests sent, against those recorded plus those still on their way: a request in flight, one waiting to be
  * retried, or the answer a server sent in place of a call it gave up on (the ghost it left behind is not counted).
- * Needs a window that forgets nothing (`windowMs: 1e9`), or old answers fall out of `done`.
+ * A user's connection held open for news, and what is pushed down it, are not requests. Needs a window that forgets
+ * nothing (`windowMs: 1e9`), or old answers fall out of `done`.
  */
 export function accounted(sim: Sim) {
-  const live = sim.reqs.filter((r) => r.phase !== "gone" && !r.abandoned && !r.detached && !r.orphanAt && r.op !== "probe").length;
+  const live = sim.reqs.filter((r) => r.phase !== "gone" && !r.abandoned && !r.detached && !r.orphanAt && r.op !== "probe" && r.op !== "sub").length;
   return { sent: sim.logical.count(sim.t), done: sim.done.length, live: live + sim.retrying.length };
 }
 
@@ -27,6 +28,10 @@ export function leakedHolds(sim: Sim): string[] {
     const at = `${sim.t} ms, ${n.spec.id}`;
     if (sim.holds(n).some((r) => r.phase === "gone")) out.push(`${at}: holds a request that has ended`);
     if (n.queue.some((r) => r.phase !== "wait")) out.push(`${at}: a request in line that isn't waiting`);
+    if (n.sendq.some((r) => r.phase !== "wait")) out.push(`${at}: a request waiting to go out that isn't waiting`);
+    if (n.subs.some((r) => r.phase !== "wait")) out.push(`${at}: a connection held open that isn't`);
+    if (n.spec.client?.window && n.flying < 0) out.push(`${at}: ${n.flying} in flight`);
+    for (const k of n.conns) if (k.busy > (n.spec.connect?.streams && n.spec.connect.streams !== "one" ? Infinity : 1)) out.push(`${at}: connection ${k.id} carries ${k.busy} at once`);
     if (n.work.some((r) => r.phase !== "work")) out.push(`${at}: a request being served that isn't working`);
     if (n.spec.slots && n.work.length + n.held.length > n.spec.slots) out.push(`${at}: ${n.work.length + n.held.length} workers busy of ${n.spec.slots}`);
     if (n.incoming !== (coming.get(n.spec.id) ?? 0)) out.push(`${at}: expects ${n.incoming} on their way, ${coming.get(n.spec.id) ?? 0} are`);

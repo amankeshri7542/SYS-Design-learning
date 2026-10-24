@@ -36,7 +36,18 @@ export type MetricId =
   | "lostJobs"
   | "lostEvents"
   | "reordered"
-  | "consumed";
+  | "consumed"
+  | "connections"
+  | "handshakes"
+  | "sendWait"
+  | "window"
+  | "pageMs"
+  | "pushLag"
+  | "reach"
+  | "empty"
+  | "detectMs"
+  | "falseAlarms"
+  | "lostAcked";
 
 export interface MetricSpec {
   id: MetricId;
@@ -102,6 +113,17 @@ const META: Record<MetricId, { unit: Unit; better: Better }> = {
   lostEvents: { unit: "pct", better: "low" },
   reordered: { unit: "count", better: "low" },
   consumed: { unit: "rate", better: "high" },
+  connections: { unit: "count", better: "neutral" },
+  handshakes: { unit: "rate", better: "low" },
+  sendWait: { unit: "ms", better: "low" },
+  window: { unit: "count", better: "neutral" },
+  pageMs: { unit: "ms", better: "low" },
+  pushLag: { unit: "ms", better: "low" },
+  reach: { unit: "pct", better: "high" },
+  empty: { unit: "pct", better: "low" },
+  detectMs: { unit: "ms", better: "low" },
+  falseAlarms: { unit: "count", better: "low" },
+  lostAcked: { unit: "count", better: "low" },
 };
 
 function recent(sim: Sim, m: MetricSpec) {
@@ -283,6 +305,49 @@ export function measure(sim: Sim, m: MetricSpec): number | null {
         0.95,
       );
     }
+    case "connections":
+      // Open now: a server's subscribers held open, a sender's connections, or what a receiver has accepted.
+      return nodes(sim, m.nodes).reduce((s, n) => s + (n.spec.hold ? n.subs.length : n.spec.connect ? n.conns.length : n.accepted), 0);
+    case "handshakes":
+      return sim.t < 200 ? null : (sim.handshakes.count(sim.t) / Math.min(sim.windowMs, sim.t)) * 1000;
+    case "sendWait":
+    case "pageMs":
+    case "pushLag":
+    case "detectMs": {
+      const from = sim.t - sim.windowMs;
+      const log = m.id === "sendWait" ? sim.sendWaits.map((x) => ({ t: x.t, v: x.ms })) : m.id === "pageMs" ? sim.pageLog.map((x) => ({ t: x.t, v: x.lat })) : m.id === "pushLag" ? sim.newsLog.map((x) => ({ t: x.t, v: x.lag })) : sim.detects.map((x) => ({ t: x.t, v: x.ms }));
+      return percentile(log.filter((x) => x.t > from).map((x) => x.v), 0.95);
+    }
+    case "window": {
+      const ns = nodes(sim, m.nodes).filter((n) => n.spec.client?.window);
+      return ns.length ? ns.reduce((s, n) => s + sim.windowOf(n), 0) / ns.length : null;
+    }
+    case "reach": {
+      // Of the news items published one second ago and earlier, over a window: the share of users (of the clients named)
+      // who have had each one.
+      const users = nodes(sim, m.nodes);
+      const until = sim.t - 1000;
+      const from = until - sim.windowMs;
+      let all = 0;
+      let got = 0;
+      for (const item of sim.news) {
+        if (item.t <= from || item.t > until) continue;
+        for (const c of users) {
+          const k = c.spec.client?.keys ?? 1;
+          all += k;
+          for (let u = 0; u < k; u++) if ((c.seen.get(u) ?? 0) >= item.seq) got++;
+        }
+      }
+      return all ? got / all : null;
+    }
+    case "empty": {
+      const all = sim.polls.count(sim.t);
+      return all ? sim.empty.count(sim.t) / all : null;
+    }
+    case "falseAlarms":
+      return sim.falseAlarms.count(sim.t);
+    case "lostAcked":
+      return sim.lostAcked.count(sim.t);
   }
 }
 
@@ -333,7 +398,16 @@ export function toneOf(m: MetricSpec, v: number | null, sloMs: number): Tone {
     case "duplicates":
     case "lostJobs":
     case "reordered":
+    case "falseAlarms":
+    case "lostAcked":
       return v === 0 ? "good" : v < 3 ? "warn" : "bad";
+    case "pushLag":
+    case "pageMs":
+      return v <= sloMs ? "good" : v <= sloMs * 2 ? "warn" : "bad";
+    case "reach":
+      return v > 0.99 ? "good" : v > 0.9 ? "warn" : "bad";
+    case "empty":
+      return v < 0.5 ? "good" : v < 0.8 ? "warn" : "bad";
     case "errors":
     case "stale":
       return v < 0.01 ? "good" : v < 0.05 ? "warn" : "bad";
@@ -414,6 +488,17 @@ const SAYS: Record<MetricId, (v: string) => string> = {
   lostEvents: (v) => `${v} of saved orders never reached the service that needed to hear about them.`,
   reordered: (v) => `${v} jobs finished before an earlier job for the same key.`,
   consumed: (v) => `${v}: jobs finished each second.`,
+  connections: (v) => `${v} connections are open right now.`,
+  handshakes: (v) => `${v}: new connections opened each second, each a handshake first.`,
+  sendWait: (v) => `The slowest 1 in 20 requests waited ${v} or longer at the sender before going out.`,
+  window: (v) => `${v} requests may be in flight at once now.`,
+  pageMs: (v) => `The slowest 1 in 20 pages takes ${v} or longer to load completely.`,
+  pushLag: (v) => `The slowest 1 in 20 news items reaches a user ${v} or more after it was published.`,
+  reach: (v) => `${v} of users had each news item a second after it was published.`,
+  empty: (v) => `${v} of polls came back with nothing new.`,
+  detectMs: (v) => `A dead connection went unnoticed for ${v} or longer (the slowest 1 in 20).`,
+  falseAlarms: (v) => `${v} healthy connections were given up on as dead in the window.`,
+  lostAcked: (v) => `${v} writes were confirmed to the user and then lost when a replica took over.`,
 };
 
 /**

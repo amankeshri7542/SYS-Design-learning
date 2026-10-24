@@ -7,7 +7,9 @@ import "./routing";
 import "./cache";
 import "./data";
 import "./work";
+import "./connections";
+import "./realtime";
 
 export { Sim } from "./sim";
-export { TICK, Win, type Done, type Frame, type NodeRt, type Note, type Phase, type Req, type Spawn } from "./model";
+export { TICK, Win, type Conn, type Done, type Frame, type NodeRt, type Note, type Phase, type Req, type Spawn } from "./model";
 export { ownerOf } from "./ring";

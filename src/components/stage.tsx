@@ -460,6 +460,8 @@ export function Stage({
             positions.set(r.id, { p: parkSpot(b, pi++, mode, pitch) });
           }
         }
+        // Waiting at the sender to go out (for a connection, or for room in the window): rows above it.
+        for (const r of n.sendq.slice(0, 24)) positions.set(r.id, { p: parkSpot(b, pi++, mode, pitch) });
       }
 
       ctx.lineWidth = 1.6;
@@ -935,7 +937,7 @@ function StageSvg({
               badge={view.badge?.text}
               tone={view.badge?.tone}
               pill={view.pill}
-              role={n.version ?? (n.leader ? "FOLLOWER" : leaders.has(n.id) ? "LEADER" : undefined)}
+              role={n.version ?? (n.leader ? "FOLLOWER" : leaders.has(n.id) ? "LEADER" : roleOf(sim, n.id))}
               meter={m?.kind}
               level={m?.level}
               meterTone={m?.tone}
@@ -1180,6 +1182,12 @@ function Badge({ text, tone, x, y, k, s, dir }: { text: string; tone: string; x:
   );
 }
 
+/** After a promotion: the database now taking the writes is PRIMARY, and an old primary back up is a REPLICA. */
+function roleOf(sim: Sim, id: string) {
+  if (!sim.repoint.has(id)) return undefined;
+  return sim.repoint.get(id) === undefined ? "PRIMARY" : "REPLICA";
+}
+
 /** A cache's fill or a station's load, in 2% steps (the bar's own transition smooths between them). */
 function meterOf(n: NodeRt): { kind: "cache" | "load"; level: number; tone?: string } | null {
   const step = (v: number) => Math.round(Math.min(1, v) * 50) / 50;
@@ -1234,11 +1242,15 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
     case "client": {
       const r = s.client?.rate;
       const rate = typeof r === "function" ? r(sim.t) : (r ?? 0);
-      sub = `${Math.round(rate)} req/s`;
+      if (s.client?.window) sub = `${n.flying}/${sim.windowOf(n)} in flight`;
+      else if (s.client?.subscribe) sub = `${n.subOf.size} connected`;
+      else sub = s.connect ? `${Math.round(rate)} req/s · ${n.conns.length} open` : `${Math.round(rate)} req/s`;
       break;
     }
     case "lb":
-      if (s.autoscale) sub = `target ${Math.round(s.autoscale.target * 100)}% busy`;
+      if (s.promote) sub = "to the primary";
+      else if (s.layer === 4) sub = "per connection";
+      else if (s.autoscale) sub = `target ${Math.round(s.autoscale.target * 100)}% busy`;
       else if (s.algo === "hash") sub = `key → ${sim.flat(s.to).length} nodes`;
       else if (s.algo === "ring") sub = "ring of 64 points each";
       else if (s.algo === "nearest") sub = "nearest healthy";
@@ -1260,7 +1272,9 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
       sub = `${sim.flat(s.to).length} subscribers`;
       break;
     default:
-      if (!slots) sub = n.queue.length ? `stalled · ${n.queue.length} waiting` : "stalled";
+      if (s.hold) sub = `${n.subs.length}/${s.hold.max} open`;
+      else if (s.maxConns !== undefined && !n.queue.length) sub = `${n.accepted}/${s.maxConns} connections`;
+      else if (!slots) sub = n.queue.length ? `stalled · ${n.queue.length} waiting` : "stalled";
       else if (n.queue.length) sub = `${n.queue.length} waiting`;
       else {
         // Just back from a crash under load: fewer workers until it has warmed up.
@@ -1271,7 +1285,9 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
   const pill = s.breaker ? n.breaker.state : undefined;
   // Shedding holds its badge a moment past each refusal, so it doesn't flicker as the line crosses the mark.
   const shedding = s.shed && sim.t - n.shedAt < 300;
-  const badge = s.kind === "db" && s.leader && sim.partitioned ? { text: "CUT OFF", tone: "bad" } : shedding ? { text: "SHEDDING", tone: "warn" } : undefined;
+  // A sender told its receiver has no room waits for word that it has.
+  const waiting = s.client?.window && n.peerWindow === 0;
+  const badge = s.kind === "db" && s.leader && sim.partitioned ? { text: "CUT OFF", tone: "bad" } : shedding ? { text: "SHEDDING", tone: "warn" } : waiting ? { text: "WAIT", tone: "warn" } : undefined;
   // A station with no workers at all is stalled: news, even before a line forms.
   const stalled = (s.kind === "server" || s.kind === "db") && !slots && !s.sink;
   // A dead-letter queue keeps the jobs given up on: a red rim, the colour of failure.
