@@ -68,6 +68,7 @@ export interface Sim {
   fail(n: NodeRt, r: Req): void;
   admit(n: NodeRt, r: Req): void;
   refuse(n: NodeRt, r: Req): void;
+  signedIn(n: NodeRt, r: Req): boolean;
   clone(n: NodeRt, r: Req): Req;
   enqueue(n: NodeRt, r: Req): void;
   publish(n: NodeRt, r: Req): void;
@@ -120,6 +121,8 @@ export class Sim {
   sloGood: Win;
   /** Each link's crossings in flight, one way, by when they end (links with `parallel`). */
   linkBusy = new Map<string, number[]>();
+  /** Which server holds each user's session (`client:key`), for servers that keep sessions in memory. */
+  sessionOf = new Map<string, string>();
   tracing: boolean;
   seq = 0;
   truth = new Map<number, number>();
@@ -248,6 +251,7 @@ export class Sim {
       results: new Map(),
       rolledBack: new Set(),
       shedAt: -1e9,
+      sessions: new Set(),
     };
     if (spec.client) {
       const r = this.rate(rt);
@@ -281,6 +285,7 @@ export class Sim {
     this.effect(up ? "recover" : "crash", id);
     if (!up) {
       n.cache.clear();
+      n.sessions.clear();
       if (!n.spec.sink && n.spec.kind !== "queue") {
         for (const r of [...n.queue, ...n.work]) this.fail(n, r);
         n.queue = [];

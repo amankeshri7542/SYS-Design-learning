@@ -42,8 +42,23 @@ const work: Partial<Sim> & ThisType<Sim> = {
         if (this.existence(n, r)) return;
         return this.admit(n, r);
       default:
+        if (n.spec.sessions && !this.signedIn(n, r)) return this.respond(r, "error");
         return this.admit(n, r);
     }
+  },
+
+  /**
+   * A server that keeps sessions in memory: is this user signed in here? A first visit signs them in. A user whose
+   * session is on another server, or was lost when this one crashed, is signed out: false. Either way the session is
+   * here from now on.
+   */
+  signedIn(n: NodeRt, r: Req) {
+    const user = `${r.client}:${r.key}`;
+    const home = this.sessionOf.get(user);
+    const ok = home === undefined || (home === n.spec.id && n.sessions.has(user));
+    this.sessionOf.set(user, n.spec.id);
+    n.sessions.add(user);
+    return ok;
   },
 
   park(n: NodeRt, r: Req) {

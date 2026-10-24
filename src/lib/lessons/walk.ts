@@ -106,9 +106,10 @@ export function stepFiring(sim: Sim, ms: number) {
   sim.step(end - sim.t);
 }
 
-/** Average a metric over a run, after the scene's warm-up. */
+/** Average a metric over a run, after the scene's warm-up (its `warmMs`, as the player runs it, then 800 ms more). */
 export function averageOf(spec: SceneSpec, metric: MetricSpec, ms = 7000) {
   const sim = new Sim(spec);
+  if (spec.warmMs) sim.step(spec.warmMs);
   const values: number[] = [];
   for (let t = 0; t < ms; t += 100) {
     stepFiring(sim, 100);

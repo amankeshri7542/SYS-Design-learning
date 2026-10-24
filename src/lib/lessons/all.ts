@@ -30,6 +30,10 @@ import timeoutsAndDeadlines from "./scenes/timeouts-and-deadlines";
 import pipeliningAndBatching from "./scenes/pipelining-and-batching";
 import nearestRegionAndFailover from "./scenes/nearest-region-and-failover";
 import dns from "./scenes/dns";
+import statelessVsStateful from "./scenes/stateless-vs-stateful";
+import ninesAndErrorBudgets from "./scenes/nines-and-error-budgets";
+import negativeCaching from "./scenes/negative-caching";
+import indexes from "./scenes/indexes";
 import capstone from "./stories/capstone";
 
 export const SCENE_DEFS: Record<string, LessonScene> = {
@@ -57,6 +61,10 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
   "pipelining-and-batching": pipeliningAndBatching,
   "nearest-region-and-failover": nearestRegionAndFailover,
   dns,
+  "stateless-vs-stateful": statelessVsStateful,
+  "nines-and-error-budgets": ninesAndErrorBudgets,
+  "negative-caching": negativeCaching,
+  indexes,
 };
 
 export const STORY_DEFS: Record<string, StoryDef> = { capstone };
