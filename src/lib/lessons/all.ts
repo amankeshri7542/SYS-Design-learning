@@ -46,6 +46,10 @@ import idempotency from "./scenes/idempotency";
 import deadLetterQueues from "./scenes/dead-letter-queues";
 import outbox from "./scenes/outbox";
 import partitionedLogs from "./scenes/partitioned-logs";
+import handshakesAndKeepAlive from "./scenes/handshakes-and-keep-alive";
+import windowsAndFlowControl from "./scenes/windows-and-flow-control";
+import congestionControl from "./scenes/congestion-control";
+import headOfLineBlocking from "./scenes/head-of-line-blocking";
 import capstone from "./stories/capstone";
 import webCrawler from "./stories/web-crawler";
 
@@ -90,6 +94,10 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
   "dead-letter-queues": deadLetterQueues,
   outbox,
   "partitioned-logs": partitionedLogs,
+  "handshakes-and-keep-alive": handshakesAndKeepAlive,
+  "windows-and-flow-control": windowsAndFlowControl,
+  "congestion-control": congestionControl,
+  "head-of-line-blocking": headOfLineBlocking,
 };
 
 export const STORY_DEFS: Record<string, StoryDef> = { capstone, "web-crawler": webCrawler };

@@ -516,6 +516,7 @@ export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
         return n.connect ? ["999 req/s · 9 open"] : ["999 req/s"];
       case "lb":
         if (n.promote) return ["to the primary"];
+        if (n.glyph === "router" && flat(n.to).length === 1) return ["shares one line"];
         if (n.layer === 4) return ["per connection"];
         if (n.autoscale) return ["target 99% busy"];
         if (n.algo === "hash") return ["key → 9 nodes"];
@@ -559,6 +560,7 @@ const SHORT: [RegExp, string][] = [
   [/^ring of 64 points each$/, "ring"],
   [/^(\d+) req\/s · (\d+) open$/, "$1/s · $2 open"],
   [/^(\d+\/\d+) connections$/, "$1 open"],
+  [/^(\d+\/\d+) in flight$/, "$1 out"],
 ];
 
 /** The shorter wording a secondary label takes in the narrow (compact and tall) layouts. */
