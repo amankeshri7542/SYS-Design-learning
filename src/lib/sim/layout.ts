@@ -528,8 +528,11 @@ export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
         return [n.algo === "least" ? "least busy" : n.algo === "random" ? "random" : "round robin"];
       case "limiter":
         return ["99/s per client"];
-      case "cache":
-        return ["99/99 items", "down"];
+      case "cache": {
+        // As many digits as the cache can hold (at least two).
+        const cap = Math.max(99, n.capacity ?? 0);
+        return [`${cap}/${cap} items`, "down"];
+      }
       case "queue":
         return n.ack ? ["999 waiting · 99 out"] : n.backpressure?.mode === "wait" ? ["999 waiting · 99 held"] : ["999 waiting"];
       case "topic":

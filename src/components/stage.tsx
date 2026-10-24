@@ -115,7 +115,8 @@ const ZOOM_CEILING = (lanes: number) => (lanes <= 1 ? 2 : lanes <= 2 ? 1.45 : la
 /**
  * Pick the layout for the box. Portrait boxes never squeeze a wide scene into the compact layout (only scenes of at
  * most two lanes and three columns may use it); landscape boxes never stack the scene vertically. The wide desktop
- * layout wins whenever its stations come out at 74% of design size or more; otherwise the biggest stations win.
+ * layout wins whenever its stations come out at 74% of design size or more; otherwise the biggest stations of the
+ * other layouts win (a landscape box may still keep the wide one).
  */
 function chooseFrame(scene: Scene, box: Size): Frame {
   const { lanes, cols } = shapeOf(scene.spec);
@@ -125,7 +126,8 @@ function chooseFrame(scene: Scene, box: Size): Frame {
   const frames = modes.map((m) => fitFrame(scene, m, box));
   const better = (a: Frame, b: Frame) => (b.hits !== a.hits ? b.hits < a.hits : nodeScale(b) > nodeScale(a));
   const wide = frames[0];
-  if (nodeScale(wide) < 0.74 || wide.hits) return frames.reduce((a, b) => (better(a, b) ? b : a));
+  // Too small (or crowded) for the wide layout: the best of the rest, and on a portrait box never the wide one.
+  if (nodeScale(wide) < 0.74 || wide.hits) return (portrait ? frames.slice(1) : frames).reduce((a, b) => (better(a, b) ? b : a));
   // A wide stage with spare height draws its stations larger, as long as nothing crowds and nothing has to shrink.
   let best = wide;
   for (let z = 1.05; z <= ZOOM_CEILING(lanes) + 1e-6; z += 0.05) {

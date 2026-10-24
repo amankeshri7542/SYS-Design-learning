@@ -26,6 +26,8 @@ export const SCENES: Record<string, Load> = {
   "consistent-hashing": () => import("./consistent-hashing"),
   "consistency-vs-availability": () => import("./consistency-vs-availability"),
   indexes: () => import("./indexes"),
+  "connection-pools": () => import("./connection-pools"),
+  failover: () => import("./failover"),
   // Async
   "message-queues": () => import("./message-queues"),
   "publish-subscribe": () => import("./publish-subscribe"),
@@ -41,6 +43,7 @@ export const SCENES: Record<string, Load> = {
   "load-shedding": () => import("./load-shedding"),
   bulkheads: () => import("./bulkheads"),
   "cascading-failures": () => import("./cascading-failures"),
+  "cold-caches-and-herds": () => import("./cold-caches-and-herds"),
   // Networking
   "request-and-response": () => import("./request-and-response"),
   "latency-vs-bandwidth": () => import("./latency-vs-bandwidth"),
