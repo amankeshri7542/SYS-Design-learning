@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter, SiteHeader } from "@/components/brand";
 import { GLOSSARY } from "@/lib/glossary";
-import { LESSONS } from "@/lib/lessons";
+// A server page: reading every lesson here ships none of them to the browser.
+import { ALL_LESSONS } from "@/lib/lessons/all";
 import { beatsOf } from "@/lib/lessons/types";
 
 export const metadata: Metadata = {
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 
 /** The lesson whose beats name a term first, in course order. */
 function firstShown(key: string) {
-  return LESSONS.find((l) => l.figures.some((f) => beatsOf(f).some((b) => b.term === key)));
+  return ALL_LESSONS.find((l) => l.figures.some((f) => beatsOf(f).some((b) => b.term === key)));
 }
 
 export default function Glossary() {

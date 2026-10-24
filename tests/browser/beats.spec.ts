@@ -103,6 +103,9 @@ test("each beat is announced once, and not again on a step switch", async ({ pag
 test("the keys: ] brings on a beat, [ shows the last one again, f follows a request, 2 goes to step 2", async ({ page }) => {
   await page.goto("/learn/caching");
   await page.locator(".step-title").click();
+  // Paused, the build lines move only when the keys move them (playing, they also come on by themselves).
+  await page.keyboard.press(" ");
+  await expect(page.locator(".dock .btn-play")).toHaveAttribute("aria-pressed", "false");
   await page.keyboard.press("]");
   await page.keyboard.press("]");
   await expect.poll(() => beatText(page)).toContain("App server");

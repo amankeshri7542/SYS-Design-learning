@@ -1,0 +1,59 @@
+// Each live lesson's scenes, loaded with its page and fetched ahead for "Next stop". Every path is written out: the
+// bundler gives a module a chunk of its own only for a literal import path. `npm run new-lesson` adds a line here, and
+// tests/lessons.test.ts checks the map covers every live lesson.
+
+import type { LessonScene } from "../types";
+
+type Load = () => Promise<{ default: LessonScene }>;
+
+export const SCENES: Record<string, Load> = {
+  // Foundations
+  "latency-and-throughput": () => import("./latency-and-throughput"),
+  "scaling-up-vs-out": () => import("./scaling-up-vs-out"),
+  "load-balancing": () => import("./load-balancing"),
+  "health-checks": () => import("./health-checks"),
+  // Caching
+  caching: () => import("./caching"),
+  cdn: () => import("./cdn"),
+  "stale-data": () => import("./stale-data"),
+  "cache-stampede": () => import("./cache-stampede"),
+  // Data
+  "read-replicas": () => import("./read-replicas"),
+  sharding: () => import("./sharding"),
+  "consistent-hashing": () => import("./consistent-hashing"),
+  "consistency-vs-availability": () => import("./consistency-vs-availability"),
+  // Async
+  "message-queues": () => import("./message-queues"),
+  "publish-subscribe": () => import("./publish-subscribe"),
+  "retries-and-backoff": () => import("./retries-and-backoff"),
+  // Resilience
+  "rate-limiting": () => import("./rate-limiting"),
+  "circuit-breakers": () => import("./circuit-breakers"),
+  autoscaling: () => import("./autoscaling"),
+};
+
+/**
+ * A promise that records how it settled, the way React's `use` reads one: once a module fetched ahead has arrived, the
+ * page renders with it at once instead of showing its fallback for a moment.
+ */
+export function settled<T>(p: Promise<T>): Promise<T> {
+  const s = p as Promise<T> & { status: string; value?: T; reason?: unknown };
+  s.status = "pending";
+  p.then(
+    (v) => Object.assign(s, { status: "fulfilled", value: v }),
+    (e) => Object.assign(s, { status: "rejected", reason: e }),
+  );
+  return s;
+}
+
+const loaded = new Map<string, Promise<LessonScene>>();
+
+/** A lesson's scenes, fetched once and kept: the lesson page reads it with `use`, and "Next stop" fetches it ahead. */
+export function loadScene(slug: string): Promise<LessonScene> {
+  let p = loaded.get(slug);
+  if (!p) {
+    p = settled(SCENES[slug]().then((m) => m.default));
+    loaded.set(slug, p);
+  }
+  return p;
+}

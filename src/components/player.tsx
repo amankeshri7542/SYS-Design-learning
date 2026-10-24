@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { getLesson, lessonsOn, lineOf, neighbours } from "@/lib/lessons";
+import { lessonsOn, lineOf, neighbours } from "@/lib/lessons";
 import type { Focus } from "@/lib/lessons/beats";
 import { beatsOf, buildSteps, defaultsOf, headlineOf, isChoice, type FigureDef, type Knob, type Lesson, type RangeKnob, type Values } from "@/lib/lessons/types";
 import type { Sim } from "@/lib/sim/engine";
@@ -12,7 +12,6 @@ import { FlightStrip, useFollow } from "./follow";
 import { useTouch } from "./hooks";
 import { KeyPopover } from "./legend";
 import { ArrowIcon, BoltIcon, Clock, Compare, MetricSummary, Transport, useLiveSims } from "./live";
-import { MarkVisited } from "./route-map";
 import { Shell, usePlayerKeys } from "./shell";
 import { Stage } from "./stage";
 import { Rich, TermChips, TermProvider } from "./term";
@@ -31,8 +30,8 @@ const TONE: Record<FigureDef["tone"], string> = {
  * Each step walks through its beats: the parts first, then what to watch, each pointed at on the stage. Next brings on
  * the next beat (or lets a paused one go), and moves to the next step once the beats are done.
  */
-export function LessonPlayer({ slug }: { slug: string }) {
-  const lesson = getLesson(slug)!;
+export function LessonPlayer({ lesson }: { lesson: Lesson }) {
+  const slug = lesson.slug;
   const figs = lesson.figures;
   const line = lineOf(lesson.line);
   const { prev, next } = neighbours(slug);
@@ -151,7 +150,6 @@ export function LessonPlayer({ slug }: { slug: string }) {
         rootRef={live.rootRef as React.Ref<HTMLDivElement>}
         bar={
           <>
-            <MarkVisited slug={slug} />
             <nav className="bar-line" aria-label={`${line.name} line`}>
               <Link href="/#route" className="roundel-sm" aria-label="Route map" title={`${line.name} line · route map`}>
                 {line.letter}
