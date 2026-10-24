@@ -1186,6 +1186,8 @@ function Badge({ text, tone, x, y, k, s, dir }: { text: string; tone: string; x:
 
 /** After a promotion: the database now taking the writes is PRIMARY, and an old primary back up is a REPLICA. */
 function roleOf(sim: Sim, id: string) {
+  const n = sim.nodes.get(id);
+  if (n?.spec.cluster) return n.raft.role === "leader" && n.up ? "LEADER" : undefined;
   if (!sim.repoint.has(id)) return undefined;
   return sim.repoint.get(id) === undefined ? "PRIMARY" : "REPLICA";
 }
@@ -1276,7 +1278,10 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
       sub = `${sim.flat(s.to).length} subscribers`;
       break;
     default:
-      if (s.hold) sub = `${n.subs.length}/${s.hold.max} open`;
+      if (s.cluster) sub = n.raft.role === "leader" ? `leads · term ${n.raft.term}` : n.raft.role === "candidate" ? "asks for votes" : `term ${n.raft.term}`;
+      else if (s.lock) sub = `${n.locks.size} held · ${[...n.waiters.values()].reduce((a, w) => a + w.length, 0)} waiting`;
+      else if (s.quorum) sub = `W=${s.quorum.w} R=${s.quorum.r}`;
+      else if (s.hold) sub = `${n.subs.length}/${s.hold.max} open`;
       else if (s.maxConns !== undefined && !n.queue.length) sub = `${n.accepted}/${s.maxConns} connections`;
       else if (!slots) sub = n.queue.length ? `stalled · ${n.queue.length} waiting` : "stalled";
       else if (n.queue.length) sub = `${n.queue.length} waiting`;

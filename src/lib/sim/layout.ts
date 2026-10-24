@@ -493,7 +493,8 @@ function badgeChars(n: NodeSpec, spec: SceneSpec) {
   const armed = spec.script?.events.some((e) => e.armed && e.node === n.id);
   // A database behind a balancer that promotes can become PRIMARY, or go back to being a REPLICA.
   const promotable = spec.nodes.some((m) => m.promote && flat(m.to).includes(n.id));
-  const role = Math.max(n.leader ? 8 : leads ? 6 : 0, promotable ? 7 : 0, armed ? 5 : 0, n.version?.length ?? 0);
+  // A cluster member can wear LEADER.
+  const role = Math.max(n.leader ? 8 : leads || n.cluster ? 6 : 0, promotable ? 7 : 0, armed ? 5 : 0, n.version?.length ?? 0);
   // A sender whose receiver has no room waits (WAIT).
   const state = n.shed ? 8 : n.breaker || n.leader ? 7 : n.kind === "server" || n.kind === "db" || n.kind === "cache" || n.client?.window ? 4 : 0;
   return { state, role };
@@ -542,9 +543,10 @@ export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
         // Clients give up long before a line reaches three digits; a queue node can hold more and says so.
         const work = n.slots ? ["99 waiting", `${n.slots}/${n.slots} busy`] : ["stalled · 99 waiting"];
         const overload = n.overload && n.slots ? ["restarting…", `warming up · ${n.slots}/${n.slots} busy`] : [];
-        // Connections held open, or accepted against a limit.
+        // Connections held open, or accepted against a limit; a cluster member's role and term; a lock's line; a quorum.
         const open = n.hold ? [`${n.hold.max}/${n.hold.max} open`] : n.maxConns !== undefined ? [`${n.maxConns}/${n.maxConns} connections`] : [];
-        return [...work, down, ...(checked ? ["rejoining…"] : []), ...(canary ? ["rolled back"] : []), ...overload, ...open, ...states];
+        const roles = n.cluster ? ["leads · term 99", "asks for votes"] : n.lock ? ["99 held · 99 waiting"] : n.quorum ? [`W=${n.quorum.w} R=${n.quorum.r}`] : [];
+        return [...work, down, ...(checked ? ["rejoining…"] : []), ...(canary ? ["rolled back"] : []), ...overload, ...open, ...roles, ...states];
       }
     }
   };

@@ -122,6 +122,31 @@ export interface Req {
   rto: number;
   /** When it left its sender (a sender with a window measures round trips from here). */
   outAt: number;
+  /** One part of a request a server sent to several targets at once (`fanout`, a quorum, a commit): the request's id, and which part. */
+  parentId: number;
+  slot: number;
+  /** A booking: the version of its key it read (it writes only if the key still has it); -1 when it read nothing. */
+  expect: number;
+  /** A booking's progress: 1 while it reads its key, 2 while it writes it. */
+  reserving: number;
+  /** A saga's request, undoing the steps already done after one failed. */
+  undoing: boolean;
+  /** A cluster message's term (a heartbeat, or a request for votes). */
+  term: number;
+}
+
+/** A request a server sent to several targets at once, waiting for enough of them. */
+export interface Gather {
+  parent: Req;
+  node: string;
+  /** What each part does at its target: a read, a copy to store (`repl`)… */
+  op: Op;
+  need: number;
+  got: number;
+  bad: number;
+  /** The freshest copy a part brought back (a quorum read). */
+  best: number;
+  slots: { call: string | string[]; done: boolean; sentAt: number; hedged: boolean; kids: Req[] }[];
 }
 
 export interface Entry {
@@ -259,6 +284,13 @@ export interface NodeRt {
   zeroAt: number;
   /** Client that subscribes or polls: how its users are keeping up now ("sub" or "poll"; "" before they start). */
   opened: "" | "sub" | "poll";
+  /**
+   * Cluster member: its role, its term, who it voted for this term, the votes it has as a candidate, when it last heard
+   * a leader, its election timeout for this term, and the leader it knows of.
+   */
+  raft: { role: "follower" | "candidate" | "leader"; term: number; votedFor: string; votes: Set<string>; lastBeat: number; timeout: number; leader: string; nextBeat: number };
+  /** Lock: the request holding each key, and until when its lease lasts. */
+  locks: Map<number, { holder: number; until: number }>;
 }
 
 export interface Note {

@@ -1142,3 +1142,234 @@ test("missed is the share of users who hadn't had each news item a second after 
   assert.ok(Math.abs(value(sim, m("missed", { nodes: ["users"] })) - 10 / 40) < 0.03);
   assert.ok(Math.abs(value(sim, m("missed", { nodes: ["users"] })) + value(sim, m("reach", { nodes: ["users"] })) - 1) < 1e-9);
 });
+
+// ------------------------------------------------------------------------------------------------ batch 3: coordination
+
+test("scatter-gather waits for its slowest shard; hedging a slow part cuts the tail for a little extra load", () => {
+  const shards = ["s1", "s2", "s3", "s4", "s5"];
+  const spec = (hedgeMs?: number) =>
+    scene(
+      [
+        client("u", 40, "page", { timeoutMs: 3000 }),
+        server("page", { slots: 32, serviceMs: 2, fanout: { to: shards }, hedgeMs }),
+        ...shards.map((id, i) => ({ ...server(id, { slots: 8, serviceMs: 20, tail: { share: 0.05, mult: 12 } }), at: [80, 10 + 20 * i] as [number, number] })),
+      ],
+      { links: Object.fromEntries(shards.map((id) => [`page>${id}`, 5])), windowMs: 1e9 },
+    );
+  const plain = run(spec(), 8000);
+  const hedged = run(spec(60), 8000);
+  assert.ok(value(plain, m("p95")) > 150, `a slow shard holds up the page: ${value(plain, m("p95"))} ms`);
+  assert.ok(value(hedged, m("p95")) < 0.6 * value(plain, m("p95")), `hedged: ${value(hedged, m("p95"))} ms`);
+  assert.ok(value(hedged, m("hedged")) > 0.02 && value(hedged, m("hedged")) < 0.2, `a few parts hedged (${value(hedged, m("hedged"))})`);
+  assert.ok(value(hedged, m("wasted")) > 0, "the losing copy's work is wasted");
+  assert.equal(value(plain, m("errors")), 0);
+});
+
+test("quorums: W + R > N reads the latest write despite lag; W = R = 1 can be stale; W = N stops writes when a replica dies", () => {
+  const spec = (w: number, r: number) =>
+    scene(
+      [
+        client("u", 60, "coord", { keys: 5, writes: 0.5, timeoutMs: 1500 }),
+        server("coord", { slots: 16, serviceMs: 2, quorum: { replicas: ["a", "b", "c"], w, r }, callTimeoutMs: 1000, blocking: true }),
+        { id: "a", kind: "db", label: "a", at: [80, 20], slots: 8, serviceMs: 4, lagMs: 5 },
+        { id: "b", kind: "db", label: "b", at: [80, 50], slots: 8, serviceMs: 4, lagMs: 150 },
+        { id: "c", kind: "db", label: "c", at: [80, 80], slots: 8, serviceMs: 4, lagMs: 300 },
+      ] as NodeSpec[],
+      { links: { "coord>a": 5, "coord>b": 5, "coord>c": 5 }, windowMs: 1e9 },
+    );
+  assert.ok(value(run(spec(1, 1), 6000), m("stale")) > 0.1, "one copy written, one read: often stale");
+  assert.equal(value(run(spec(2, 2), 6000), m("stale")), 0, "two and two overlap: never stale");
+  assert.ok(value(run(spec(2, 2), 6000), m("p50", { op: "write" })) > value(run(spec(1, 1), 6000), m("p50", { op: "write" })) + 100, "but waits for the second copy");
+  const all = new Sim(spec(3, 1));
+  all.step(2000);
+  all.setUp("c", false);
+  all.step(3000);
+  const late = all.done.filter((d) => d.t > 2200 && d.op === "write");
+  assert.ok(late.length > 20 && late.every((d) => d.result === "error"), "every write needs every replica");
+  assert.ok(late.every((d) => d.lat < 600), "and fails as soon as the dead replica's part does, not at the 1 s timeout");
+  assert.deepEqual(leakedHolds(all), []);
+});
+
+test("leader election: a crashed leader is replaced within a timeout and two beats; a cut-off minority never elects, so writes never conflict", () => {
+  // `first`: the member whose election timeout is shortest, so it leads first.
+  const member = (id: string, y: number, region: string, majority: boolean, first: string): NodeSpec => ({
+    id,
+    kind: "db",
+    label: id,
+    at: [80, y],
+    slots: 8,
+    serviceMs: 4,
+    region,
+    cluster: { group: ["a", "b", "c"], heartbeatMs: 100, electionMs: id === first ? [150, 200] : [300, 600], majority },
+  });
+  const spec = (majority: boolean, first = "b") =>
+    scene(
+      [
+        client("eu", 30, "a", { keys: 20, writes: 1, timeoutMs: 1000 }, [0, 20]),
+        client("us", 30, "b", { keys: 20, writes: 1, timeoutMs: 1000 }, [0, 80]),
+        member("a", 20, "eu", majority, first),
+        member("b", 50, "us", majority, first),
+        member("c", 80, "us", majority, first),
+      ],
+      { links: { "a>b": 10, "a>c": 10, "b>c": 10, "eu>a": 5, "us>b": 5 }, windowMs: 1e9 },
+    );
+  const sim = run(spec(true), 3000);
+  const leader = () => ["a", "b", "c"].find((id) => sim.nodes.get(id)!.up && sim.nodes.get(id)!.raft.role === "leader");
+  const first = leader()!;
+  assert.ok(first, "one leader after the first election");
+  assert.equal(["a", "b", "c"].filter((id) => sim.nodes.get(id)!.raft.role === "leader").length, 1);
+  sim.setUp(first, false);
+  const at = sim.t;
+  while (sim.t < at + 2000 && (!leader() || leader() === first)) sim.step(10);
+  assert.ok(leader() && leader() !== first, "a new leader");
+  assert.ok(sim.t - at <= 600 + 2 * 100 + 100, `elected within ${sim.t - at} ms`);
+  assert.ok(sim.notes.some((n) => n.text.includes("elected leader")));
+  // Cut Europe (one member) off. As a follower it can stand for election, but never win: one vote of three.
+  const cut = (majority: boolean, first: string, watch?: (s: Sim) => void) => {
+    const s = run(spec(majority, first), 2500);
+    s.setPartition(true);
+    for (let t = 0; t < 3000; t += 50) {
+      s.step(50);
+      watch?.(s);
+    }
+    s.setPartition(false);
+    s.step(500);
+    return s;
+  };
+  const raft = cut(true, "b", (s) => assert.notEqual(s.nodes.get("a")!.raft.role, "leader", "the cut-off member never leads"));
+  assert.equal(raft.conflicts, 0, "a majority side alone writes");
+  assert.ok(raft.done.filter((d) => d.result === "error").length > 10, "the minority side's writes fail");
+  // As the leader it was, it still takes writes, but can't commit them without a majority; the other side elects anew.
+  let later = false;
+  const stale = cut(true, "a", (s) => {
+    later ||= ["b", "c"].some((id) => s.nodes.get(id)!.raft.role === "leader" && s.nodes.get(id)!.raft.term > s.nodes.get("a")!.raft.term);
+  });
+  assert.equal(stale.conflicts, 0, "a leader cut off from the majority commits nothing");
+  assert.ok(later, "the majority side elected a leader for a later term");
+  assert.ok(cut(false, "b").conflicts > 0, "without a majority, both sides lead and write the same keys");
+  // Five members, split two and three: the two can vote for each other, and still never make a majority.
+  const five = (id: string, y: number, region: string): NodeSpec => ({
+    id,
+    kind: "db",
+    label: id,
+    at: [80, y],
+    slots: 8,
+    serviceMs: 4,
+    region,
+    cluster: { group: ["a", "b", "c", "d", "e"], heartbeatMs: 100, electionMs: id === "c" ? [150, 200] : [300, 600] },
+  });
+  const big = run(scene([client("eu", 10, "a", { keys: 20, writes: 1, timeoutMs: 1000 }), five("a", 10, "eu"), five("b", 30, "eu"), five("c", 50, "us"), five("d", 70, "us"), five("e", 90, "us")], { windowMs: 1e9 }), 2500);
+  big.setPartition(true);
+  for (let t = 0; t < 3000; t += 50) {
+    big.step(50);
+    assert.ok(["a", "b"].every((id) => big.nodes.get(id)!.raft.role !== "leader"), "two of five never lead");
+  }
+});
+
+test("bookings: read-check-write double books; compare-and-set and a lock never do", () => {
+  const spec = (mode: "check" | "cas" | "lock") =>
+    scene(
+      [
+        client("u", 120, mode === "lock" ? "lk" : "book", { keys: 400, writes: 1, timeoutMs: 2000 }),
+        ...(mode === "lock" ? [{ id: "lk", kind: "server" as const, label: "lock", at: [30, 50] as [number, number], lock: { leaseMs: 2000 }, to: ["book"] }] : []),
+        server("book", { slots: 32, serviceMs: 5, reserve: { db: "db" }, blocking: true }),
+        { id: "db", kind: "db", label: "db", at: [90, 50], slots: 8, serviceMs: 15, cas: mode === "cas" } as NodeSpec,
+      ],
+      { links: { "book>db": 10 }, windowMs: 1e9 },
+    );
+  const check = run(spec("check"), 4000);
+  assert.ok(value(check, m("doubleBookings")) > 3, `two shoppers read "free" and both book (${value(check, m("doubleBookings"))})`);
+  for (const mode of ["cas", "lock"] as const) {
+    const s = run(spec(mode), 4000);
+    assert.equal(value(s, m("doubleBookings")), 0, mode);
+    assert.ok(value(s, m("rejected")) > 0.1, `${mode}: the second shopper is turned away`);
+    assert.deepEqual(leakedHolds(s), [], mode);
+  }
+});
+
+test("a lock's lease frees a key whose holder hangs; without one, everyone behind it waits", () => {
+  const spec = (leaseMs: number) =>
+    scene(
+      [
+        client("u", 30, "lk", { keys: 1, writes: 1, timeoutMs: 1e9 }),
+        { id: "lk", kind: "server", label: "lock", at: [30, 50], lock: { leaseMs }, to: ["w"] } as NodeSpec,
+        server("w", { slots: 4, serviceMs: 10, downMode: "hang" }),
+      ],
+      { windowMs: 1e9, timeoutMs: undefined },
+    );
+  const answered = (leaseMs: number) => {
+    const s = run(spec(leaseMs), 1000);
+    s.setUp("w", false);
+    s.step(50);
+    s.setUp("w", true);
+    s.step(3000);
+    return s.done.filter((d) => d.t > 1200).length;
+  };
+  assert.equal(answered(1e9), 0, "the hung holder never lets go");
+  assert.ok(answered(300) > 30, "its lease runs out, and the line moves");
+  // Those who were already waiting get their turn too, not only those who come later (at a rate one key can carry).
+  const light = scene(
+    // Nobody new arrives after the hang, so only the lease can free the key for those already waiting.
+    [client("u", (t: number) => (t < 1300 ? 15 : 0), "lk", { keys: 1, writes: 1, timeoutMs: 1e9 }), { id: "lk", kind: "server", label: "lock", at: [30, 50], lock: { leaseMs: 300 }, to: ["w"] } as NodeSpec, server("w", { slots: 4, serviceMs: 10, downMode: "hang" })],
+    { windowMs: 1e9, timeoutMs: undefined },
+  );
+  const s = run(light, 1000);
+  // Hang the worker while a request holds the lock.
+  while (!s.nodes.get("lk")!.locks.size && s.t < 1240) s.step(2);
+  assert.ok(s.nodes.get("lk")!.locks.size, "a request holds the lock when the worker hangs");
+  s.setUp("w", false);
+  s.step(50);
+  s.setUp("w", true);
+  s.step(3000);
+  assert.equal(s.nodes.get("lk")!.waiters.size, 0, "the line has drained");
+});
+
+test("sagas: a failed step undoes the steps before it; without, orders are left half-done", () => {
+  const spec = (saga: boolean) =>
+    scene(
+      [
+        client("u", 40, "order", { writes: 1, timeoutMs: 2000 }),
+        server("order", { slots: 16, serviceMs: 2, blocking: true, calls: { write: ["pay", "stock", "ship"] }, saga: saga ? { undo: ["refund", "release", "ship"] } : undefined }),
+        ...["pay", "stock", "refund", "release"].map((id, i) => ({ ...server(id, { slots: 8, serviceMs: 5 }), at: [70, 10 + 20 * i] as [number, number] })),
+        { ...server("ship", { slots: 8, serviceMs: 5, failRate: 0.3 }), at: [90, 50] as [number, number] },
+      ],
+      { windowMs: 1e9 },
+    );
+  const plain = run(spec(false), 5000);
+  assert.ok(value(plain, m("inconsistent")) > 20, "money taken, stock held, nothing shipped");
+  const saga = run(spec(true), 5000);
+  assert.equal(value(saga, m("inconsistent")), 0);
+  assert.ok(value(saga, m("rejected")) > 0.2, "failed orders end cancelled");
+  assert.ok(saga.nodes.get("refund")!.served > 20 && saga.nodes.get("release")!.served > 20, "each undone in reverse");
+});
+
+test("property: every request is accounted for and nothing leaks, with every coordination hook at once", () => {
+  const shards = ["s1", "s2", "s3"];
+  settles(
+    scene(
+      [
+        client("web", (t: number) => (t < 5000 ? 40 : 0), "page", { timeoutMs: 1500, retry: { mode: "backoff", max: 1, baseMs: 50 } }, [0, 10]),
+        server("page", { slots: 16, serviceMs: 2, fanout: { to: shards }, hedgeMs: 40, callTimeoutMs: 800 }),
+        ...shards.map((id, i) => ({ ...server(id, { slots: 4, serviceMs: 10, tail: { share: 0.1, mult: 8 } }), at: [60, 10 + 10 * i] as [number, number] })),
+        client("kv", (t: number) => (t < 5000 ? 30 : 0), "coord", { keys: 10, writes: 0.5, timeoutMs: 1500 }, [0, 40]),
+        server("coord", { slots: 16, serviceMs: 2, quorum: { replicas: ["q1", "q2", "q3"], w: 2, r: 2 }, callTimeoutMs: 800, blocking: true }),
+        ...["q1", "q2", "q3"].map((id, i) => ({ id, kind: "db" as const, label: id, at: [80, 30 + 8 * i] as [number, number], slots: 4, serviceMs: 4, lagMs: 20 + 60 * i })),
+        client("shop", (t: number) => (t < 5000 ? 40 : 0), "lk", { keys: 50, writes: 1, timeoutMs: 1500 }, [0, 60]),
+        { id: "lk", kind: "server", label: "lock", at: [30, 60], lock: { leaseMs: 400 }, to: ["book"] } as NodeSpec,
+        server("book", { slots: 8, serviceMs: 3, reserve: { db: "seats" }, blocking: true, callTimeoutMs: 800 }),
+        { id: "seats", kind: "db", label: "seats", at: [90, 60], slots: 4, serviceMs: 8, cas: true } as NodeSpec,
+        client("orders", (t: number) => (t < 5000 ? 20 : 0), "saga", { writes: 1, timeoutMs: 1500 }, [0, 80]),
+        server("saga", { slots: 8, serviceMs: 2, blocking: true, calls: { write: ["p", "ship"] }, saga: { undo: ["p", "ship"] }, callTimeoutMs: 800 }),
+        { ...server("p", { slots: 4, serviceMs: 4 }), at: [70, 85] as [number, number] },
+        { ...server("ship", { slots: 4, serviceMs: 4, failRate: 0.3 }), at: [90, 85] as [number, number] },
+        client("rw", (t: number) => (t < 5000 ? 20 : 0), "m1", { keys: 10, writes: 1, timeoutMs: 1500 }, [0, 95]),
+        ...["m1", "m2", "m3"].map((id, i) => ({ id, kind: "db" as const, label: id, at: [50 + 10 * i, 95] as [number, number], slots: 4, serviceMs: 4, cluster: { group: ["m1", "m2", "m3"], heartbeatMs: 80, electionMs: [200, 400] as [number, number] } })),
+      ],
+      {
+        windowMs: 1e9,
+        script: { loopMs: 1e9, events: [{ at: 2500, label: "m1 down", run: (s: Sim) => s.setUp("m1", false) }, { at: 3500, label: "q3 down", run: (s: Sim) => s.setUp("q3", false) }] },
+      },
+    ),
+    "batch 3",
+  );
+});

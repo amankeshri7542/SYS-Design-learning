@@ -48,7 +48,12 @@ export type MetricId =
   | "detectMs"
   | "falseAlarms"
   | "lostAcked"
-  | "missed";
+  | "missed"
+  | "hedged"
+  | "doubleBookings"
+  | "inconsistent"
+  | "leaderless"
+  | "term";
 
 export interface MetricSpec {
   id: MetricId;
@@ -126,6 +131,11 @@ const META: Record<MetricId, { unit: Unit; better: Better }> = {
   falseAlarms: { unit: "count", better: "low" },
   lostAcked: { unit: "count", better: "low" },
   missed: { unit: "pct", better: "low" },
+  hedged: { unit: "pct", better: "neutral" },
+  doubleBookings: { unit: "count", better: "low" },
+  inconsistent: { unit: "count", better: "low" },
+  leaderless: { unit: "pct", better: "low" },
+  term: { unit: "count", better: "neutral" },
 };
 
 function recent(sim: Sim, m: MetricSpec) {
@@ -352,6 +362,22 @@ export function measure(sim: Sim, m: MetricSpec): number | null {
       return sim.falseAlarms.count(sim.t);
     case "lostAcked":
       return sim.lostAcked.count(sim.t);
+    case "hedged": {
+      const all = sim.parts.count(sim.t);
+      return all ? sim.hedges.count(sim.t) / all : null;
+    }
+    case "doubleBookings":
+      return sim.doubleBookings.count(sim.t);
+    case "inconsistent":
+      return sim.inconsistent.count(sim.t);
+    case "leaderless": {
+      const all = sim.leaderSamples.count(sim.t);
+      return all ? sim.leaderless.count(sim.t) / all : null;
+    }
+    case "term": {
+      const ns = nodes(sim, m.nodes).filter((n) => n.spec.cluster);
+      return ns.length ? Math.max(...ns.map((n) => n.raft.term)) : null;
+    }
   }
 }
 
@@ -404,7 +430,11 @@ export function toneOf(m: MetricSpec, v: number | null, sloMs: number): Tone {
     case "reordered":
     case "falseAlarms":
     case "lostAcked":
+    case "doubleBookings":
+    case "inconsistent":
       return v === 0 ? "good" : v < 3 ? "warn" : "bad";
+    case "leaderless":
+      return v < 0.01 ? "good" : v < 0.1 ? "warn" : "bad";
     case "pushLag":
     case "pageMs":
       return v <= sloMs ? "good" : v <= sloMs * 2 ? "warn" : "bad";
@@ -506,6 +536,11 @@ const SAYS: Record<MetricId, (v: string) => string> = {
   falseAlarms: (v) => `${v} healthy connections were given up on as dead in the window.`,
   lostAcked: (v) => `${v} writes were confirmed to the user and then lost when a replica took over.`,
   missed: (v) => `${v} of users hadn't had each news item a second after it was published.`,
+  hedged: (v) => `${v} of the parts sent out were slow enough to be sent again to another copy.`,
+  doubleBookings: (v) => `${v} bookings took something someone else had already booked, in the window.`,
+  inconsistent: (v) => `${v} orders were left half-done, with earlier steps never undone, in the window.`,
+  leaderless: (v) => `${v} of the time, the group had no leader to take writes.`,
+  term: (v) => `Term ${v}: the number of elections the group has held.`,
 };
 
 /**

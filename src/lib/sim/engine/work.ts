@@ -18,6 +18,8 @@ const work: Partial<Sim> & ThisType<Sim> = {
       if (n.spec.downMode === "hang") return this.park(n, r);
       return this.respond(r, "error");
     }
+    // A cluster's heartbeats and requests for votes.
+    if (r.op === "beat" || r.op === "vote") return this.raftMessage(n, r);
     if (!n.up || !n.on) {
       // A paused worker keeps its jobs; a copy from a queue that keeps jobs until acked is simply lost (no ack comes).
       if (n.spec.sink && n.on && !r.deliveryOf) {
@@ -29,6 +31,8 @@ const work: Partial<Sim> & ThisType<Sim> = {
       if (n.spec.downMode === "hang") return this.park(n, r);
       return this.fail(n, r);
     }
+    // A lock lets one request per key through at a time.
+    if (n.spec.lock) return this.acquire(n, r);
     switch (n.spec.kind) {
       case "lb":
         // A balancer that reads each request (an L7 gateway with `serviceMs`) parses it first, in line for a worker.
@@ -42,6 +46,8 @@ const work: Partial<Sim> & ThisType<Sim> = {
       case "topic":
         return this.publish(n, r);
       case "db":
+        // A cluster member that doesn't lead passes the request on to the leader.
+        if (n.spec.cluster && this.clusterWrite(n, r)) return;
         if (n.spec.leader) {
           const leader = this.nodes.get(n.spec.leader);
           if (!leader || this.cut(n, leader)) return this.fail(n, r);
@@ -134,7 +140,7 @@ const work: Partial<Sim> & ThisType<Sim> = {
     // Refused at a full line: it falls from the line's tail.
     const full = n.queue.length >= (n.spec.queueMax ?? Infinity);
     this.effect("drop", n.spec.id, full ? n.queue.length : undefined);
-    if (r.detached && !this.waitedOn(r)) {
+    if (r.detached && !this.waitedOn(r) && !r.parentId) {
       if (r.deliveryOf && r.acked) this.lostJobs.add(this.t);
       r.phase = "gone";
       return;
@@ -171,7 +177,7 @@ const work: Partial<Sim> & ThisType<Sim> = {
   /** Turned away on purpose, at once: a slate square, not a failure. */
   refuse(n: NodeRt, r: Req) {
     this.effect("reject", n.spec.id);
-    if (r.detached && !this.waitedOn(r)) {
+    if (r.detached && !this.waitedOn(r) && !r.parentId) {
       r.phase = "gone";
       return;
     }
@@ -372,6 +378,15 @@ const work: Partial<Sim> & ThisType<Sim> = {
     if (n.spec.kind === "db") return this.dbDone(n, r);
     // Taking a connection in costs a worker's time (a handshake, signing the user in); then it is held open.
     if (r.op === "sub" && n.spec.hold) return this.holdSub(n, r);
+    // Sent out in parts and gathered back: to every shard, or to a quorum of replicas.
+    if (n.spec.fanout) return this.scatter(n, r, n.spec.fanout.to, n.spec.fanout.need ?? n.spec.fanout.to.length, r.op);
+    if (n.spec.quorum) return this.quorumDone(n, r);
+    // A booking reads its key first.
+    if (n.spec.reserve) {
+      r.reserving = 1;
+      r.op = "read";
+      return this.call(n, r, [n.spec.reserve.db]);
+    }
     // A feed keeps the latest news item it hears of, and a server holding connections pushes each one down all of them;
     // an item handed on by a topic needs no answer. A read of a feed is answered with its latest item.
     if (r.news && (n.spec.feed || n.spec.hold)) {
@@ -439,6 +454,9 @@ const work: Partial<Sim> & ThisType<Sim> = {
       r.phase = "gone";
       return;
     }
+    // A part of a request sent out to several targets comes back to be gathered; a vote comes back to its candidate.
+    if (r.parentId) return this.gathered(n, r);
+    if (r.op === "vote") return this.raftReply(n, r);
     // A push goes back along its connection's path to its user.
     if (r.op === "push") {
       if (r.stack.length > 1) return this.respond(r);
@@ -490,6 +508,8 @@ const work: Partial<Sim> & ThisType<Sim> = {
     const frame = r.stack[r.stack.length - 1];
     // The exchange is over: the connection it went out on is free.
     if (frame.conn) this.hangUp(n, frame);
+    // The holder's answer frees its lock.
+    if (n.spec.lock) this.unlock(n, r);
     switch (n.spec.kind) {
       case "client":
         if (r.op === "sub") return this.subEnded(n, r);
@@ -504,11 +524,18 @@ const work: Partial<Sim> & ThisType<Sim> = {
         }
         break;
       case "server": {
+        if (r.reserving) return this.reserveBack(n, r);
         const idx = n.held.indexOf(r);
         if (idx >= 0) n.held.splice(idx, 1);
         if (n.spec.breaker) this.recordBreaker(n, r.result !== "error");
+        if (n.spec.saga && this.sagaBack(n, r)) return;
         if (r.result !== "error" && r.result !== "rejected" && frame.calls.length) {
           return this.call(n, r, frame.calls);
+        }
+        // A later step failed after earlier ones were done, and nothing undoes them: the work is left half-done.
+        if (r.result === "error" && !r.detached) {
+          const steps = (n.spec.calls?.[r.op === "write" ? "write" : "read"] ?? n.spec.to ?? []).length;
+          if (steps > 1 && steps - frame.calls.length - 1 > 0) this.inconsistent.add(this.t);
         }
         break;
       }
