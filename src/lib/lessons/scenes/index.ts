@@ -34,6 +34,9 @@ export const SCENES: Record<string, Load> = {
   "rate-limiting": () => import("./rate-limiting"),
   "circuit-breakers": () => import("./circuit-breakers"),
   autoscaling: () => import("./autoscaling"),
+  "load-shedding": () => import("./load-shedding"),
+  bulkheads: () => import("./bulkheads"),
+  "cascading-failures": () => import("./cascading-failures"),
   // Networking
   "request-and-response": () => import("./request-and-response"),
   "latency-vs-bandwidth": () => import("./latency-vs-bandwidth"),
@@ -41,6 +44,9 @@ export const SCENES: Record<string, Load> = {
   "pipelining-and-batching": () => import("./pipelining-and-batching"),
   "nearest-region-and-failover": () => import("./nearest-region-and-failover"),
   dns: () => import("./dns"),
+  // Operating
+  "canary-rollouts": () => import("./canary-rollouts"),
+  "graceful-shutdown": () => import("./graceful-shutdown"),
 };
 
 /**
