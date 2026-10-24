@@ -809,6 +809,21 @@ Gates on 2026-10-24: typecheck, 227 unit tests, build, and the browser suite: 69
 - [ ] A5's poison job reaches the dead-letter queue after the configured attempts and the line moves again.
 - [ ] S8 passes its per-stage tests.
 
+**Decisions made while building the M7 engine PR:**
+
+Engine PR gates on 2026-10-24: typecheck, 237 unit tests (41 in `tests/hooks.test.ts`), build, and the browser suite: 680 passed, 11 skipped and 1 failed. The failure was R2's breaker test, which had also failed once under load in M6: the step can take more than 5 s to draw under a full suite. Its first wait is now 15 s, and it passes 16 of 16. The 4 frame budgets passed in their own run.
+
+- **N2's acks use request and response, not a sender-side transport.** Over a lossy link, the client's timeout and retry already resend, and the receiver's answer is the ack: `NodeSpec.replies: "ack"` draws it small and green. The sender-side transport the architecture sketches (an unacked map, a send buffer, windows) moves to M8, where windows and flow control need it.
+- **Idempotency is a note per logical message** (`NodeSpec.idempotent`, keyed by sender and `logicalId`). `true`: a repeat is answered from the note, without the work, and a database applies a write once. `false`: the repeat is done again and counted (`duplicates`). Unset: no notes. Notes are forgotten after 30 s.
+- **A queue that keeps jobs until acked** (`NodeSpec.ack`) hands out a copy and keeps the job invisible, keyed by the copy, so a late ack from an earlier copy can't clear a newer one. Past `visibilityMs` the job goes back to the front of the line; past `maxDeliveries` it goes to `deadLetter`, a queue with no workers that just stores it (a red rim on the stage). `ordered` keeps one job out at a time. A worker that crashes loses its copies: redelivered if acked when done, lost if acked on receipt (`lostJobs`). A paused worker still keeps ordinary jobs, as before.
+- **Poison jobs** (`ClientSpec.poison`) are drawn only when a scene asks for them, so every other scene's traffic is unchanged; every worker fails them.
+- **Back-pressure** (`NodeSpec.backpressure`): `wait` holds the producer's request at the queue until the line is back under its low mark, so the producer slows down while its arrivals stay the same; `reject` turns the job away; `drop-oldest` loses the oldest. A queue that crashes under overload loses every job in it.
+- **The outbox** (`NodeSpec.outbox` on a database) stores an event with each write and relays it until the broker accepts it, resending after `retryMs` (at least once). `lostEvents` compares the database's notes with the consumer's.
+- **Partitions are separate queues** behind a hashing balancer; `consumers: "first"` gives each one consumer that fails over in order. `reordered` counts jobs finished before an earlier job for the same key.
+- **Metrics:** `duplicates`, `redelivered`, `deadLettered` (neutral), `lostJobs`, `lostEvents`, `reordered`, `consumed`. `delivered` is `answered`, `resends` is `amplify`, duplicate jobs and effects are `duplicates` at the nodes named, and consumer lag is `queue` or `jobWait`; `ackLag` is not added.
+- **Stage:** acks are small green dots; a queue's sub-label adds jobs out with workers ("· 3 out") or producers held back ("· 5 held"); rings mark a repeat answered from notes (slate), a redelivery (cobalt) and a dead letter (red); "Ack" is a Key row lessons opt into. Not drawn: unacked copies beside a sender (no sender transport) and partition lanes inside one queue (partitions are separate queues).
+- **Proof of no change:** all 176 earlier scenes hash the same and `tune --json` is byte-identical. Each new hook has a test in `tests/hooks.test.ts`, checked against a mutation (14 of 14 caught), and a scene with every batch 2a hook settles with every request accounted for and nothing held.
+
 ### M8 — Engine B2b (connections and real time) and 10 lessons (L)
 
 **Goal:** windows and congestion control, connection setup and reuse, head-of-line blocking, L4 vs L7, held connections with push, heartbeats, and replica promotion.

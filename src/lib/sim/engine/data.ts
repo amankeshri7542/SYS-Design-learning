@@ -23,6 +23,14 @@ const data: Partial<Sim> & ThisType<Sim> = {
 
   dbDone(n: NodeRt, r: Req) {
     if (r.op === "write") {
+      // An idempotent database applies a write once per logical message, and replays its result for a repeat.
+      const note = n.spec.idempotent ? n.done.get(this.noteOf(r)) : undefined;
+      if (note) {
+        this.effect("dupe", n.spec.id);
+        return this.respond(r, note.result);
+      }
+      this.remember(n, r, "ok");
+      if (n.spec.outbox) n.outbox.push({ id: r.logicalId, key: r.key, tag: r.tag, t: this.t, sentAt: -Infinity });
       const seq = ++this.seq;
       this.truth.set(r.key, seq);
       n.data.set(r.key, seq);

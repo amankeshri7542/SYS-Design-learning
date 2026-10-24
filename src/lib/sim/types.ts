@@ -13,7 +13,7 @@ export type Kind =
 /** Visual identity. Defaults to the kind; overrides give a node a different glyph. */
 export type Glyph = Kind | "edge" | "router" | "worker" | "bot";
 
-export type Op = "read" | "write" | "probe" | "repl";
+export type Op = "read" | "write" | "probe" | "repl" | "ack";
 
 /** How a request ended, from the client's point of view. */
 export type Result = "ok" | "stale" | "fallback" | "rejected" | "error";
@@ -70,6 +70,8 @@ export interface ClientSpec {
   absent?: number;
   /** How many different missing keys those requests draw from (default a million, so they almost never repeat). */
   absentKeys?: number;
+  /** Share of its jobs that are poison: every worker that tries one fails it. */
+  poison?: number;
 }
 
 export interface NodeSpec {
@@ -145,6 +147,32 @@ export interface NodeSpec {
    */
   sessions?: boolean;
   /**
+   * Keep a note of each logical message this node finishes (by sender and id). `true`: a repeat is answered from the
+   * note, without doing the work, or a write's effect, again. `false`: a repeat is done again, and counted as a
+   * duplicate. Unset: no notes.
+   */
+  idempotent?: boolean;
+  /** Its responses are acks: drawn small, because they carry no answer. */
+  replies?: "ack";
+  /**
+   * Queue: keep each job it hands out until the worker acknowledges it, on receipt or when finished. A job not
+   * acknowledged within `visibilityMs` is handed out again; after `maxDeliveries`, it goes to `deadLetter` (or is
+   * dropped). `ordered`: one job out at a time, so jobs finish in the order they arrived.
+   */
+  ack?: { mode: "receive" | "finish"; visibilityMs: number; maxDeliveries?: number; deadLetter?: string; ordered?: boolean };
+  /**
+   * Queue: what to do once `high` jobs are waiting. `wait`: hold the producer's request until the line is back to
+   * `low` (back-pressure). `reject`: turn the new job away. `drop-oldest`: drop the oldest waiting job to make room.
+   */
+  backpressure?: { high: number; low?: number; mode: "wait" | "reject" | "drop-oldest" };
+  /** Queue: hand each job to the first live worker in `to` (one consumer per partition, failing over in order), not round robin. */
+  consumers?: "first";
+  /**
+   * Database: every write also stores an event, in the same commit, which a relay sends to `to` every `everyMs`
+   * until it is accepted (resending after `retryMs`): the outbox.
+   */
+  outbox?: { to: string; everyMs: number; retryMs?: number };
+  /**
    * Crash when the line or the load stays past a mark for `forMs`; come back after `restartMs` with a cold ramp:
    * workers return over `warmMs`.
    */
@@ -218,7 +246,13 @@ export type FxKind =
   /** A crossing was lost on a link (`Fx.link` says where). */
   | "lost"
   /** An existence check answered "not found" without a lookup. */
-  | "filtered";
+  | "filtered"
+  /** An idempotent node answered a repeat from its notes. */
+  | "dupe"
+  /** A queue handed out a job again: its worker never acknowledged it. */
+  | "redeliver"
+  /** A queue gave up on a job and moved it to its dead-letter queue. */
+  | "dead";
 
 export interface Fx {
   t: number;

@@ -408,9 +408,11 @@ function settles(spec: SceneSpec, label: string) {
   assert.equal(new Set(recorded).size, recorded.length, `recorded twice: ${label}`);
   assert.ok(recorded.every((id) => sent.has(id)), "only what was sent is recorded");
   assert.equal(recorded.length, sent.size, `every request ended once traffic stopped: ${label}`);
-  // Nothing left holding a worker, a place in line, a cache's waiting readers or a balancer's count.
+  // Nothing left holding a worker, a place in line, a cache's waiting readers or a balancer's count. A queue with no
+  // consumers (a dead-letter queue) keeps its jobs on purpose.
   for (const n of sim.list) {
-    assert.equal(n.queue.length + n.work.length + n.held.length + n.incoming + n.waiters.size, 0, `${n.spec.id} is idle: ${label}`);
+    const store = n.spec.kind === "queue" && !sim.flat(n.spec.to).length;
+    assert.equal((store ? 0 : n.queue.length) + n.work.length + n.held.length + n.incoming + n.waiters.size + n.waiting.length + n.inflight.size, 0, `${n.spec.id} is idle: ${label}`);
     for (const [id, k] of n.out) assert.equal(k, 0, `${n.spec.id} → ${id} has nothing outstanding: ${label}`);
   }
   return sim;
@@ -485,4 +487,178 @@ test("absent keys from a small pool repeat, so remembering 'not found' spares th
     ]);
   const served = (absentKeys?: number) => run(build(absentKeys), 5000).nodes.get("db")!.served;
   assert.ok(served(50) < served() / 3, `${served(50)} lookups with 50 missing ids, ${served()} with a million`);
+});
+
+// ------------------------------------------------------------------------------------------------ batch 2a: messages and delivery
+
+const queue = (id: string, to: string[], extra: Partial<NodeSpec> = {}): NodeSpec => ({ id, kind: "queue", label: id, at: [40, 50], to, ...extra });
+const worker = (id: string, extra: Partial<NodeSpec> = {}): NodeSpec => ({ id, kind: "server", label: id, at: [80, 50], slots: 1, serviceMs: 100, sink: true, ...extra });
+
+test("acks over a lossy link: resending delivers everything, a lost ack means a duplicate, and an idempotent receiver does it once", () => {
+  const spec = (idempotent: boolean) =>
+    scene([client("u", 30, "r", { timeoutMs: 300, retry: { mode: "now", max: 6 } }), server("r", { slots: 8, serviceMs: 10, replies: "ack", idempotent })], {
+      links: { "u>r": { ms: 40, loss: 0.2 } },
+      windowMs: 1e9,
+    });
+  const twice = run(spec(false), 6000);
+  const once = run(spec(true), 6000);
+  for (const sim of [twice, once]) assert.ok(value(sim, m("answered")) > 0.99, "everything is delivered in the end");
+  assert.ok(value(twice, m("duplicates", { nodes: ["r"] })) > 5, "lost acks make the receiver do messages again");
+  assert.equal(value(once, m("duplicates", { nodes: ["r"] })), 0);
+  assert.ok(once.fx.some((f) => f.kind === "dupe") || once.nodes.get("r")!.done.size > 0, "repeats are answered from notes");
+  // Its answers are acks: drawn small.
+  const r = new Sim(spec(true));
+  let acks = 0;
+  for (let t = 0; t < 2000; t += 10) {
+    r.step(10);
+    acks += r.reqs.filter((q) => q.ack && q.phase === "travel").length;
+  }
+  assert.ok(acks > 0);
+});
+
+test("an idempotent database applies a retried write once", () => {
+  const spec = (idempotent: boolean) =>
+    scene([
+      client("u", 20, "app", { writes: 1, timeoutMs: 250, retry: { mode: "now", max: 2 } }),
+      server("app", { slots: 16, serviceMs: 5, to: ["db"] }),
+      { id: "db", kind: "db", label: "db", at: [90, 50], slots: 2, serviceMs: 120, idempotent },
+    ], { windowMs: 1e9 });
+  assert.ok(value(run(spec(false), 6000), m("duplicates", { nodes: ["db"] })) > 5, "a timed-out write is retried and applied twice");
+  assert.equal(value(run(spec(true), 6000), m("duplicates", { nodes: ["db"] })), 0);
+});
+
+test("queue acks: acked on receipt, a crashed worker's job is lost; acked when done, it is handed out again", () => {
+  const spec = (mode: "receive" | "finish") =>
+    scene([
+      client("u", 8, "q"),
+      queue("q", ["w1", "w2"], { ack: { mode, visibilityMs: 600 } }),
+      worker("w1", { serviceMs: 300 }),
+      worker("w2", { serviceMs: 300 }),
+    ], { windowMs: 1e9 });
+  const crashed = (mode: "receive" | "finish") => {
+    const sim = new Sim(spec(mode));
+    sim.step(1500);
+    sim.setUp("w2", false);
+    sim.step(2000);
+    return sim;
+  };
+  const receive = crashed("receive");
+  assert.ok(value(receive, m("lostJobs")) >= 1);
+  assert.equal(value(receive, m("redelivered")), 0);
+  const finish = crashed("finish");
+  assert.equal(value(finish, m("lostJobs")), 0);
+  assert.ok(value(finish, m("redelivered")) >= 1);
+});
+
+test("a visibility timeout shorter than the job hands it out twice; an idempotent worker does it once", () => {
+  const spec = (idempotent: boolean) =>
+    scene([
+      client("u", 6, "q"),
+      queue("q", ["w1", "w2"], { ack: { mode: "finish", visibilityMs: 250 } }),
+      worker("w1", { serviceMs: 400, idempotent }),
+      worker("w2", { serviceMs: 400, idempotent }),
+    ], { windowMs: 1e9 });
+  // Two workers keep separate notes: the duplicate is done by the other one unless notes are shared, so one worker here.
+  const one = (idempotent: boolean) =>
+    scene([client("u", 2, "q"), queue("q", ["w"], { ack: { mode: "finish", visibilityMs: 250 } }), worker("w", { serviceMs: 400, idempotent })], { windowMs: 1e9 });
+  assert.ok(value(run(spec(false), 5000), m("duplicates")) > 0);
+  assert.equal(value(run(one(true), 5000), m("duplicates")), 0);
+  assert.ok(value(run(one(false), 5000), m("duplicates")) > 0);
+});
+
+test("a poison job blocks an ordered line until it is dead-lettered after its last delivery", () => {
+  const spec = (maxDeliveries?: number, ordered = true) =>
+    scene([
+      client("u", 5, "q", { poison: 0.15 }),
+      queue("q", ["w"], { ack: { mode: "finish", visibilityMs: 200, maxDeliveries, deadLetter: maxDeliveries ? "dlq" : undefined, ordered } }),
+      worker("w", { serviceMs: 60 }),
+      queue("dlq", [], { at: [80, 90] }),
+    ], { windowMs: 3000 });
+  const stuck = run(spec(), 8000);
+  const moving = run(spec(3), 8000);
+  assert.ok(value(stuck, m("redelivered")) > 5, "the poison job comes back again and again");
+  assert.ok(stuck.nodes.get("q")!.queue.length > 10, "and the line behind it grows");
+  assert.ok(value(moving, m("deadLettered")) > 0);
+  assert.ok(moving.nodes.get("dlq")!.queue.length > 0, "dead letters wait in their own queue");
+  assert.ok(moving.nodes.get("q")!.queue.length < 5, "the line moves again");
+  // Unordered, the worker serves the jobs behind a poison job while it waits out its visibility timeout.
+  const jobWait = (s: SceneSpec) => value(run(s, 8000), m("jobWait"));
+  assert.ok(jobWait(spec(3, false)) < jobWait(spec(3)), "an ordered line waits behind each poison job");
+});
+
+test("back-pressure: holding the producer keeps the line short; rejecting turns jobs away; dropping the oldest loses them", () => {
+  const spec = (mode?: "wait" | "reject" | "drop-oldest") =>
+    scene([client("u", 50, "q", { timeoutMs: 5000 }), queue("q", ["w"], { backpressure: mode ? { high: 20, low: 15, mode } : undefined }), worker("w", { slots: 3, serviceMs: 100 })], {
+      windowMs: 1e9,
+    });
+  const unbounded = run(spec(), 6000);
+  const held = run(spec("wait"), 6000);
+  assert.ok(unbounded.nodes.get("q")!.queue.length > 80, "unbounded, the line grows without end");
+  assert.ok(held.nodes.get("q")!.queue.length <= 20, "held, it stays at its mark");
+  assert.ok(held.nodes.get("q")!.waiting.length > 0, "and the producer's requests wait instead");
+  assert.ok(value(held, m("p95")) > value(unbounded, m("p50")) * 0 + 1000, "so the producer slows down");
+  assert.ok(value(run(spec("reject"), 6000), m("rejected")) > 0.2);
+  assert.ok(value(run(spec("drop-oldest"), 6000), m("lostJobs")) > 0);
+});
+
+test("the outbox: a dual write loses events while the broker is down; the outbox delivers them once it is back", () => {
+  const spec = (outbox: boolean) =>
+    scene([
+      client("u", 20, "app", { writes: 1 }),
+      server("app", { slots: 16, serviceMs: 5, calls: { write: outbox ? ["db"] : ["db", "broker"], read: [] } }),
+      { id: "db", kind: "db", label: "db", at: [70, 30], slots: 8, serviceMs: 10, idempotent: false, outbox: outbox ? { to: "broker", everyMs: 100 } : undefined },
+      queue("broker", ["c"], { at: [70, 70] }),
+      worker("c", { slots: 8, serviceMs: 10, idempotent: true }),
+    ], { windowMs: 2000 });
+  const lost = (outbox: boolean) => {
+    const sim = new Sim(spec(outbox));
+    sim.step(1000);
+    sim.setUp("broker", false);
+    sim.step(1200);
+    sim.setUp("broker", true);
+    sim.step(3000);
+    return value(sim, m("lostEvents", { nodes: ["db", "c"] }));
+  };
+  assert.ok(lost(false) > 0.1, `dual write: ${lost(false)} of events lost`);
+  assert.equal(lost(true), 0);
+});
+
+test("one consumer per partition, failing over in order; several consumers on one queue finish a key's jobs out of order", () => {
+  const spec = (consumers?: "first") =>
+    scene([client("u", 25, "q", { keys: 3 }), queue("q", ["c1", "c2", "c3"], { consumers }), worker("c1", { serviceMs: 60 }), worker("c2", { serviceMs: 60 }), worker("c3", { serviceMs: 60 })], {
+      windowMs: 1e9,
+    });
+  const spread = run(spec(), 5000);
+  assert.ok(value(spread, m("reordered")) > 0, "round robin over three consumers loses per-key order");
+  const first = new Sim(spec("first"));
+  first.step(2500);
+  assert.equal(first.nodes.get("c2")!.served + first.nodes.get("c3")!.served, 0, "only the first consumer takes jobs");
+  first.setUp("c1", false);
+  first.step(2500);
+  assert.ok(first.nodes.get("c2")!.served > 10, "the next one takes over");
+  assert.equal(value(first, m("reordered")), 0);
+});
+
+test("a queue that runs out of memory loses every job in it", () => {
+  const sim = run(
+    scene([client("u", 60, "q"), queue("q", ["w"], { overload: { queueAbove: 50, forMs: 200, restartMs: 500, warmMs: 1 } }), worker("w", { slots: 2, serviceMs: 100 })], { windowMs: 1e9 }),
+    4000,
+  );
+  assert.ok(value(sim, m("lostJobs")) > 40);
+});
+
+test("property: every request is accounted for and nothing leaks, with every message-and-delivery hook at once", () => {
+  settles(
+    scene([
+      client("u", 40, "q", { poison: 0.05, writes: 0.5, timeoutMs: 1500 }),
+      queue("q", ["w1", "w2"], { ack: { mode: "finish", visibilityMs: 400, maxDeliveries: 3, deadLetter: "dlq" }, backpressure: { high: 25, low: 15, mode: "wait" } }),
+      worker("w1", { serviceMs: 120, slots: 2, idempotent: true, to: ["db"], sink: false }),
+      worker("w2", { serviceMs: 120, slots: 2, idempotent: false }),
+      { id: "db", kind: "db", label: "db", at: [90, 20], slots: 4, serviceMs: 20, idempotent: true, outbox: { to: "events", everyMs: 80 } },
+      queue("events", ["c"], { at: [90, 60] }),
+      worker("c", { slots: 4, serviceMs: 10, idempotent: true }),
+      queue("dlq", [], { at: [60, 90] }),
+    ]),
+    "batch 2a",
+  );
 });

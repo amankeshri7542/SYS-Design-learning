@@ -3561,6 +3561,12 @@ svg.stroke {
   stroke-dasharray: 6 4;
 }
 
+/* A dead-letter queue: the jobs given up on. */
+.node.dlq .body {
+  stroke: var(--dot-err);
+  stroke-width: 2.5px;
+}
+
 .node.booting .body {
   stroke: var(--dot-req);
   stroke-dasharray: 5 5;

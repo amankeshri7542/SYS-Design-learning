@@ -22,6 +22,8 @@ export interface Look {
 /** The fixed dot vocabulary (CLAUDE.md): what a request looks like right now. */
 export function styleOf(r: Req, now: number, slo: number, P: Palette): Look | null {
   if (r.op === "probe") return { color: P.muted, shape: "ring", alpha: 0.9, small: true };
+  // An ack: answered's green, small, because it carries no answer.
+  if (r.ack && r.result !== "error") return { color: P.ok, shape: "circle", alpha: 1, small: true };
   // A copy on its way to a replica: a small hollow square, so it never reads as a request.
   if (r.op === "repl") return { color: P.muted, shape: "hollow", alpha: 0.95, small: true };
   if (r.orphanAt || r.abandoned) return { color: P.err, shape: "ring", alpha: 0.55 };
@@ -241,7 +243,7 @@ export interface FxDraw {
 }
 
 /** Effects that say a node changed state: each draws one ring. */
-export const RINGS = new Set<FxKind>(["crash", "recover", "open", "close", "boot", "hot"]);
+export const RINGS = new Set<FxKind>(["crash", "recover", "open", "close", "boot", "hot", "dupe", "redeliver", "dead"]);
 /**
  * A cache's hits and misses: on the dot first (a hit pops, a miss's copy slides in), with a faint ring as a second cue.
  * A lookup the existence check answered ("no such key") gets the hit's faint ring.
@@ -262,6 +264,9 @@ const LIFE: Partial<Record<FxKind, number>> = {
   open: DUR.hero,
   close: DUR.hero,
   hot: DUR.switch,
+  dupe: DUR.hero,
+  redeliver: DUR.hero,
+  dead: DUR.hero,
 };
 
 /** Draw one effect at `real` ms; false once it has finished. Under reduced motion nothing moves or grows. */
@@ -351,7 +356,9 @@ export function drawFx(ctx: CanvasRenderingContext2D, f: FxDraw, real: number, P
     default: {
       if (!RINGS.has(f.kind)) return false;
       // A state change: one ring grows out of the node and fades.
-      const color = f.kind === "recover" || f.kind === "close" ? P.ok : f.kind === "boot" ? P.req : f.kind === "hot" ? P.slow : P.err;
+      // A repeat answered from notes is turned away on purpose (slate); a job handed out again is a request again.
+      const color =
+        f.kind === "recover" || f.kind === "close" ? P.ok : f.kind === "boot" || f.kind === "redeliver" ? P.req : f.kind === "hot" ? P.slow : f.kind === "dupe" ? P.turned : P.err;
       const grow = reduced ? 0 : (f.kind === "hot" ? 18 : 30) * easeOut(u);
       ctx.globalAlpha = (1 - u) * 0.75;
       ctx.strokeStyle = color;

@@ -166,7 +166,8 @@ test("R2: an open breaker slides its pill to open and breaks the payments rail",
   // Payments hangs when the learner makes it (the fault is armed, not on a loop).
   await page.locator(".faults").getByRole("button", { name: "Make payments hang" }).click();
   const pill = page.locator(".theatre .pill");
-  await expect(pill).toHaveAttribute("data-state", "closed");
+  // Under a full suite's load the step can take a while to draw; the breaker can't open for seconds after the press.
+  await expect(pill).toHaveAttribute("data-state", "closed", { timeout: 15000 });
   await expect(pill).toHaveAttribute("data-state", "open", { timeout: 20000 });
   await expect(page.locator(".theatre .break-mark")).toHaveCount(1);
   // The marker sits at the third place along the pill's foot.
