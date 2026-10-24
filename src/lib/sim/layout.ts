@@ -565,6 +565,7 @@ const SHORT: [RegExp, string][] = [
   [/^(\d+) req\/s · (\d+) open$/, "$1/s · $2 open"],
   [/^(\d+\/\d+) connections$/, "$1 open"],
   [/^(\d+\/\d+) in flight$/, "$1 out"],
+  [/^nearest healthy$/, "nearest"],
 ];
 
 /** The shorter wording a secondary label takes in the narrow (compact and tall) layouts. */

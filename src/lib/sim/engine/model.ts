@@ -257,8 +257,8 @@ export interface NodeRt {
   downAt: number;
   /** Sender with a window: when the receiver last said it had no room (-1: it has room). */
   zeroAt: number;
-  /** Client that subscribes: its users have opened their first connections. */
-  opened: boolean;
+  /** Client that subscribes or polls: how its users are keeping up now ("sub" or "poll"; "" before they start). */
+  opened: "" | "sub" | "poll";
 }
 
 export interface Note {

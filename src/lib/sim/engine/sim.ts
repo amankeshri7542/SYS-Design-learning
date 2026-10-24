@@ -250,7 +250,8 @@ export class Sim {
 
   reconfigure(spec: SceneSpec) {
     this.spec = spec;
-    this.loop = (spec.script?.events ?? []).filter((e) => !e.armed);
+    // The loop plays its events in order of time, whatever order the script lists them in.
+    this.loop = (spec.script?.events ?? []).filter((e) => !e.armed).sort((a, b) => a.at - b.at);
     const ids = new Set(spec.nodes.map((n) => n.id));
     const stranded: Req[] = [];
     for (const [id, rt] of this.nodes) {
@@ -368,7 +369,7 @@ export class Sim {
       primary: "",
       downAt: -1e9,
       zeroAt: -1,
-      opened: false,
+      opened: "",
     };
     if (spec.client) {
       const r = this.rate(rt);

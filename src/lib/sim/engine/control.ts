@@ -36,7 +36,7 @@ const control: Partial<Sim> & ThisType<Sim> = {
       if (n.spec.client?.window && n.sendq.length && !n.flying) this.pump(n);
       if (n.spec.advertise && n.starved.size) this.updateWindows(n);
       if (n.spec.hold && n.subs.length) this.expireSubs(n);
-      if (n.spec.client?.subscribe?.heartbeat && n.beats.size) this.heartbeats(n);
+      if (n.spec.client?.subscribe?.heartbeat && n.subOf.size) this.heartbeats(n);
       if (n.spec.promote) {
         // Health checks benched the primary: promote the first healthy target after it.
         if (!n.primary) n.primary = this.flat(n.spec.to)[0] ?? "";
