@@ -824,6 +824,16 @@ Engine PR gates on 2026-10-24: typecheck, 237 unit tests (41 in `tests/hooks.tes
 - **Stage:** acks are small green dots; a queue's sub-label adds jobs out with workers ("· 3 out") or producers held back ("· 5 held"); rings mark a repeat answered from notes (slate), a redelivery (cobalt) and a dead letter (red); "Ack" is a Key row lessons opt into. Not drawn: unacked copies beside a sender (no sender transport) and partition lanes inside one queue (partitions are separate queues).
 - **Proof of no change:** all 176 earlier scenes hash the same and `tune --json` is byte-identical. Each new hook has a test in `tests/hooks.test.ts`, checked against a mutation (14 of 14 caught), and a scene with every batch 2a hook settles with every request accounted for and nothing held.
 
+**Decisions made while building N2, N14 and N15:**
+
+Gates on 2026-10-24: typecheck, 249 unit tests, build, and the browser suite: 744 tests, of which 733 passed and 11 were skipped, the 4 frame budgets included. A first full run timed out on three phone tests that pass alone (the suite now loads one dev server with three workers), so Playwright's assertion timeout is 10 s instead of 5 s. N2, N14 and N15 were checked by eye at the four sizes, light and dark.
+
+- **N2 is request and response over a lossy wire.** The receiver answers with an ack (`replies: "ack"`) and isn't idempotent, so a lost ack shows as "Done twice"; the resend is the client's retry, and the ack timer is its timeout. The "cut the link" break was left out: the lesson needs no fault to make its point.
+- **N14 crashes worker 2 while it holds two jobs.** Acked on receipt they're lost; acked when done they're handed out again once the visibility timeout passes. Dragging the timeout below the job time shows duplicates; "exactly once" is named as at least once plus idempotent workers, which A4 builds on.
+- **N15's unbounded queue runs out of memory** (`overload` on the queue: more than 60 waiting for 0.3 s) and loses every job in it. The bounded queue holds 20, with a knob for what full means (the producer waits, turn new jobs away, drop the oldest). Its option labels were shortened to fit 1280×720.
+- **Edges:** N2 before A3 and D7. N15's curriculum prerequisite N6 joins when N6 is live (M8); for now N15 requires A1 only.
+- **The kit gained `queue()`.**
+
 ### M8 — Engine B2b (connections and real time) and 10 lessons (L)
 
 **Goal:** windows and congestion control, connection setup and reuse, head-of-line blocking, L4 vs L7, held connections with push, heartbeats, and replica promotion.
