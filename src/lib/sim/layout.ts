@@ -522,7 +522,7 @@ export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
       case "cache":
         return ["99/99 items", "down"];
       case "queue":
-        return ["999 waiting"];
+        return n.ack ? ["999 waiting · 99 out"] : n.backpressure?.mode === "wait" ? ["999 waiting · 99 held"] : ["999 waiting"];
       case "topic":
         return ["9 subscribers"];
       default: {
@@ -543,6 +543,7 @@ const SHORT: [RegExp, string][] = [
   [/^down · taken out$/, "taken out"],
   [/^stalled · (\d+) waiting$/, "stalled · $1"],
   [/^warming up · (\d+\/\d+) busy$/, "warming · $1"],
+  [/^(\d+) waiting · (\d+) (out|held)$/, "$1 · $2 $3"],
   [/^target (\d+)% busy$/, "target $1%"],
   [/^(\d+)\/s per client$/, "$1/s each"],
   [/^key → (\d+) nodes$/, "$1 nodes"],

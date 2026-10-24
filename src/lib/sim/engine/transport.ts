@@ -110,6 +110,7 @@ const transport: Partial<Sim> & ThisType<Sim> = {
   respond(r: Req, result?: Result) {
     if (result && !r.result) r.result = result;
     const from = r.stack.pop()!.id;
+    if (this.nodes.get(from)?.spec.replies === "ack") r.ack = true;
     if (!r.stack.length) {
       r.phase = "gone";
       return;

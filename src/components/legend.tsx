@@ -15,12 +15,14 @@ export const DOTS: { kind: DotKind; shape: string; cls: string; name: string; te
   { kind: "job", shape: "square", cls: "req", name: "Job", text: "Work left on a queue or sent to a subscriber, waiting for a worker." },
   { kind: "probe", shape: "ring-sm", cls: "copy", name: "Health check", text: "A small ping from a balancer, asking a server if it is up." },
   { kind: "lost", shape: "cross", cls: "err", name: "Lost", text: "A message that vanished on its way. Whoever waits for it gives up in time." },
+  { kind: "ack", shape: "circle-sm", cls: "ok", name: "Ack", text: "A small note back, “got it”, with no answer inside." },
 ];
 
 export function Dot({ shape, cls }: { shape: string; cls: string }) {
   return (
     <svg viewBox="-8 -8 16 16" className={`dot dot-${cls}`} aria-hidden="true">
       {shape === "circle" && <circle r="5.5" />}
+      {shape === "circle-sm" && <circle r="3.2" />}
       {shape === "donut" && <path d="M0-5.5a5.5 5.5 0 1 1 0 11a5.5 5.5 0 1 1 0-11zM0-2.3a2.3 2.3 0 1 0 0 4.6a2.3 2.3 0 1 0 0-4.6z" fillRule="evenodd" />}
       {shape === "square" && <rect x="-5" y="-5" width="10" height="10" rx="1.5" />}
       {shape === "diamond" && <path d="M0-7L7 0L0 7L-7 0Z" />}
@@ -38,7 +40,7 @@ export function Dot({ shape, cls }: { shape: string; cls: string }) {
  * shuts it and gives focus back to the Key button.
  */
 export function KeyPopover({ dots }: { dots?: DotKind[] }) {
-  const here = dots?.length ? DOTS.filter((d) => dots.includes(d.kind)) : DOTS.filter((d) => d.kind !== "job" && d.kind !== "probe" && d.kind !== "lost");
+  const here = dots?.length ? DOTS.filter((d) => dots.includes(d.kind)) : DOTS.filter((d) => d.kind !== "job" && d.kind !== "probe" && d.kind !== "lost" && d.kind !== "ack");
   const rest = dots?.length ? DOTS.filter((d) => !dots.includes(d.kind)) : [];
   const pop = useRef<HTMLDivElement>(null);
   const close = useRef<HTMLButtonElement>(null);

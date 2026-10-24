@@ -29,7 +29,14 @@ export type MetricId =
   | "wire"
   | "wait"
   | "work"
-  | "filtered";
+  | "filtered"
+  | "duplicates"
+  | "redelivered"
+  | "deadLettered"
+  | "lostJobs"
+  | "lostEvents"
+  | "reordered"
+  | "consumed";
 
 export interface MetricSpec {
   id: MetricId;
@@ -88,6 +95,13 @@ const META: Record<MetricId, { unit: Unit; better: Better }> = {
   wait: { unit: "ms", better: "low" },
   work: { unit: "ms", better: "low" },
   filtered: { unit: "pct", better: "high" },
+  duplicates: { unit: "count", better: "low" },
+  redelivered: { unit: "count", better: "neutral" },
+  deadLettered: { unit: "count", better: "neutral" },
+  lostJobs: { unit: "count", better: "low" },
+  lostEvents: { unit: "pct", better: "low" },
+  reordered: { unit: "count", better: "low" },
+  consumed: { unit: "rate", better: "high" },
 };
 
 function recent(sim: Sim, m: MetricSpec) {
@@ -163,6 +177,40 @@ export function measure(sim: Sim, m: MetricSpec): number | null {
         all += n.arrivals.count(sim.t);
       }
       return all ? f / all : null;
+    }
+    case "duplicates": {
+      // Messages done a second time, at the nodes named (or anywhere), over the window.
+      const at = m.nodes ? nodes(sim, m.nodes) : sim.list;
+      return at.reduce((sum, n) => sum + n.dupes.count(sim.t), 0);
+    }
+    case "redelivered":
+      return sim.redelivered.count(sim.t);
+    case "deadLettered":
+      return sim.deadLettered.count(sim.t);
+    case "lostJobs":
+      return sim.lostJobs.count(sim.t);
+    case "reordered":
+      return sim.reordered.count(sim.t);
+    case "consumed": {
+      const from = sim.t - sim.windowMs;
+      return (sim.jobs.filter((j) => j.t > from).length * 1000) / sim.windowMs;
+    }
+    case "lostEvents": {
+      // Of the writes `nodes[0]` committed a while ago (long enough for their event to arrive), the share whose event
+      // `nodes[1]` never finished.
+      const [src, dst] = nodes(sim, m.nodes);
+      if (!src || !dst) return null;
+      const got = new Set([...dst.done.values()].map((d) => d.id));
+      const until = sim.t - 2000;
+      const from = until - sim.windowMs * 4;
+      let all = 0;
+      let lost = 0;
+      for (const d of src.done.values()) {
+        if (d.t <= from || d.t > until) continue;
+        all++;
+        if (!got.has(d.id)) lost++;
+      }
+      return all ? lost / all : null;
     }
     case "errors":
       return share(sim, m, (r) => r === "error");
@@ -280,7 +328,12 @@ export function toneOf(m: MetricSpec, v: number | null, sloMs: number): Tone {
       return v > 0.5 ? "good" : v > 0 ? "warn" : "bad";
     case "wasted":
     case "lost":
+    case "lostEvents":
       return v < 0.02 ? "good" : v < 0.1 ? "warn" : "bad";
+    case "duplicates":
+    case "lostJobs":
+    case "reordered":
+      return v === 0 ? "good" : v < 3 ? "warn" : "bad";
     case "errors":
     case "stale":
       return v < 0.01 ? "good" : v < 0.05 ? "warn" : "bad";
@@ -354,6 +407,13 @@ const SAYS: Record<MetricId, (v: string) => string> = {
   wait: (v) => `${v} on average spent waiting in line.`,
   work: (v) => `${v} on average spent being worked on.`,
   filtered: (v) => `${v} of lookups were for keys that don't exist, answered by the existence check.`,
+  duplicates: (v) => `${v} messages were done a second time in the window.`,
+  redelivered: (v) => `${v} jobs were handed out again because no ack came back in time.`,
+  deadLettered: (v) => `${v} jobs were given up on and moved to the dead-letter queue.`,
+  lostJobs: (v) => `${v} jobs were accepted and then lost, never done.`,
+  lostEvents: (v) => `${v} of saved orders never reached the service that needed to hear about them.`,
+  reordered: (v) => `${v} jobs finished before an earlier job for the same key.`,
+  consumed: (v) => `${v}: jobs finished each second.`,
 };
 
 /**

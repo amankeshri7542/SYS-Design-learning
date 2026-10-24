@@ -30,6 +30,8 @@ const control: Partial<Sim> & ThisType<Sim> = {
       }
       if ((n.spec.callTimeoutMs || n.spec.deadlines === "honour") && n.held.length) this.callTimeouts(n);
       if (n.spec.deadlines === "honour" && n.work.length) this.cancelLate(n);
+      if (n.spec.ack && n.inflight.size) this.visibility(n);
+      if (n.spec.outbox && t >= n.nextRelay) this.relay(n);
       if (n.spec.health && t >= n.nextProbe) {
         n.nextProbe = t + n.spec.health.everyMs;
         for (const id of this.flat(n.spec.to)) this.probe(n, id);
@@ -55,6 +57,51 @@ const control: Partial<Sim> & ThisType<Sim> = {
     }
   },
 
+  /** Jobs out too long without an ack: handed out again at the front of the line or, past the limit, dead-lettered. */
+  visibility(n: NodeRt) {
+    const a = n.spec.ack!;
+    for (const [id, e] of n.inflight) {
+      if (this.t - e.at < a.visibilityMs) continue;
+      n.inflight.delete(id);
+      const job = e.job;
+      if (a.maxDeliveries && job.attempt + 1 >= a.maxDeliveries) {
+        this.deadLettered.add(this.t);
+        this.effect("dead", n.spec.id);
+        if (a.deadLetter && this.nodes.has(a.deadLetter)) {
+          const m = this.clone(n, job);
+          m.attempt = job.attempt;
+          m.deadLetter = true;
+          this.send(m, a.deadLetter);
+        }
+        job.phase = "gone";
+        continue;
+      }
+      job.attempt++;
+      job.phase = "wait";
+      n.queue.unshift(job);
+      this.redelivered.add(this.t);
+      this.effect("redeliver", n.spec.id);
+    }
+  },
+
+  /** The outbox relay: each event not yet accepted downstream is sent, and sent again once `retryMs` has passed. */
+  relay(n: NodeRt) {
+    const o = n.spec.outbox!;
+    n.nextRelay = this.t + o.everyMs;
+    if (!n.up) return;
+    for (const e of n.outbox) {
+      if (this.t - e.sentAt < (o.retryMs ?? 600)) continue;
+      const m = this.make(n.spec.id, "write", e.key, e.tag);
+      m.detached = true;
+      m.relay = true;
+      m.logicalId = e.id;
+      m.stack = [{ id: n.spec.id, calls: [] }];
+      m.at = n.spec.id;
+      e.sentAt = this.t;
+      this.send(m, o.to);
+    }
+  },
+
   /** Crash when the line or the load stays past its mark for long enough; come back later, cold. */
   overload(n: NodeRt) {
     const o = n.spec.overload!;
@@ -74,6 +121,14 @@ const control: Partial<Sim> & ThisType<Sim> = {
       n.restartAt = this.t + o.restartMs;
       this.setUp(n.spec.id, false);
       this.note(`${n.spec.label} crashed under load`);
+      // A queue that runs out of memory loses every job in it.
+      if (n.spec.kind === "queue") {
+        for (const j of n.queue) {
+          j.phase = "gone";
+          this.lostJobs.add(this.t);
+        }
+        n.queue = [];
+      }
     }
   },
 
