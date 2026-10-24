@@ -1024,6 +1024,15 @@ Engine PR gates on 2026-10-25: typecheck, 381 unit tests (3 new in `tests/hooks.
 - **Stage:** a processor's sub-label reads "1 s windows · waits 2 s" ("1 s · waits 2 s" when narrow); a write-behind cache's reads "40/200 · 12 unsaved" ("12 unsaved"); a processor's rail to its table is drawn.
 - **Proof of no change:** every earlier scene hashes the same and `tune --json` is byte-identical. The two hook tests were checked against ten mutations; all were caught once write-behind reads were required to stay fresh until a crash. A scene with every batch 4 hook at once settles with every request accounted for and nothing held.
 
+**Decisions made while building C6 and A8:**
+
+Gates on 2026-10-25: typecheck, 389 unit tests, build, and the browser suite: 1,180 tests, of which 1,169 passed and 11 were skipped, the 4 frame budgets included. Both lessons were checked by eye at the four sizes.
+
+- **One more metric, `uncounted`:** of the events answered, the share never counted (dropped as late, or lost in a processor's crash). It reads 0% for a row per click, so it can be compared across both steps, and S8 can hold it as a target. A crash's lost counts are tracked apart (`lostCounts`) as well as among `lostWrites`.
+- **A8** runs at `timeScale` 0.25, so a one-second window closes every four seconds on screen. 300 clicks a second on 20 ads, one in five up to 2 s late. A row per click keeps Counts over 99% busy; a counter writing each second's totals keeps it under 1% (6% on average), while 17–19% of clicks go uncounted with no wait. The last beat has the learner drag Wait for late clicks to 2 s: every click counted, every total 2 s later (`windowLag`, shown as Totals written after). The fix's title and caption say "per second", as the term Window is first named by its beat.
+- **C6:** users read and write 40 keys through a cache in front of a database 20 ms away; Crash the cache takes it down for 0.3 s. Saving later loses about 13 confirmed writes; writing through loses none, and writes take about 140 ms instead of 72. The fix's choice knob also offers write-around. Its terms show hyphenated (write-behind, write-through).
+- **The route test** checks that every planned entry has no page, rather than naming one, as the last planned entries are going live.
+
 ### M11 — Optional: a learning record (S/M, only with the owner's agreement)
 
 Pedagogy §5 describes a privacy-safe, localStorage-only event ring buffer, a `/progress` page with export and clear, and a dev-only `/stats` view to tune predictions and checks. It changes the `CLAUDE.md` rule on progress storage, so it waits for an explicit yes.

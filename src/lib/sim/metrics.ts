@@ -57,7 +57,8 @@ export type MetricId =
   | "lateDropped"
   | "windowLag"
   | "lostWrites"
-  | "unsaved";
+  | "unsaved"
+  | "uncounted";
 
 export interface MetricSpec {
   id: MetricId;
@@ -144,6 +145,7 @@ const META: Record<MetricId, { unit: Unit; better: Better }> = {
   windowLag: { unit: "ms", better: "low" },
   lostWrites: { unit: "count", better: "low" },
   unsaved: { unit: "count", better: "low" },
+  uncounted: { unit: "pct", better: "low" },
 };
 
 function recent(sim: Sim, m: MetricSpec) {
@@ -397,6 +399,11 @@ export function measure(sim: Sim, m: MetricSpec): number | null {
     }
     case "lostWrites":
       return sim.lostWrites.count(sim.t);
+    case "uncounted": {
+      // Of the events answered (writes), the share never counted: too late for their window, or lost in a crash.
+      const all = recent(sim, m).filter((d) => d.op === "write" && d.result === "ok").length;
+      return all ? Math.min(1, (sim.lateDropped.count(sim.t) + sim.lostCounts.count(sim.t)) / all) : null;
+    }
     case "unsaved": {
       // At the caches named, or at every write-behind cache.
       const ns = (m.nodes ? nodes(sim, m.nodes) : sim.list).filter((n) => n.spec.writeMode === "behind");
@@ -459,6 +466,7 @@ export function toneOf(m: MetricSpec, v: number | null, sloMs: number): Tone {
     case "lostWrites":
       return v === 0 ? "good" : v < 3 ? "warn" : "bad";
     case "lateDropped":
+    case "uncounted":
       return v < 0.01 ? "good" : v < 0.05 ? "warn" : "bad";
     case "leaderless":
       return v < 0.01 ? "good" : v < 0.1 ? "warn" : "bad";
@@ -572,6 +580,7 @@ const SAYS: Record<MetricId, (v: string) => string> = {
   windowLag: (v) => `A window's counts were written ${v} after it opened: its length, plus the wait for late events.`,
   lostWrites: (v) => `${v} writes were confirmed and then lost in a crash, in the window.`,
   unsaved: (v) => `${v} writes are confirmed but not yet saved to the database: a crash now would lose them.`,
+  uncounted: (v) => `${v} of events were answered but never counted: too late for their window, or lost in a crash.`,
 };
 
 /**

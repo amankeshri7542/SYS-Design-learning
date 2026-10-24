@@ -69,7 +69,12 @@ const storage: Partial<Sim> & ThisType<Sim> = {
     for (let i = 0; i < n.dirty.size; i++) this.lostWrites.add(this.t);
     n.dirty.clear();
     if (n.spec.window?.checkpoint) return;
-    for (const pane of n.panes.values()) for (const count of pane.values()) for (let i = 0; i < count; i++) this.lostWrites.add(this.t);
+    for (const pane of n.panes.values())
+      for (const count of pane.values())
+        for (let i = 0; i < count; i++) {
+          this.lostWrites.add(this.t);
+          this.lostCounts.add(this.t);
+        }
     n.panes.clear();
   },
 };

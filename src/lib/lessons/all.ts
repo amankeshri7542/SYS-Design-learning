@@ -61,6 +61,8 @@ import leaderElection from "./scenes/leader-election";
 import locksAndDoubleBooking from "./scenes/locks-and-double-booking";
 import hedgedRequests from "./scenes/hedged-requests";
 import sagas from "./scenes/sagas";
+import streamWindows from "./scenes/stream-windows";
+import cacheWriteStrategies from "./scenes/cache-write-strategies";
 import capstone from "./stories/capstone";
 import webCrawler from "./stories/web-crawler";
 import videoPremiere from "./stories/video-premiere";
@@ -126,6 +128,8 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
   "locks-and-double-booking": locksAndDoubleBooking,
   "hedged-requests": hedgedRequests,
   sagas,
+  "stream-windows": streamWindows,
+  "cache-write-strategies": cacheWriteStrategies,
 };
 
 export const STORY_DEFS: Record<string, StoryDef> = { capstone, "web-crawler": webCrawler, "video-premiere": videoPremiere, chat, "flash-sale": flashSale, "ride-matching": rideMatching, "news-feed": newsFeed, payments };
