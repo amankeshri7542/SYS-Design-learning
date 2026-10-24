@@ -1243,6 +1243,7 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
       const r = s.client?.rate;
       const rate = typeof r === "function" ? r(sim.t) : (r ?? 0);
       if (s.client?.window) sub = `${n.flying}/${sim.windowOf(n)} in flight`;
+      else if (s.client?.poll) sub = `ask every ${s.client.poll} ms`;
       else if (s.client?.subscribe) sub = `${n.subOf.size} connected`;
       else sub = s.connect ? `${Math.round(rate)} req/s · ${n.conns.length} open` : `${Math.round(rate)} req/s`;
       break;

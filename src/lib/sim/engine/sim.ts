@@ -26,7 +26,7 @@ export interface Sim {
   rate(n: NodeRt): number;
   gap(n: NodeRt, rate: number): number;
   arrivals(): void;
-  spawn(n: NodeRt, key: number, op: Op, first: number, attempt: number, cost: number, extra?: { logicalId?: number; absent?: boolean; poison?: boolean; deadline?: number; page?: number; news?: number }): void;
+  spawn(n: NodeRt, key: number, op: Op, first: number, attempt: number, cost: number, extra?: { logicalId?: number; absent?: boolean; poison?: boolean; deadline?: number; page?: number; news?: number; untraced?: boolean }): void;
   finishAtClient(n: NodeRt, r: Req): void;
   timeout(r: Req): void;
   retry(n: NodeRt, r: Req): boolean;
@@ -191,8 +191,8 @@ export class Sim {
   /** Answers to polls, and those that had nothing new. */
   polls: Win;
   empty: Win;
-  /** Users waiting to open a connection again. */
-  resubs: { at: number; client: string; user: number }[] = [];
+  /** Users waiting to open a connection again, or to poll again (`poll`). */
+  resubs: { at: number; client: string; user: number; poll?: boolean }[] = [];
   /** Heartbeats: how long after its server went down each dead connection was given up on; connections given up on while their server was fine. */
   detects: { t: number; ms: number }[] = [];
   falseAlarms: Win;

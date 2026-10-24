@@ -512,6 +512,7 @@ export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
     switch (n.kind) {
       case "client":
         if (n.client?.window) return ["99/99 in flight"];
+        if (n.client?.poll) return [`ask every ${Math.max(n.client.poll, 2000)} ms`];
         if (n.client?.subscribe) return ["999 connected"];
         return n.connect ? ["999 req/s · 9 open"] : ["999 req/s"];
       case "lb":

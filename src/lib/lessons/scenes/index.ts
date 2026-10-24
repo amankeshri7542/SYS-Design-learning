@@ -55,6 +55,9 @@ export const SCENES: Record<string, Load> = {
   "windows-and-flow-control": () => import("./windows-and-flow-control"),
   "congestion-control": () => import("./congestion-control"),
   "head-of-line-blocking": () => import("./head-of-line-blocking"),
+  "push-vs-poll": () => import("./push-vs-poll"),
+  "l4-vs-l7": () => import("./l4-vs-l7"),
+  heartbeats: () => import("./heartbeats"),
   // Operating
   "canary-rollouts": () => import("./canary-rollouts"),
   "graceful-shutdown": () => import("./graceful-shutdown"),

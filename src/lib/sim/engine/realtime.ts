@@ -8,12 +8,15 @@ import { Sim } from "./sim";
  * polls a server with `feed` hears of items only when it asks. Heartbeats let a user notice a connection gone silent.
  */
 const realtime: Partial<Sim> & ThisType<Sim> = {
-  /** Once traffic starts, each user opens its first connection, at a moment of its own within `reconnectMs` (500 ms if 0). */
+  /**
+   * Once traffic starts, each user opens its first connection at a moment of its own within `reconnectMs` (500 ms if
+   * 0), or first polls at a moment of its own within its polling interval.
+   */
   opens(n: NodeRt) {
     n.opened = true;
     const c = n.spec.client!;
-    const spread = c.subscribe!.reconnectMs || 500;
-    for (let u = 0; u < (c.keys ?? 1); u++) this.resubs.push({ at: this.t + Math.max(TICK, n.rng() * spread), client: n.spec.id, user: u });
+    const spread = c.poll ?? (c.subscribe?.reconnectMs || 500);
+    for (let u = 0; u < (c.keys ?? 1); u++) this.resubs.push({ at: this.t + Math.max(TICK, n.rng() * spread), client: n.spec.id, user: u, poll: !!c.poll });
   },
 
   /** A user opens a connection for news: a request that its server holds open. */
@@ -28,7 +31,10 @@ const realtime: Partial<Sim> & ThisType<Sim> = {
     if (target) this.send(r, this.resolve(n, target));
   },
 
-  /** A server with `hold` keeps the connection open, if it has room for one more; turned away, the user tries again later. */
+  /**
+   * A server with `hold` takes a connection in (a worker's time, then) keeps it open, if it has room for one more; turned
+   * away, the user tries again later.
+   */
   holdSub(n: NodeRt, r: Req) {
     if (n.subs.length >= n.spec.hold!.max) return this.refuse(n, r);
     r.phase = "wait";
@@ -50,8 +56,9 @@ const realtime: Partial<Sim> & ThisType<Sim> = {
   },
 
   /**
-   * News reaches a user, pushed or as a poll's answer: every item newer than the last one it had is delivered now (each
-   * logged with how long after it was published). A poll with nothing newer was asked for nothing.
+   * News reaches a user. A push carries one item: it is delivered now, logged with how long after it was published. A
+   * poll's answer is the feed as it stands: every item newer than the last one the user had is delivered now, and a
+   * poll with nothing newer was asked for nothing.
    */
   heard(n: NodeRt, r: Req) {
     const prev = n.seen.get(r.key) ?? 0;
@@ -60,7 +67,7 @@ const realtime: Partial<Sim> & ThisType<Sim> = {
       if (r.op === "read") this.empty.add(this.t);
       return;
     }
-    for (const item of this.news) if (item.seq > prev && item.seq <= r.news) this.newsLog.push({ t: this.t, lag: this.t - item.t });
+    for (const item of this.news) if (r.op === "push" ? item.seq === r.news : item.seq > prev && item.seq <= r.news) this.newsLog.push({ t: this.t, lag: this.t - item.t });
     n.seen.set(r.key, r.news);
   },
 
@@ -94,7 +101,10 @@ const realtime: Partial<Sim> & ThisType<Sim> = {
     for (const [user, b] of n.beats) {
       if (this.t < b.next || b.out) continue;
       const sub = n.subOf.get(user);
-      if (!sub || sub.phase === "travel") continue;
+      if (!sub) continue;
+      // Only a connection held open is pinged: one on its way, or waiting to be taken in, isn't open yet.
+      const held = sub.phase === "wait" && !!this.nodes.get(sub.at)?.subs.includes(sub);
+      if (!held && (sub.phase === "travel" || sub.phase === "wait" || sub.phase === "work")) continue;
       b.next = this.t + hb.everyMs;
       const p = this.make(n.spec.id, "probe", user, "probe");
       p.beat = true;
@@ -103,7 +113,7 @@ const realtime: Partial<Sim> & ThisType<Sim> = {
       p.logicalId = (sub.logicalId ^ Math.imul(this.t + 1, 0x85ebca6b)) >>> 0;
       b.out = p.id;
       // A connection that was never taken in (hung on its way, or lost) answers no ping: a miss straight away.
-      if (sub.phase !== "wait") {
+      if (!held) {
         p.phase = "gone";
         this.beatResult(n, p, false);
         continue;
