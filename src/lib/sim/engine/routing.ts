@@ -1,0 +1,80 @@
+import type { Call, NodeSpec } from "../types";
+import type { NodeRt, Req } from "./model";
+import { ownerOf, SAMPLE_KEYS } from "./ring";
+import { Sim } from "./sim";
+
+/** Routing: a balancer picks a target, a limiter spends a token, a pool picks a member, and a hash picks an owner. */
+const routing: Partial<Sim> & ThisType<Sim> = {
+  candidates(n: NodeRt) {
+    return this.flat(n.spec.to).filter((id) => {
+      const s = this.nodes.get(id);
+      if (!s || !s.on || !s.ready) return false;
+      if (n.spec.health) return n.health.get(id)?.ok ?? true;
+      return true;
+    });
+  },
+
+  route(n: NodeRt, r: Req) {
+    const c = this.candidates(n);
+    if (!c.length) return this.fail(n, r);
+    let pick: string;
+    switch (n.spec.algo) {
+      case "random":
+        pick = c[Math.floor(n.rng() * c.length)];
+        break;
+      case "least": {
+        const start = n.rr++ % c.length;
+        pick = c[start];
+        for (let i = 1; i < c.length; i++) {
+          const id = c[(start + i) % c.length];
+          if ((n.out.get(id) ?? 0) < (n.out.get(pick) ?? 0)) pick = id;
+        }
+        break;
+      }
+      case "hash":
+      case "ring":
+        pick = ownerOf(r.key, c, n.spec.algo);
+        break;
+      default:
+        pick = c[n.rr++ % c.length];
+    }
+    n.out.set(pick, (n.out.get(pick) ?? 0) + 1);
+    r.stack[r.stack.length - 1].via = pick;
+    this.send(r, pick);
+  },
+
+  limit(n: NodeRt, r: Req) {
+    const l = n.spec.limit!;
+    if (l.tags && !l.tags.includes(r.tag)) return this.send(r, this.resolve(n, n.spec.to![0]));
+    const b = n.buckets.get(r.tag) ?? { tokens: l.burst, t: this.t };
+    b.tokens = Math.min(l.burst, b.tokens + ((this.t - b.t) * l.rps) / 1000);
+    b.t = this.t;
+    n.buckets.set(r.tag, b);
+    if (b.tokens < 1) {
+      this.effect("reject", n.spec.id);
+      return this.respond(r, "rejected");
+    }
+    b.tokens -= 1;
+    this.send(r, this.resolve(n, n.spec.to![0]));
+  },
+
+  /** Resolve a call target; pools pick round-robin among nodes that are on and up. */
+  resolve(n: NodeRt, call: Call): string {
+    if (!Array.isArray(call)) return call;
+    const live = call.filter((id) => {
+      const s = this.nodes.get(id);
+      return s && s.on && s.up;
+    });
+    const pool = live.length ? live : call;
+    return pool[n.rr++ % pool.length];
+  },
+
+  owners(spec: NodeSpec) {
+    const targets = this.flat(spec.to);
+    const out: string[] = [];
+    for (let k = 0; k < SAMPLE_KEYS; k++) out.push(targets.length ? ownerOf(k, targets, spec.algo) : "");
+    return out;
+  },
+};
+
+Object.assign(Sim.prototype, routing);

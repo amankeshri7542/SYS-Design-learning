@@ -14,7 +14,7 @@ An animated system-design course. It's built with Next.js 16 App Router, React 1
 
 ## Where things live
 
-- `src/lib/sim/engine.ts`: the deterministic simulator. All randomness comes from seeded per-node streams.
+- `src/lib/sim/engine/`: the deterministic simulator (`engine.ts` re-exports it). `sim.ts` holds the state, the fixed-tick loop and the public controls; each concern (`control`, `clients`, `transport`, `routing`, `cache`, `data`, `work`) is a module that attaches its methods to `Sim`, declared once in `sim.ts`'s `interface Sim`. All randomness comes from seeded per-node streams.
   - Keep arrivals independent of downstream behaviour, so a problem scene and its fix see the same traffic.
   - What the stage draws is output only: effects (`fx`: a cache's fill and evict, a node running hot, a drop with its queue slot) and per-link traffic (`links`, read through `flowOf`). Reading or clearing it never changes a run; `tests/motion.test.ts` checks that.
 - `src/lib/lessons/catalog.ts`: every lesson and story, built or planned, as metadata only (slug, frozen code, line, level, minutes, tags, `requires`, kind, status), plus `LINES`, the recommended `PATH` and the interview `FAST_LANE`. `index.ts` is the registry over it (`COURSE`, `LESSONS`, `STORIES`, `neighbours`, `nextFor`, `isReady`…): metadata, safe anywhere.
