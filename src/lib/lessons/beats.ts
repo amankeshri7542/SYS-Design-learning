@@ -384,7 +384,7 @@ export function fillIn(text: string, ctx: FillContext): string {
 
 /** Can every placeholder in the text be read in this lesson? Returns the ones that can't. */
 export function unresolved(text: string, ctx: Pick<FillContext, "tones" | "current"> & { nodes: Set<string>[]; tags?: Set<string> }): string[] {
-  const ids = new Set<string>(["p50", "p95", "errors", "rejected", "stale", "fallback", "throughput", "hit", "util", "peak", "load", "inRotation", "queue", "servers", "moved", "amplify", "conflicts", "answered", "jobWait", "unsynced", "p99", "wasted", "lost", "availability", "budget", "wire", "wait", "work", "filtered", "duplicates", "redelivered", "deadLettered", "lostJobs", "lostEvents", "reordered", "consumed", "connections", "handshakes", "sendWait", "window", "pageMs", "pushLag", "reach", "empty", "detectMs", "falseAlarms", "lostAcked", "missed", "hedged", "doubleBookings", "inconsistent", "leaderless", "term"] satisfies MetricId[]);
+  const ids = new Set<string>(["p50", "p95", "errors", "rejected", "stale", "fallback", "throughput", "hit", "util", "peak", "load", "inRotation", "queue", "servers", "moved", "amplify", "conflicts", "answered", "jobWait", "unsynced", "p99", "wasted", "lost", "availability", "budget", "wire", "wait", "work", "filtered", "duplicates", "redelivered", "deadLettered", "lostJobs", "lostEvents", "reordered", "consumed", "connections", "handshakes", "sendWait", "window", "pageMs", "pushLag", "reach", "empty", "detectMs", "falseAlarms", "lostAcked", "missed", "hedged", "doubleBookings", "inconsistent", "leaderless", "term", "lateDropped", "windowLag", "lostWrites", "unsaved"] satisfies MetricId[]);
   return placeholdersIn(text)
     .filter((p) => {
       if (p.id === "before" || p.id === "after") return false;

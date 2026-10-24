@@ -530,9 +530,9 @@ export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
       case "limiter":
         return [n.limit?.shared ? "lets in 99/s" : "99/s per client"];
       case "cache": {
-        // As many digits as the cache can hold (at least two).
+        // As many digits as the cache can hold (at least two); a write-behind cache also counts what it hasn't saved.
         const cap = Math.max(99, n.capacity ?? 0);
-        return [`${cap}/${cap} items`, "down"];
+        return [`${cap}/${cap} items`, "down", ...(n.writeMode === "behind" ? [`${cap}/${cap} · 999 unsaved`] : [])];
       }
       case "queue":
         return n.ack ? ["999 waiting · 99 out"] : n.backpressure?.mode === "wait" ? ["999 waiting · 99 held"] : ["999 waiting"];
@@ -545,12 +545,18 @@ export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
         const overload = n.overload && n.slots ? ["restarting…", `warming up · ${n.slots}/${n.slots} busy`] : [];
         // Connections held open, or accepted against a limit; a cluster member's role and term; a lock's line; a quorum.
         const open = n.hold ? [`${n.hold.max}/${n.hold.max} open`] : n.maxConns !== undefined ? [`${n.maxConns}/${n.maxConns} connections`] : [];
-        const roles = n.cluster ? ["leads · term 99", "asks for votes"] : n.lock ? ["99 held · 99 waiting"] : n.quorum ? [`W=${n.quorum.w} R=${n.quorum.r}`] : [];
+        const roles = n.cluster ? ["leads · term 99", "asks for votes"] : n.lock ? ["99 held · 99 waiting"] : n.quorum ? [`W=${n.quorum.w} R=${n.quorum.r}`] : n.window ? [windowSub(n.window), "9.5 s windows · waits 9.5 s"] : [];
         return [...work, down, ...(checked ? ["rejoining…"] : []), ...(canary ? ["rolled back"] : []), ...overload, ...open, ...roles, ...states];
       }
     }
   };
   return all().map((s) => fitSub(s, mode));
+}
+
+/** A stream processor's secondary label: how long its windows are, and how long each waits for late events. */
+export function windowSub(w: NonNullable<NodeSpec["window"]>) {
+  const secs = (ms: number) => (ms < 1000 ? `${ms} ms` : `${+(ms / 1000).toFixed(1)} s`);
+  return `${secs(w.sizeMs)} windows${w.latenessMs ? ` · waits ${secs(w.latenessMs)}` : ""}`;
 }
 
 const SHORT: [RegExp, string][] = [
@@ -568,6 +574,8 @@ const SHORT: [RegExp, string][] = [
   [/^(\d+\/\d+) connections$/, "$1 open"],
   [/^(\d+\/\d+) in flight$/, "$1 out"],
   [/^nearest healthy$/, "nearest"],
+  [/^(.+) windows · waits (.+)$/, "$1 · waits $2"],
+  [/^\d+\/\d+ · (\d+) unsaved$/, "$1 unsaved"],
 ];
 
 /** The shorter wording a secondary label takes in the narrow (compact and tall) layouts. */
@@ -617,6 +625,8 @@ export function edgesOf(spec: SceneSpec): Edge[] {
     if (n.quorum) targets.push(...n.quorum.replicas);
     if (n.reserve) targets.push(n.reserve.db);
     if (n.saga) targets.push(...flat(n.saga.undo));
+    // A stream processor's rows, written as each window closes.
+    if (n.window) targets.push(n.window.to);
     for (const t of targets) if (ids.has(t)) add(n.id, t, "flow");
     if (n.replicaOf && ids.has(n.replicaOf)) add(n.replicaOf, n.id, "sync");
     // A cluster's members beat and vote between themselves: copies' rails, not traffic's.

@@ -98,6 +98,8 @@ export interface ClientSpec {
   tag?: string;
   /** Share of requests for keys that don't exist: they always miss a cache, unless it remembers "not found". */
   absent?: number;
+  /** A share of events happened earlier than they arrive (a phone that was offline), by up to `maxMs`: their event time. */
+  lateness?: { share: number; maxMs: number };
   /** How many different missing keys those requests draw from (default a million, so they almost never repeat). */
   absentKeys?: number;
   /** Share of its jobs that are poison: every worker that tries one fails it. */
@@ -291,6 +293,18 @@ export interface NodeSpec {
   /** Lock: one write per key at a time goes on to `to`; the rest wait in line, and reads pass. A holder past `leaseMs` loses the lock. */
   lock?: { leaseMs: number };
   /**
+   * Stream processor: counts each event (a write) in the window of its event time, `sizeMs` long, and answers it at once.
+   * A window closes `latenessMs` after it ends and writes one row per key to `to`; an event for a window already closed
+   * is dropped. Its open windows are lost if it crashes, unless it `checkpoint`s them.
+   */
+  window?: { sizeMs: number; latenessMs?: number; to: string; checkpoint?: boolean };
+  /**
+   * Cache, on a write: `through` writes the database and keeps the new value; `behind` keeps it, answers at once and
+   * saves its unsaved keys every `flushMs` (lost if it crashes first); `around` writes the database and drops its copy.
+   */
+  writeMode?: "through" | "behind" | "around";
+  flushMs?: number;
+  /**
    * Server: its calls are the steps of a saga. When a step fails, the steps already done are undone in reverse, each by
    * the call at the same place in `undo`, and the request ends turned away (cancelled) rather than failed halfway.
    */
@@ -376,7 +390,9 @@ export type FxKind =
   /** A cluster member won an election and leads. */
   | "elect"
   /** A booking that would have taken an already-taken key (a double booking), or a write refused for it. */
-  | "conflict";
+  | "conflict"
+  /** A stream processor dropped an event whose window had already closed. */
+  | "late";
 
 export interface Fx {
   t: number;

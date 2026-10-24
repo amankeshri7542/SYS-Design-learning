@@ -46,9 +46,10 @@ const data: Partial<Sim> & ThisType<Sim> = {
       }
       this.remember(n, r, "ok");
       if (n.spec.outbox) n.outbox.push({ id: r.logicalId, key: r.key, tag: r.tag, t: this.t, sentAt: -Infinity });
-      const seq = ++this.seq;
-      this.truth.set(r.key, seq);
-      n.data.set(r.key, seq);
+      // A write-behind cache saving a key brings the number it gave the write; the newest number a key has seen stays.
+      const seq = r.flushed ? r.seq : ++this.seq;
+      if (!r.flushed) this.truth.set(r.key, seq);
+      n.data.set(r.key, Math.max(n.data.get(r.key) ?? 0, seq));
       r.seq = seq;
       if (this.partitioned && n.spec.region) {
         const s = this.writtenIn.get(n.spec.region) ?? new Set<number>();

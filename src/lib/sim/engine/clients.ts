@@ -38,6 +38,8 @@ const clients: Partial<Sim> & ThisType<Sim> = {
         const k = absent ? 1_000_000 + Math.floor(n.rng() * (c.absentKeys ?? 1_000_000)) : key;
         // A poison job, drawn only when the scene asks for them.
         const poison = !!c.poison && n.rng() < c.poison;
+        // An event that happened earlier than it arrives, drawn only when the scene asks.
+        const late = c.lateness && n.rng() < c.lateness.share ? n.rng() * c.lateness.maxMs : 0;
         // Held clients keep their clock and their draws, and send nothing: whenever the traffic starts, it is the
         // same traffic from then on.
         if (this.holding) {
@@ -47,7 +49,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
           const page = ++this.pageSeq;
           n.pages.set(page, { t0: t, left: c.page });
           for (let i = 0; i < c.page; i++) this.spawn(n, i, "read", t, 0, c.heavy && n.rng() < c.heavy.share ? c.heavy.cost : 1, { page });
-        } else this.spawn(n, k, absent ? "read" : op, t, 0, absent ? 1 : cost, { absent, poison });
+        } else this.spawn(n, k, absent ? "read" : op, t, 0, absent ? 1 : cost, { absent, poison, eventTime: t - late });
         n.nextArrival += this.gap(n, rate);
       }
     }
@@ -89,6 +91,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     r.absent = !!extra.absent;
     r.poison = !!extra.poison;
     r.page = extra.page ?? 0;
+    r.eventTime = extra.eventTime ?? first;
     // A news item gets the next number (a retry keeps its own).
     if (c.news) {
       r.news = extra.news ?? ++this.newsSeq;
@@ -167,7 +170,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     // One deadline for every attempt: once it has passed, there is no point trying again.
     if (p.deadline === "shared" && r.deadline <= at) return false;
     this.retries.add(this.t);
-    this.retrying.push({ at, client: n.spec.id, key: r.key, op: r.op, first: r.first, attempt: r.attempt + 1, cost: r.cost, logicalId: r.logicalId, absent: r.absent, poison: r.poison, deadline: r.deadline, page: r.page, news: r.news });
+    this.retrying.push({ at, client: n.spec.id, key: r.key, op: r.op, first: r.first, attempt: r.attempt + 1, cost: r.cost, logicalId: r.logicalId, absent: r.absent, poison: r.poison, deadline: r.deadline, page: r.page, news: r.news, eventTime: r.eventTime });
     return true;
   },
 };
