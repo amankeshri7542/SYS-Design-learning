@@ -78,10 +78,12 @@ const routing: Partial<Sim> & ThisType<Sim> = {
   limit(n: NodeRt, r: Req) {
     const l = n.spec.limit!;
     if (l.tags && !l.tags.includes(r.tag)) return this.send(r, this.resolve(n, n.spec.to![0]));
-    const b = n.buckets.get(r.tag) ?? { tokens: l.burst, t: this.t };
+    // One bucket per client, or (shared) one for everyone.
+    const key = l.shared ? "" : r.tag;
+    const b = n.buckets.get(key) ?? { tokens: l.burst, t: this.t };
     b.tokens = Math.min(l.burst, b.tokens + ((this.t - b.t) * l.rps) / 1000);
     b.t = this.t;
-    n.buckets.set(r.tag, b);
+    n.buckets.set(key, b);
     if (b.tokens < 1) {
       this.effect("reject", n.spec.id);
       return this.respond(r, "rejected");

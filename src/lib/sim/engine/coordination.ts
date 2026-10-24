@@ -333,7 +333,8 @@ const coordination: Partial<Sim> & ThisType<Sim> = {
     const w = n.waiters.get(key);
     while (w && w.length) {
       const next = w.shift()!;
-      if (next.abandoned || next.phase !== "parked") {
+      // Given up on by its client, and by every server on its way: nobody wants the key for it now.
+      if ((next.abandoned && !this.stillHeld(next)) || next.phase !== "parked") {
         if (next.phase === "parked") next.phase = "gone";
         continue;
       }

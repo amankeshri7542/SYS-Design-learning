@@ -20,6 +20,7 @@ export interface Sim {
   relay(n: NodeRt): void;
   rollback(lb: NodeRt): void;
   giveUp(n: NodeRt, r: Req): void;
+  stillHeld(r: Req): boolean;
   recordBreaker(n: NodeRt, ok: boolean): void;
 
   // clients.ts

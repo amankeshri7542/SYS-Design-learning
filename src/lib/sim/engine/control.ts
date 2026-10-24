@@ -221,10 +221,17 @@ const control: Partial<Sim> & ThisType<Sim> = {
     for (const r of [...n.held]) if (this.t - r.calledAt >= limit || (honour && r.deadline <= this.t)) this.giveUp(n, r);
   },
 
+  /** A server on its way still holds a worker for it, waiting on its call (and will give up on it in its own time). */
+  stillHeld(r: Req) {
+    return r.stack.some((f) => this.nodes.get(f.id)?.held.includes(r));
+  },
+
   /** Stop waiting on a downstream call: the original becomes a ghost, an error answer leaves from here. */
   giveUp(n: NodeRt, r: Req) {
     n.held.splice(n.held.indexOf(r), 1);
     r.orphanAt = n.spec.id;
+    // Lost on its way back after its client stopped waiting: now nobody waits for it.
+    if (r.phase === "lost" && r.abandoned && !this.stillHeld(r)) r.phase = "gone";
     const depth = r.stack.findIndex((f) => f.id === n.spec.id);
     // Still waiting to go out, it never will; on its way, its connection is given up on too.
     const q = n.sendq.indexOf(r);

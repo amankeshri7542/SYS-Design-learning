@@ -4138,7 +4138,7 @@ svg.stroke {
   }
   .beat {
     display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, auto) auto minmax(0, 1fr) auto;
     grid-template-rows: minmax(0, 1fr) auto;
     grid-template-areas:
       "text text text text"
@@ -4147,9 +4147,13 @@ svg.stroke {
     gap: 2px 10px;
     padding: 5px 12px 4px;
   }
+  /* One line, always: the two lines above it are the beat's. */
   .beat-tone {
     grid-area: tone;
+    overflow: hidden;
     font-size: var(--fs-caption);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .beat-text {
     grid-area: text;

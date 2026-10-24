@@ -1265,7 +1265,7 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
       else sub = s.algo === "least" ? "least busy" : s.algo === "random" ? "random" : "round robin";
       break;
     case "limiter":
-      sub = `${s.limit?.rps}/s per client`;
+      sub = s.limit?.shared ? `lets in ${s.limit.rps}/s` : `${s.limit?.rps}/s per client`;
       break;
     case "cache":
       sub = `${n.cache.size}/${s.capacity ?? 0} items`;

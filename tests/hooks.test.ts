@@ -97,6 +97,23 @@ test("loss is decided by what crosses which link, never by when: two worlds lose
   assert.notEqual(fate("u>s", r, 0), fate("u>s", { ...r, attempt: 1 }, 0));
 });
 
+test("an answer lost after its client stopped waiting stays held until the server waiting on it gives up, then ends", () => {
+  // The client gives up long before the server's own call timeout.
+  const sim = new Sim(
+    scene([client("u", 40, "s", { timeoutMs: 300 }), server("s", { slots: 32, serviceMs: 5, blocking: true, to: ["db"], callTimeoutMs: 900 }), server("db", { slots: 8, serviceMs: 5 })], {
+      links: { "s>db": { ms: 10, loss: 0.3 } },
+      windowMs: 1e9,
+    }),
+  );
+  for (let t = 0; t < 3000; t += 20) {
+    sim.step(20);
+    assert.deepEqual(leakedHolds(sim).slice(0, 1), [], `at ${sim.t} ms`);
+  }
+  assert.ok(sim.fx.some((f) => f.kind === "lost"), "answers were lost");
+  // Nothing lost lingers past the server's give-up.
+  assert.equal(sim.reqs.filter((r) => r.phase === "lost" && sim.t - r.born > 1500).length, 0);
+});
+
 test("a narrow link lets only so many crossings through at once; the rest wait at its start", () => {
   const sim = new Sim(scene([client("u", 60, "s"), server("s", { serviceMs: 5, slots: 32 })], { links: { "u>s": { ms: 100, parallel: 2 } } }));
   let worst = 0;
@@ -1285,6 +1302,83 @@ test("bookings: read-check-write double books; compare-and-set and a lock never 
     assert.ok(value(s, m("rejected")) > 0.1, `${mode}: the second shopper is turned away`);
     assert.deepEqual(leakedHolds(s), [], mode);
   }
+});
+
+test("a saga's undo at an idempotent step is done, not answered from the note of the step it undoes", () => {
+  const s = run(
+    scene(
+      [
+        client("u", 20, "orders", { keys: 1000, writes: 1, timeoutMs: 2000 }),
+        server("orders", { slots: 16, serviceMs: 2, blocking: true, calls: { write: ["pay", "ship"] }, saga: { undo: ["pay", "ship"] }, callTimeoutMs: 1000 }),
+        server("pay", { slots: 8, serviceMs: 5, idempotent: true }),
+        server("ship", { slots: 8, serviceMs: 5, failRate: 1 }),
+      ],
+      { windowMs: 1e9 },
+    ),
+    2000,
+  );
+  const orders = s.nodes.get("orders")!.served;
+  // Every order is charged, fails at shipping, and is refunded: two pieces of work at Payments each.
+  assert.ok(s.nodes.get("pay")!.served > 1.8 * orders, `charge and refund (${s.nodes.get("pay")!.served} for ${orders})`);
+  assert.equal(value(s, m("inconsistent")), 0);
+});
+
+test("a topic's copy of a big message costs as much to serve as the message", () => {
+  const busy = (cost: number) =>
+    value(
+      run(
+        scene(
+          [
+            client("p", 5, "topic", { writes: 1, heavy: { share: 1, cost } }),
+            { id: "topic", kind: "topic", label: "topic", at: [40, 50], to: ["db"] },
+            { id: "db", kind: "db", label: "db", at: [90, 50], slots: 1, serviceMs: 10 } as NodeSpec,
+          ],
+          { windowMs: 2000 },
+        ),
+        3000,
+      ),
+      m("util", { nodes: ["db"] }),
+    );
+  assert.ok(busy(10) > 4 * busy(1), `ten times the work (${busy(1)} → ${busy(10)})`);
+});
+
+test("bookings: a plain read at a booking server is served as usual, and books nothing", () => {
+  const spec = (writes: number) =>
+    scene(
+      [
+        client("u", 60, "book", { keys: 400, writes, timeoutMs: 2000 }),
+        server("book", { slots: 32, serviceMs: 5, reserve: { db: "db" }, calls: { read: ["db"] }, blocking: true }),
+        { id: "db", kind: "db", label: "db", at: [90, 50], slots: 8, serviceMs: 15 } as NodeSpec,
+      ],
+      { links: { "book>db": 10 }, windowMs: 1e9 },
+    );
+  const reads = run(spec(0), 2000);
+  assert.ok(value(reads, m("throughput")) > 40, "reads are answered");
+  assert.equal(value(reads, m("rejected")), 0, "no read is turned away as sold out");
+  assert.equal(reads.nodes.get("db")!.data.size, 0, "no read writes a key");
+  assert.ok(run(spec(1), 2000).nodes.get("db")!.data.size > 50, "a write still books its key");
+});
+
+test("a lock holds back writes to a held key, never reads", () => {
+  const s = run(
+    scene(
+      [
+        client("u", 40, "lk", { keys: 1, writes: 0.5, timeoutMs: 1e9 }),
+        { id: "lk", kind: "server", label: "lock", at: [30, 50], lock: { leaseMs: 1e9 }, to: ["w"] } as NodeSpec,
+        server("w", { slots: 4, serviceMs: 10, downMode: "hang" }),
+      ],
+      { windowMs: 1e9, timeoutMs: undefined },
+    ),
+    500,
+  );
+  // A hung write holds the only key forever: writes queue behind it, reads still reach the server.
+  s.setUp("w", false);
+  s.step(20);
+  s.setUp("w", true);
+  s.step(1000);
+  const after = s.done.filter((d) => d.t > 700);
+  assert.ok(after.length > 10 && after.every((d) => d.op === "read"), `only reads get through (${after.length})`);
+  assert.ok((s.nodes.get("lk")!.waiters.get(s.nodes.get("lk")!.locks.keys().next().value!)?.length ?? 0) > 5, "writes wait in line");
 });
 
 test("a lock's lease frees a key whose holder hangs; without one, everyone behind it waits", () => {
