@@ -15,6 +15,7 @@ export const STORY_MODULES: Record<string, Load> = {
   "ride-matching": () => import("./ride-matching"),
   "news-feed": () => import("./news-feed"),
   payments: () => import("./payments"),
+  "click-counting": () => import("./click-counting"),
 };
 
 const loaded = new Map<string, Promise<StoryDef>>();
