@@ -106,7 +106,14 @@ test("the keys: ] brings on a beat, [ shows the last one again, f follows a requ
   // Paused, the build lines move only when the keys move them (playing, they also come on by themselves).
   await page.keyboard.press(" ");
   await expect(page.locator(".dock .btn-play")).toHaveAttribute("aria-pressed", "false");
-  await page.keyboard.press("]");
+  // Under load the first build lines may come on before the pause takes hold: step back to the first, wherever it got to.
+  await expect
+    .poll(async () => {
+      const text = (await beatText(page)) ?? "";
+      if (!text.includes("Users")) await page.keyboard.press(text ? "[" : "]");
+      return text;
+    })
+    .toContain("Users");
   await page.keyboard.press("]");
   await expect.poll(() => beatText(page)).toContain("App server");
   await page.keyboard.press("[");

@@ -72,6 +72,14 @@ const TERMS: Term[] = [
   // Resilience
   { key: "token-bucket", name: "Token bucket", alias: "rate limit", short: "Each client earns tokens at a steady rate up to a small store; each request spends one.", show: { lesson: "rate-limiting", focus: { nodes: ["lim"] } } },
   { key: "circuit-breaker", name: "Circuit breaker", short: "Stops calling a failing dependency for a while after repeated failures, then tests it with one call.", show: { lesson: "circuit-breakers", focus: { nodes: ["shop"] } } },
+  { key: "load-shedding", name: "Load shedding", alias: "admission control", short: "Turning some requests away at once when overloaded, so the ones you keep are still served on time.", show: { lesson: "load-shedding", focus: { nodes: ["app"] } } },
+  { key: "bulkhead", name: "Bulkhead", alias: "pool isolation", short: "A separate pool of workers for one kind of work, so a slow dependency can't take them all.", show: { lesson: "bulkheads", focus: { nodes: ["app"], sockets: true } } },
+  { key: "cascade", name: "Cascading failure", alias: "domino failure", short: "One part fails, its load lands on the others, and they fail too, one after another.", show: { lesson: "cascading-failures", focus: { nodes: ["s2", "s3", "s4"] } } },
+  { key: "headroom", name: "Headroom", alias: "N+1 capacity", short: "Spare capacity, so losing one server leaves enough for everyone.", show: { lesson: "cascading-failures", focus: { metric: "Answered" } } },
+  // Operating
+  { key: "canary", name: "Canary release", alias: "canary deployment", short: "Sending a small share of traffic to a new version first, so a bad one hurts only a few users.", show: { lesson: "canary-rollouts", focus: { nodes: ["c"] } } },
+  { key: "rollback", name: "Rollback", short: "Going back to the previous version. Automatic when a canary's errors pass a limit.", show: { lesson: "canary-rollouts", focus: { nodes: ["lb", "c"] } } },
+  { key: "draining", name: "Draining", alias: "graceful shutdown, connection draining", short: "A server leaves the rotation, finishes the work it has, and only then stops.", show: { lesson: "graceful-shutdown", focus: { nodes: ["s1", "s2", "s3"] } } },
 ];
 
 export const GLOSSARY: ReadonlyMap<string, Term> = new Map(TERMS.map((t) => [t.key, t]));

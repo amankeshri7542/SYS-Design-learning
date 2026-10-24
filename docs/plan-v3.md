@@ -734,7 +734,7 @@ Every new lesson follows §8 and its curriculum §3 row. Add a `requires` entry 
 **Acceptance:**
 - [x] Every existing lesson's tuned metrics are unchanged after the engine PR: `npm run tune -- --json` is byte-for-byte the same before and after.
 - [x] Lossy-link scenes lose the same `(logicalId, attempt)` set in both worlds (`tests/hooks.test.ts`, two worlds with different downstreams).
-- [ ] Every new lesson passes claims, beats validation, fairness and stage-fit.
+- [x] Every new lesson passes claims, beats validation, fairness and stage-fit.
 - [x] The home page's "Start" button points at N1.
 
 Engine PR gates on 2026-10-24: typecheck, 166 unit tests (28 in `tests/hooks.test.ts`, 3 catalog-wide properties in `tests/invariants.test.ts`, one new scene rule), build, and the browser suite: 452 tests, of which 441 passed and 11 were skipped, the 4 frame budgets included.
@@ -778,6 +778,17 @@ Gates on 2026-10-24: typecheck, 207 unit tests, build, and the browser suite: 61
 - **F6 warms up for 12 s** (`warmMs`) so its 20 s availability window already holds about 720 answers when the learner crashes the server. The claim test now runs a scene's warm-up before averaging, as the player does; the one other lesson with an armed fault and a warm-up (D4) still passes. The error budget row draws its remaining share as a gauge, the same ink rule as the time rows. The availability gauge the plan named is this row.
 - **D1 prices reads and writes with `serviceBy`:** a scan costs 0.6 ms per 1,000 rows, an index 1 + ¼·log₂(rows) ms, and a write 4 ms, or 10 ms with the index to update. "Double the table" rebuilds the scene with twice the rows.
 - **Edge added:** D1 before D2.
+
+**Decisions made while building R4, R5, R6, O1 and O2:**
+
+Gates on 2026-10-24: typecheck, 227 unit tests, build, and the browser suite: 696 tests, of which 685 passed and 11 were skipped, the 4 frame budgets included. A first full run failed R4's panel fit at 1280×720 (fixed by cutting a knob) and the keyboard test on both phone projects, the M5 race again: the test now steps back to the first build line before checking the keys, and passed 20 of 20. R5, R6, O1 and O2 were checked by eye at the four sizes, light and dark.
+
+- **No engine changes.** Each lesson uses the batch 1 hooks as built.
+- **R4's spike rebuilds the scene with browsing at 110 a second** (an armed `reconfigure`), so the arrivals stay identical until the learner presses it. Shedding keeps checkout (`keep`) and serves it first (`priority`). An Order knob (checkout first, newest first, oldest first) was cut: with two knobs the panel overflowed 1280×720.
+- **R5 keeps workers per tag:** checkout's 4 (`bulkheads`); browsing, untagged in the bulkhead, uses the other 6.
+- **R6 crashes a server swamped for 0.4 s** (more than 16 waiting) and restarts it 0.7 s later with its workers returning over 1.2 s. The fix has five servers and sheds past 8 waiting; its knobs show that shedding alone also stops the cascade, at the cost of users turned away. Five servers in a row make small stations on a portrait phone; their labels stay full size.
+- **O1's canary replaces the fourth server** and gets its share by weight. A rollback lasts for the rest of the run: the balancer never sends to the canary again, even after v1 is back.
+- **O2's deploy is an armed sequence per server** (restart, stop if still busy at the drain limit, back after 0.3 s), fired from one custom action; its undo cancels the rest and starts any server that is down. A drained server goes off once idle, and is stopped only if it still holds work when its drain time runs out.
 
 ### M7 — Engine B2a (messages and delivery) and 7 lessons (L)
 
