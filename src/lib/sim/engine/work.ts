@@ -1,4 +1,4 @@
-import type { Call } from "../types";
+import type { Call, Result } from "../types";
 import { Win, type NodeRt, type Req } from "./model";
 import { Sim } from "./sim";
 
@@ -13,7 +13,8 @@ const work: Partial<Sim> & ThisType<Sim> = {
       return this.respond(r, "error");
     }
     if (!n.up || !n.on) {
-      if (n.spec.sink && n.on) {
+      // A paused worker keeps its jobs; a copy from a queue that keeps jobs until acked is simply lost (no ack comes).
+      if (n.spec.sink && n.on && !r.deliveryOf) {
         n.queue.push(r);
         r.phase = "wait";
         r.queuedAt = this.t;
@@ -43,8 +44,55 @@ const work: Partial<Sim> & ThisType<Sim> = {
         return this.admit(n, r);
       default:
         if (n.spec.sessions && !this.signedIn(n, r)) return this.respond(r, "error");
+        if (n.spec.idempotent && this.repeat(n, r)) return;
+        if (r.deliveryOf && this.nodes.get(r.stack[0]?.id)?.spec.ack?.mode === "receive") this.sendAck(n, r);
         return this.admit(n, r);
     }
+  },
+
+  /** The idempotency note for a logical message: its sender and id. */
+  noteOf(r: Req) {
+    return `${r.client}:${r.logicalId}`;
+  },
+
+  /**
+   * An idempotent node has done this message before: answer it from its note, without doing the work again (a job is
+   * acknowledged, so its queue stops handing it out).
+   */
+  repeat(n: NodeRt, r: Req) {
+    const note = n.done.get(this.noteOf(r));
+    if (!note) return false;
+    this.effect("dupe", n.spec.id);
+    if (r.detached) {
+      if (r.deliveryOf) this.sendAck(n, r);
+      r.phase = "gone";
+    } else this.respond(r, note.result);
+    return true;
+  },
+
+  /** Note a finished message; a node that isn't idempotent and has done it before counts a duplicate. */
+  remember(n: NodeRt, r: Req, result: Result) {
+    if (n.spec.idempotent === undefined) return;
+    const note = this.noteOf(r);
+    if (n.done.has(note)) n.dupes.add(this.t);
+    n.done.set(note, { t: this.t, id: r.logicalId, result });
+  },
+
+  /** A worker tells the queue it has the job (or has finished it): a small green ack back to the queue. */
+  sendAck(n: NodeRt, r: Req) {
+    const q = r.stack[0]?.id;
+    if (r.acked || !q) return;
+    r.acked = true;
+    const a = this.make(n.spec.id, "ack", r.key, r.tag);
+    a.detached = true;
+    a.ack = true;
+    a.deliveryOf = r.deliveryOf;
+    a.stack = [
+      { id: q, calls: [] },
+      { id: n.spec.id, calls: [] },
+    ];
+    a.at = n.spec.id;
+    this.respond(a, "ok");
   },
 
   /**
@@ -122,15 +170,52 @@ const work: Partial<Sim> & ThisType<Sim> = {
     c.stack = [{ id: n.spec.id, calls: [] }];
     c.at = n.spec.id;
     c.logicalId = r.logicalId;
+    c.poison = r.poison;
     return c;
   },
 
   enqueue(n: NodeRt, r: Req) {
     if (n.queue.length >= (n.spec.capacity ?? Infinity)) return this.fail(n, r);
+    const bp = n.spec.backpressure;
+    if (bp && !r.deadLetter) {
+      if (bp.mode === "wait" && (n.waiting.length || n.queue.length >= bp.high)) {
+        // Back-pressure: the producer's request waits here until there is room, so the producer slows down.
+        r.phase = "parked";
+        n.waiting.push(r);
+        return;
+      }
+      if (n.queue.length >= bp.high) {
+        if (bp.mode === "reject") return this.refuse(n, r);
+        if (bp.mode === "drop-oldest") {
+          n.queue.shift()!.phase = "gone";
+          this.lostJobs.add(this.t);
+          this.effect("drop", n.spec.id, 0);
+        }
+      }
+    }
+    this.accept(n, r);
+  },
+
+  /** A job goes in the line; its producer hears "ok" (a dead letter is just stored). */
+  accept(n: NodeRt, r: Req) {
     const job = this.clone(n, r);
     job.phase = "wait";
     n.queue.push(job);
-    this.respond(r, "ok");
+    if (r.deadLetter) r.phase = "gone";
+    else this.respond(r, "ok");
+  },
+
+  /** Back-pressure: as the line shrinks below its low mark, the held producers' jobs go in, oldest first. */
+  unblock(n: NodeRt) {
+    const bp = n.spec.backpressure!;
+    while (n.waiting.length && n.queue.length < (bp.low ?? bp.high)) {
+      const r = n.waiting.shift()!;
+      if (r.abandoned || r.phase !== "parked") {
+        if (r.phase === "parked") r.phase = "gone";
+        continue;
+      }
+      this.accept(n, r);
+    }
   },
 
   publish(n: NodeRt, r: Req) {
@@ -214,17 +299,39 @@ const work: Partial<Sim> & ThisType<Sim> = {
     const workers = this.flat(n.spec.to)
       .map((id) => this.nodes.get(id))
       .filter((w): w is NodeRt => !!w && w.on && w.up);
+    const first = n.spec.consumers === "first";
+    const ack = n.spec.ack;
     let i = 0;
     while (n.queue.length && i < workers.length * 2) {
-      const w = workers[n.rr++ % workers.length];
+      if (ack?.ordered && n.inflight.size) break;
+      // One consumer per partition: the first live worker takes every job, and the next takes over if it fails.
+      const w = first ? workers[0] : workers[n.rr++ % workers.length];
       i++;
       if (!w) break;
       const busy = w.work.length + w.held.length + w.queue.length + w.incoming;
-      if (busy >= (w.spec.slots ?? 1)) continue;
+      if (busy >= (w.spec.slots ?? 1)) {
+        if (first) break;
+        continue;
+      }
       const job = n.queue.shift()!;
-      this.send(job, w.spec.id);
+      if (ack) this.handOut(n, job, w.spec.id);
+      else this.send(job, w.spec.id);
       i = 0;
     }
+    if (n.waiting.length) this.unblock(n);
+  },
+
+  /** A queue that keeps jobs until acked hands out a copy, and keeps the job, invisible, until the copy is acked. */
+  handOut(n: NodeRt, job: Req, to: string) {
+    const copy = this.clone(n, job);
+    copy.born = job.born;
+    copy.first = job.first;
+    copy.attempt = job.attempt;
+    copy.cost = job.cost;
+    copy.deliveryOf = copy.id;
+    job.phase = "parked";
+    n.inflight.set(copy.id, { job, at: this.t });
+    this.send(copy, to);
   },
 
   finish(n: NodeRt) {
@@ -246,12 +353,20 @@ const work: Partial<Sim> & ThisType<Sim> = {
     n.served++;
     // A bad deploy: some share of the work fails.
     if (n.spec.failRate && n.rng() < n.spec.failRate) return this.fail(n, r);
+    // A poison job fails every worker that tries it.
+    if (r.poison && n.spec.sink) return this.fail(n, r);
     if (n.spec.kind === "db") return this.dbDone(n, r);
     const calls = (n.spec.calls?.[r.op === "write" ? "write" : "read"] ?? n.spec.to ?? []).slice();
     if (!calls.length) {
+      this.remember(n, r, "ok");
       if (n.spec.sink) {
+        if (r.deliveryOf) this.sendAck(n, r);
         r.phase = "gone";
         this.jobs.push({ t: this.t, lat: this.t - r.born });
+        // Finished before an earlier job for the same key: out of order.
+        const last = this.lastDone.get(r.key);
+        if (last !== undefined && r.born < last) this.reordered.add(this.t);
+        else this.lastDone.set(r.key, r.born);
         this.effect("done", n.spec.id);
         return;
       }
@@ -287,6 +402,17 @@ const work: Partial<Sim> & ThisType<Sim> = {
       return;
     }
     if (r.orphanAt === n.spec.id) {
+      r.phase = "gone";
+      return;
+    }
+    // An ack lands at its queue, which forgets the job; an outbox event accepted downstream leaves the outbox.
+    if (r.op === "ack") {
+      if (n.spec.kind === "queue") n.inflight.delete(r.deliveryOf);
+      r.phase = "gone";
+      return;
+    }
+    if (r.relay) {
+      if (r.result !== "error") n.outbox = n.outbox.filter((e) => e.id !== r.logicalId);
       r.phase = "gone";
       return;
     }

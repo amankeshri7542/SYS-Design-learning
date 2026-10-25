@@ -1253,7 +1253,8 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
       sub = `${n.cache.size}/${s.capacity ?? 0} items`;
       break;
     case "queue":
-      sub = `${n.queue.length} waiting`;
+      // Jobs out with workers and not yet acked, or producers held back by back-pressure, are news too.
+      sub = `${n.queue.length} waiting${n.inflight.size ? ` · ${n.inflight.size} out` : n.waiting.length ? ` · ${n.waiting.length} held` : ""}`;
       break;
     case "topic":
       sub = `${sim.flat(s.to).length} subscribers`;
@@ -1273,5 +1274,7 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
   const badge = s.kind === "db" && s.leader && sim.partitioned ? { text: "CUT OFF", tone: "bad" } : shedding ? { text: "SHEDDING", tone: "warn" } : undefined;
   // A station with no workers at all is stalled: news, even before a line forms.
   const stalled = (s.kind === "server" || s.kind === "db") && !slots && !s.sink;
-  return { cls: n.hot ? "hot" : stalled ? "stalled" : "", sub, badge, pill };
+  // A dead-letter queue keeps the jobs given up on: a red rim, the colour of failure.
+  const dlq = s.kind === "queue" && sim.list.some((q) => q.spec.ack?.deadLetter === s.id);
+  return { cls: n.hot ? "hot" : stalled ? "stalled" : dlq ? "dlq" : "", sub, badge, pill };
 }

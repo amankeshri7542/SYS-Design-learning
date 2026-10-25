@@ -65,6 +65,18 @@ export interface Req {
   queuedAt: number;
   /** Of this crossing's time, how much is sending its payload down a thin link (output only: the stage stretches it). */
   xfer: number;
+  /** An acknowledgement: drawn small and green. */
+  ack: boolean;
+  /** A poison job: every worker fails it. */
+  poison: boolean;
+  /** A job handed out by a queue that keeps it until acked: the id of this copy's entry there (0: none). */
+  deliveryOf: number;
+  /** This copy was acknowledged on receipt, so if its worker dies the job is lost. */
+  acked: boolean;
+  /** Sent by a database's outbox relay. */
+  relay: boolean;
+  /** On its way to a dead-letter queue: it is stored there, and nothing answers it. */
+  deadLetter: boolean;
 }
 
 export interface Entry {
@@ -158,6 +170,17 @@ export interface NodeRt {
   shedAt: number;
   /** Sessions it holds in memory (`client:key`), lost when it crashes. */
   sessions: Set<string>;
+  /** Idempotency notes: each logical message it finished (`client:logicalId`), when, and with what result. */
+  done: Map<string, { t: number; id: number; result: Result }>;
+  /** When it did a message's work again (not idempotent). */
+  dupes: Win;
+  /** Queue with acks: jobs handed out and not yet acknowledged, by the copy's id. */
+  inflight: Map<number, { job: Req; at: number }>;
+  /** Queue with back-pressure: producers' requests held until there is room. */
+  waiting: Req[];
+  /** Database with an outbox: events not yet accepted downstream. */
+  outbox: { id: number; key: number; tag: string; t: number; sentAt: number }[];
+  nextRelay: number;
 }
 
 export interface Note {

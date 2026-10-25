@@ -16,6 +16,8 @@ export interface Sim {
   callTimeouts(n: NodeRt): void;
   overload(n: NodeRt): void;
   cancelLate(n: NodeRt): void;
+  visibility(n: NodeRt): void;
+  relay(n: NodeRt): void;
   rollback(lb: NodeRt): void;
   giveUp(n: NodeRt, r: Req): void;
   recordBreaker(n: NodeRt, ok: boolean): void;
@@ -24,7 +26,7 @@ export interface Sim {
   rate(n: NodeRt): number;
   gap(n: NodeRt, rate: number): number;
   arrivals(): void;
-  spawn(n: NodeRt, key: number, op: Op, first: number, attempt: number, cost: number, extra?: { logicalId?: number; absent?: boolean; deadline?: number }): void;
+  spawn(n: NodeRt, key: number, op: Op, first: number, attempt: number, cost: number, extra?: { logicalId?: number; absent?: boolean; poison?: boolean; deadline?: number }): void;
   finishAtClient(n: NodeRt, r: Req): void;
   timeout(r: Req): void;
   retry(n: NodeRt, r: Req): boolean;
@@ -68,6 +70,13 @@ export interface Sim {
   fail(n: NodeRt, r: Req): void;
   admit(n: NodeRt, r: Req): void;
   refuse(n: NodeRt, r: Req): void;
+  noteOf(r: Req): string;
+  repeat(n: NodeRt, r: Req): boolean;
+  remember(n: NodeRt, r: Req, result: Result): void;
+  sendAck(n: NodeRt, r: Req): void;
+  accept(n: NodeRt, r: Req): void;
+  unblock(n: NodeRt): void;
+  handOut(n: NodeRt, job: Req, to: string): void;
   signedIn(n: NodeRt, r: Req): boolean;
   clone(n: NodeRt, r: Req): Req;
   enqueue(n: NodeRt, r: Req): void;
@@ -123,6 +132,13 @@ export class Sim {
   linkBusy = new Map<string, number[]>();
   /** Which server holds each user's session (`client:key`), for servers that keep sessions in memory. */
   sessionOf = new Map<string, string>();
+  /** Jobs accepted and then lost (a worker died after acking on receipt, a queue dropped or lost them), redelivered, dead-lettered, and finished out of order for their key. */
+  lostJobs: Win;
+  redelivered: Win;
+  deadLettered: Win;
+  reordered: Win;
+  /** The latest-born job finished so far for each key, to spot jobs finished out of order. */
+  lastDone = new Map<number, number>();
   tracing: boolean;
   seq = 0;
   truth = new Map<number, number>();
@@ -130,7 +146,7 @@ export class Sim {
   nextId = 1;
   acc = 0;
   /** Retries waiting for their moment. */
-  retrying: { at: number; client: string; key: number; op: Op; first: number; attempt: number; cost: number; logicalId: number; absent: boolean; deadline: number }[] = [];
+  retrying: { at: number; client: string; key: number; op: Op; first: number; attempt: number; cost: number; logicalId: number; absent: boolean; poison: boolean; deadline: number }[] = [];
   retryRng: () => number;
   cycleStart = 0;
   cursor = 0;
@@ -154,6 +170,10 @@ export class Sim {
     this.lostCrossings = new Win(this.windowMs);
     this.sloAll = new Win(spec.sloWindowMs ?? this.windowMs * 10);
     this.sloGood = new Win(spec.sloWindowMs ?? this.windowMs * 10);
+    this.lostJobs = new Win(this.windowMs);
+    this.redelivered = new Win(this.windowMs);
+    this.deadLettered = new Win(this.windowMs);
+    this.reordered = new Win(this.windowMs);
     this.retryRng = mulberry32(this.seed ^ 0x9e3779b9);
     this.reconfigure(spec);
   }
@@ -252,6 +272,12 @@ export class Sim {
       rolledBack: new Set(),
       shedAt: -1e9,
       sessions: new Set(),
+      done: new Map(),
+      dupes: new Win(this.windowMs),
+      inflight: new Map(),
+      waiting: [],
+      outbox: [],
+      nextRelay: 0,
     };
     if (spec.client) {
       const r = this.rate(rt);
@@ -286,6 +312,17 @@ export class Sim {
     if (!up) {
       n.cache.clear();
       n.sessions.clear();
+      // A worker's copies from a queue that keeps jobs until acked die with it: the queue hands them out again, unless
+      // they were acked on receipt, in which case they are lost.
+      if (n.spec.sink) {
+        for (const r of [...n.queue, ...n.work]) {
+          if (!r.deliveryOf) continue;
+          if (r.acked) this.lostJobs.add(this.t);
+          r.phase = "gone";
+        }
+        n.queue = n.queue.filter((r) => !r.deliveryOf);
+        n.work = n.work.filter((r) => !r.deliveryOf);
+      }
       if (!n.spec.sink && n.spec.kind !== "queue") {
         for (const r of [...n.queue, ...n.work]) this.fail(n, r);
         n.queue = [];
@@ -300,11 +337,13 @@ export class Sim {
 
   /**
    * Every request this node is holding on to, whatever the container: its line, its workers, the calls its workers wait
-   * on, requests hung on it, and readers waiting on a cache fill. A new container must be listed here.
+   * on, requests hung on it, readers waiting on a cache fill, a queue's jobs out with workers, and producers held back
+   * by back-pressure. A new container must be listed here.
    */
   holds(n: NodeRt): Req[] {
-    const out = [...n.queue, ...n.work, ...n.held, ...n.parked.filter((r) => r.phase === "parked")];
+    const out = [...n.queue, ...n.work, ...n.held, ...n.parked.filter((r) => r.phase === "parked"), ...n.waiting];
     for (const w of n.waiters.values()) out.push(...w);
+    for (const e of n.inflight.values()) out.push(e.job);
     return out;
   }
 
@@ -434,6 +473,8 @@ export class Sim {
     if (this.jobs.length && this.jobs[0].t < from) this.jobs = this.jobs.filter((d) => d.t >= from);
     if (this.workLog.length && this.workLog[0].t < from) this.workLog = this.workLog.filter((d) => d.t >= from);
     if (this.fx.length > 120) this.fx = this.fx.slice(-80);
+    // Idempotency notes are kept 30 s: long past any retry or redelivery the scenes make.
+    if (this.t % 1000 === 0) for (const n of this.list) for (const [k, v] of n.done) if (v.t < this.t - 30_000) n.done.delete(k);
   }
 
   make(client: string, op: Op, key: number, tag: string): Req {
@@ -477,6 +518,12 @@ export class Sim {
       work: 0,
       queuedAt: 0,
       xfer: 0,
+      ack: false,
+      poison: false,
+      deliveryOf: 0,
+      acked: false,
+      relay: false,
+      deadLetter: false,
     };
     this.reqs.push(r);
     return r;

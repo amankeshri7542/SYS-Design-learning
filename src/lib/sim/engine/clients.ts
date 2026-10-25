@@ -33,9 +33,11 @@ const clients: Partial<Sim> & ThisType<Sim> = {
         // A request for a key that doesn't exist: a read of a key no one ever writes. Drawn only when the scene asks.
         const absent = !!c.absent && n.rng() < c.absent;
         const k = absent ? 1_000_000 + Math.floor(n.rng() * (c.absentKeys ?? 1_000_000)) : key;
+        // A poison job, drawn only when the scene asks for them.
+        const poison = !!c.poison && n.rng() < c.poison;
         // Held clients keep their clock and their draws, and send nothing: whenever the traffic starts, it is the
         // same traffic from then on.
-        if (!this.holding) this.spawn(n, k, absent ? "read" : op, t, 0, absent ? 1 : cost, { absent });
+        if (!this.holding) this.spawn(n, k, absent ? "read" : op, t, 0, absent ? 1 : cost, { absent, poison });
         n.nextArrival += this.gap(n, rate);
       }
     }
@@ -60,6 +62,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     // One identity for the logical request, the same in every world: a retry keeps it.
     r.logicalId = extra.logicalId ?? (hashStr(n.spec.id) ^ Math.imul(++n.spawned, 0x9e3779b1)) >>> 0;
     r.absent = !!extra.absent;
+    r.poison = !!extra.poison;
     const timeout = c.timeoutMs ?? this.spec.timeoutMs;
     if (extra.deadline !== undefined && c.retry?.deadline === "shared") r.deadline = extra.deadline;
     else if (timeout) r.deadline = this.t + timeout;
@@ -106,7 +109,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     // One deadline for every attempt: once it has passed, there is no point trying again.
     if (p.deadline === "shared" && r.deadline <= at) return false;
     this.retries.add(this.t);
-    this.retrying.push({ at, client: n.spec.id, key: r.key, op: r.op, first: r.first, attempt: r.attempt + 1, cost: r.cost, logicalId: r.logicalId, absent: r.absent, deadline: r.deadline });
+    this.retrying.push({ at, client: n.spec.id, key: r.key, op: r.op, first: r.first, attempt: r.attempt + 1, cost: r.cost, logicalId: r.logicalId, absent: r.absent, poison: r.poison, deadline: r.deadline });
     return true;
   },
 };
