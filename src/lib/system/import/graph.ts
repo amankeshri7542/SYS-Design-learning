@@ -174,3 +174,11 @@ export function toDoc(g: Graph, name: string): Imported {
     errors: [],
   };
 }
+
+/** What was taken from a name, unless the name already says it ("Load balancer"), as one note (or none). */
+export function guessNote(guesses: Imported["guesses"]): string[] {
+  const guessed = guesses.filter((g) => g.kind !== "service" && g.kind !== "users" && !g.name.toLowerCase().includes(KINDS[g.kind].name.toLowerCase()));
+  return guessed.length
+    ? [`Took ${guessed.slice(0, 6).map((g) => `${g.name} for ${article(KINDS[g.kind].name)}`).join(", ")}${guessed.length > 6 ? " and more" : ""}, from what they're called. Change any under “What it is”.`]
+    : [];
+}

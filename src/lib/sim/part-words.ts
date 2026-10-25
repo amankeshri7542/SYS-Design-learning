@@ -222,7 +222,7 @@ export function setupOf(n: NodeSpec): string {
     else out.push(n.queueMax ? `holds ${n.queueMax} jobs at most` : "holds every job, however many");
     if (n.ack) out.push(`keeps each job until a worker says it is done, ${n.ack.maxDeliveries ? `${n.ack.maxDeliveries} tries at most` : "however long"}`);
   }
-  if (n.kind === "topic") out.push(`copies each message to ${(n.to ?? []).flat().length} subscribers`);
+  if (n.kind === "topic") out.push(`copies each message to ${(n.to ?? []).flat().length === 1 ? "one subscriber" : `${(n.to ?? []).flat().length} subscribers`}`);
   const s = out.slice(0, 3).join(", ");
   return s ? `${sentence(s)}.` : "";
 }

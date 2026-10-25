@@ -11,7 +11,8 @@ export { FORMATS, detect, type Format } from "./detect";
 
 /** Read text in the format it seems to be (or the one named), into a system. */
 export function readSystem(text: string, format: Format = detect(text), name = "My system"): Imported & { format: Format } {
-  const read = format === "json" ? readJson(text) : format === "compose" ? readCompose(text) : format === "csv" ? readCsv(text) : readArrows(text);
+  // A trace is opened by `trace/open.ts`; here it is only JSON that isn't a System Lab file.
+  const read = format === "json" || format === "trace" ? readJson(text) : format === "compose" ? readCompose(text) : format === "csv" ? readCsv(text) : readArrows(text);
   if ("doc" in read) return { ...read, format };
   if (read.errors.length) return { doc: null, guesses: [], notes: [], errors: read.errors, format };
   const out = toDoc(read.graph, name);

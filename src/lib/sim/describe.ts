@@ -63,7 +63,7 @@ export function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): View {
       sub = `${n.queue.length} waiting${n.inflight.size ? ` · ${n.inflight.size} out` : n.waiting.length ? ` · ${n.waiting.length} held` : ""}`;
       break;
     case "topic":
-      sub = `${sim.flat(s.to).length} subscribers`;
+      sub = `${sim.flat(s.to).length} subscriber${sim.flat(s.to).length === 1 ? "" : "s"}`;
       break;
     default:
       if (s.cluster) sub = n.raft.role === "leader" ? `leads · term ${n.raft.term}` : n.raft.role === "candidate" ? "asks for votes" : `term ${n.raft.term}`;

@@ -19,9 +19,9 @@ const ROUNDS = 6;
 /** The most workers a part can have (as `validate` says). */
 const MOST = 64;
 
-/** How busy each part was over a run (the busiest of its stations), whether its line kept growing, and the slowest 1
- * in 20 of people's answers. */
-async function measure(doc: SystemDoc): Promise<{ parts: Map<string, { busy: number; full: boolean }>; p95: number } | null> {
+/** How busy each part was over a run (the busiest of its stations), whether its line kept growing, the middle and
+ * slowest 1 in 20 of people's answers, and the work done for each of them on average (ms, every part's together). */
+export async function measure(doc: SystemDoc): Promise<{ parts: Map<string, { busy: number; full: boolean }>; p50: number; p95: number; work: number } | null> {
   const c = compile(doc);
   if (!c.spec) return null;
   await loadModules(needsOf(c.spec));
@@ -43,11 +43,10 @@ async function measure(doc: SystemDoc): Promise<{ parts: Map<string, { busy: num
     const had = out.get(part);
     out.set(part, { busy: Math.max(busy, had?.busy ?? 0), full: full || !!had?.full });
   }
-  const lat = sim.done
-    .filter((d) => d.t > FROM && d.tag === PEOPLE && d.result === "ok")
-    .map((d) => d.lat)
-    .sort((a, b) => a - b);
-  return { parts: out, p95: lat[Math.floor(lat.length * 0.95)] ?? 0 };
+  const answered = sim.done.filter((d) => d.t > FROM && d.tag === PEOPLE && d.result === "ok");
+  const lat = answered.map((d) => d.lat).sort((a, b) => a - b);
+  const work = answered.reduce((s, d) => s + d.work, 0) / Math.max(1, answered.length);
+  return { parts: out, p50: lat[Math.floor(lat.length * 0.5)] ?? 0, p95: lat[Math.floor(lat.length * 0.95)] ?? 0, work };
 }
 
 /** The same system with workers enough for its traffic, and what was changed, in words. */
