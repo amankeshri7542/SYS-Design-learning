@@ -1,17 +1,9 @@
-// The engine: `Sim` and its runtime types. Each concern's behaviour is a module that attaches its methods to `Sim`;
-// importing them here, once, is what puts them on every simulation.
-import "./control";
-import "./clients";
-import "./transport";
-import "./routing";
-import "./cache";
-import "./data";
-import "./work";
+// The engine whole: the core and every optional module, for tests, scripts and server pages. A page imports `core.ts`
+// and loads the optional modules its lesson needs (`loadModules`).
+export * from "./core";
 import "./connections";
 import "./realtime";
-import "./coordination";
+import "./gather";
+import "./elections";
+import "./bookings";
 import "./storage";
-
-export { Sim } from "./sim";
-export { TICK, Win, type Conn, type Done, type Frame, type NodeRt, type Note, type Phase, type Req, type Spawn } from "./model";
-export { ownerOf } from "./ring";

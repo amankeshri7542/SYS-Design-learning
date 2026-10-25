@@ -5,6 +5,12 @@ import { Sim } from "./sim";
 
 /** Routing: a balancer picks a target, a limiter spends a token, a pool picks a member, and a hash picks an owner. */
 const routing: Partial<Sim> & ThisType<Sim> = {
+  /** Which connection a request travels on, for a layer 4 balancer: its client's connection, or (without one) its user. */
+  connKey(r: Req) {
+    const f = r.stack[0];
+    return f.conn ? `${f.id}#${f.conn}` : `${f.id}:${r.key}`;
+  },
+
   /**
    * The targets a balancer may send this request to: those for its tag, on, ready, healthy and not rolled back. At layer
    * 4 it can't see the tag.

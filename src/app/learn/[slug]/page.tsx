@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { LessonPage } from "@/components/lesson-page";
 import { termOf, type Term } from "@/lib/glossary";
-import { COURSE, getLesson } from "@/lib/lessons";
-import { SCENE_DEFS, STORY_DEFS } from "@/lib/lessons/all";
+import { COURSE, getLesson, lessonsOn, lineOf, neighbours } from "@/lib/lessons";
+import type { PageNav } from "@/lib/lessons/types";
+import { SCENE_DEFS, STORY_DEFS, engineNeeds } from "@/lib/lessons/all";
 import { termsIn } from "@/lib/lessons/beats";
 import { whyOf } from "@/lib/lessons/words";
 
@@ -31,6 +32,8 @@ function termsOf(slug: string): Term[] {
 /** A lesson or a story: the page picks its player by the catalog entry's kind, and loads only that one's code. */
 export default async function Page({ params }: Props) {
   const { slug } = await params;
-  if (!getLesson(slug)) notFound();
-  return <LessonPage slug={slug} why={whyOf(slug)} terms={termsOf(slug)} />;
+  const meta = getLesson(slug);
+  if (!meta) notFound();
+  const nav: PageNav = { meta, line: lineOf(meta.line), stations: lessonsOn(meta.line), ...neighbours(slug) };
+  return <LessonPage nav={nav} why={whyOf(slug)} terms={termsOf(slug)} needs={engineNeeds(slug)} />;
 }

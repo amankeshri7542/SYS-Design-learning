@@ -1,5 +1,5 @@
 import type { NodeRt, Req } from "./model";
-import { Sim } from "./sim";
+import { Sim, attach } from "./sim";
 
 /**
  * Streams and durability. A stream processor counts events in windows of event time, waits a while after each window
@@ -79,4 +79,4 @@ const storage: Partial<Sim> & ThisType<Sim> = {
   },
 };
 
-Object.assign(Sim.prototype, storage);
+attach("storage", storage);

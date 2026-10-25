@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import type { DotKind } from "@/lib/lessons/beats";
 
 export const DOTS: { kind: DotKind; shape: string; cls: string; name: string; text: string }[] = [
@@ -37,73 +36,48 @@ export function Dot({ shape, cls }: { shape: string; cls: string }) {
 }
 
 /**
- * The dot vocabulary, opened from a button in the bar. A lesson's own dots come first; the rest of the course's follow.
- * It is a native popover: opening it moves focus to its close button, and Esc, a click outside or the close button
- * shuts it and gives focus back to the Key button.
+ * The Key's rows (`key.tsx` opens it): a lesson's own dots first, then, folded away, the rest of the course's. Loaded
+ * the first time the Key opens.
  */
-export function KeyPopover({ dots }: { dots?: DotKind[] }) {
+export function KeyRows({ dots }: { dots?: DotKind[] }) {
   const here = dots?.length ? DOTS.filter((d) => dots.includes(d.kind)) : DOTS.filter((d) => !["job", "probe", "lost", "ack", "push", "hand"].includes(d.kind));
   const rest = dots?.length ? DOTS.filter((d) => !dots.includes(d.kind)) : [];
-  const pop = useRef<HTMLDivElement>(null);
-  const close = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    const el = pop.current;
-    if (!el) return;
-    const onToggle = (e: Event) => {
-      if ((e as ToggleEvent).newState === "open") close.current?.focus();
-    };
-    el.addEventListener("toggle", onToggle);
-    return () => el.removeEventListener("toggle", onToggle);
-  }, []);
   return (
     <>
-      <button type="button" className="btn key-btn" popoverTarget="key-pop">
-        Key
-      </button>
-      <div id="key-pop" ref={pop} className="key-pop" popover="auto" role="dialog" aria-labelledby="key-title">
-        <div className="key-head">
-          <h2 id="key-title">What the dots mean</h2>
-          <button ref={close} type="button" className="btn btn-icon key-close" popoverTarget="key-pop" popoverTargetAction="hide" aria-label="Close the key">
-            <svg viewBox="0 0 16 16" aria-hidden="true" className="stroke">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
-          </button>
-        </div>
-        {rest.length > 0 && <p className="key-sub">In this lesson</p>}
-        <ul>
-          {here.map((d) => (
-            <li key={d.name}>
-              <Dot shape={d.shape} cls={d.cls} />
-              <span>
-                <strong>{d.name}.</strong> {d.text}
-              </span>
-            </li>
-          ))}
-          <li>
-            <svg viewBox="-8 -8 16 16" className="dot" aria-hidden="true">
-              <circle r="5.5" className="socket-demo" />
-            </svg>
+      {rest.length > 0 && <p className="key-sub">In this lesson</p>}
+      <ul>
+        {here.map((d) => (
+          <li key={d.name}>
+            <Dot shape={d.shape} cls={d.cls} />
             <span>
-              <strong>Sockets</strong> inside a server are its workers; a hollow ring is a worker stuck waiting.
+              <strong>{d.name}.</strong> {d.text}
             </span>
           </li>
-        </ul>
-        {rest.length > 0 && (
-          <details className="key-rest">
-            <summary>Elsewhere in the course</summary>
-            <ul>
-              {rest.map((d) => (
-                <li key={d.name}>
-                  <Dot shape={d.shape} cls={d.cls} />
-                  <span>
-                    <strong>{d.name}.</strong> {d.text}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
-      </div>
+        ))}
+        <li>
+          <svg viewBox="-8 -8 16 16" className="dot" aria-hidden="true">
+            <circle r="5.5" className="socket-demo" />
+          </svg>
+          <span>
+            <strong>Sockets</strong> inside a server are its workers; a hollow ring is a worker stuck waiting.
+          </span>
+        </li>
+      </ul>
+      {rest.length > 0 && (
+        <details className="key-rest">
+          <summary>Elsewhere in the course</summary>
+          <ul>
+            {rest.map((d) => (
+              <li key={d.name}>
+                <Dot shape={d.shape} cls={d.cls} />
+                <span>
+                  <strong>{d.name}.</strong> {d.text}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </>
   );
 }

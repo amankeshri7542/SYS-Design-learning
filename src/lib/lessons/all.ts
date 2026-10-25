@@ -6,7 +6,9 @@
 import { LESSONS, STORIES } from "./index";
 import { whyOf } from "./words";
 import type { StoryDef } from "./story";
-import { withScene, type Lesson, type LessonMeta, type LessonScene } from "./types";
+import { defaultsOf, isChoice, withScene, type Lesson, type LessonMeta, type LessonScene, type Values } from "./types";
+import { needsOf, type ModuleName } from "../sim/engine/needs";
+import type { SceneSpec } from "../sim/types";
 import autoscaling from "./scenes/autoscaling";
 import cacheStampede from "./scenes/cache-stampede";
 import caching from "./scenes/caching";
@@ -144,4 +146,36 @@ export const ALL_STORIES: { meta: LessonMeta; def: StoryDef }[] = STORIES.map((m
 
 export function lessonOf(slug: string): Lesson | undefined {
   return ALL_LESSONS.find((l) => l.slug === slug);
+}
+
+/**
+ * Every scene a page can show: each figure at its defaults and at each knob's ends and choices (one knob moved at a time,
+ * and all at their lows and highs), and each story stage in every design its controls can make.
+ */
+export function specsOf(slug: string): SceneSpec[] {
+  const scene = SCENE_DEFS[slug];
+  if (scene) {
+    return scene.figures.flatMap((f) => {
+      const base = defaultsOf(f);
+      const knobs = f.knobs ?? [];
+      const ends = (k: (typeof knobs)[number]) => (isChoice(k) ? k.options.map((o) => o.value) : [k.min, k.max]);
+      const sets: Values[] = [base, ...knobs.flatMap((k) => ends(k).map((v) => ({ ...base, [k.id]: v })))];
+      if (knobs.length > 1) for (const end of [0, -1]) sets.push({ ...base, ...Object.fromEntries(knobs.map((k) => [k.id, ends(k).at(end)!])) });
+      return sets.map((v) => f.build(v));
+    });
+  }
+  const story = STORY_DEFS[slug];
+  if (!story) return [];
+  // Every design: each count from its least to its most, each switch off and on.
+  let designs: Values[] = [{ ...story.start }];
+  for (const c of story.controls) {
+    const values = c.kind === "count" ? Array.from({ length: c.max - c.min + 1 }, (_, i) => c.min + i) : [0, 1];
+    designs = designs.flatMap((d) => values.map((v) => ({ ...d, [c.id]: v })));
+  }
+  return story.stages.flatMap((stage) => designs.map((d) => story.scene(d, stage)));
+}
+
+/** The engine's optional modules a page needs: every module any of its scenes uses. */
+export function engineNeeds(slug: string): ModuleName[] {
+  return [...new Set(specsOf(slug).flatMap(needsOf))].sort();
 }

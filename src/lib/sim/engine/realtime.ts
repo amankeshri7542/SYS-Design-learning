@@ -1,6 +1,6 @@
 import { hashStr } from "../rng";
 import { TICK, type NodeRt, type Req } from "./model";
-import { Sim } from "./sim";
+import { Sim, attach } from "./sim";
 
 /**
  * News and held connections. A client with `news` publishes numbered items. A client that `subscribe`s keeps one
@@ -174,4 +174,4 @@ const realtime: Partial<Sim> & ThisType<Sim> = {
   },
 };
 
-Object.assign(Sim.prototype, realtime);
+attach("realtime", realtime);

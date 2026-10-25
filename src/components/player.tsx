@@ -1,20 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { lessonsOn, lineOf, neighbours } from "@/lib/lessons";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { Focus } from "@/lib/lessons/beats";
-import { beatsOf, buildSteps, defaultsOf, headlineOf, isChoice, type FigureDef, type Knob, type Lesson, type RangeKnob, type Values } from "@/lib/lessons/types";
+import { beatsOf, buildSteps, defaultsOf, headlineOf, isChoice, type FigureDef, type Knob, type Lesson, type PageNav, type RangeKnob, type Values } from "@/lib/lessons/types";
 import type { Sim } from "@/lib/sim/engine";
 import type { MetricSpec } from "@/lib/sim/metrics";
-import { BeatStrip, CheckCard, PredictCard, WatchList, useBeats } from "./beats";
-import { FlightStrip, useFollow } from "./follow";
+import { BeatStrip, PredictCard, useBeats } from "./beats";
+import { useFollow } from "./follow";
 import { useTouch } from "./hooks";
-import { KeyPopover } from "./legend";
+import { KeyPopover } from "./key";
 import { ArrowIcon, BoltIcon, Clock, Compare, MetricSummary, Transport, useLiveSims } from "./live";
 import { Shell, usePlayerKeys } from "./shell";
 import { Stage } from "./stage";
 import { Rich, TermChips, TermProvider } from "./term";
+
+// The Recap's checks and the reduced-motion list load the first time one shows.
+const cards = () => import("./cards");
+const CheckCard = lazy(() => cards().then((m) => ({ default: m.CheckCard })));
+const WatchList = lazy(() => cards().then((m) => ({ default: m.WatchList })));
+// So does the strip that follows one request.
+const FlightStrip = lazy(() => import("./flight").then((m) => ({ default: m.FlightStrip })));
 
 const TONE: Record<FigureDef["tone"], string> = {
   problem: "The problem",
@@ -30,11 +36,10 @@ const TONE: Record<FigureDef["tone"], string> = {
  * Each step walks through its beats: the parts first, then what to watch, each pointed at on the stage. Next brings on
  * the next beat (or lets a paused one go), and moves to the next step once the beats are done.
  */
-export function LessonPlayer({ lesson }: { lesson: Lesson }) {
+export function LessonPlayer({ lesson, nav }: { lesson: Lesson; nav: PageNav }) {
   const slug = lesson.slug;
   const figs = lesson.figures;
-  const line = lineOf(lesson.line);
-  const { prev, next } = neighbours(slug);
+  const { line, prev, next } = nav;
   const last = figs.length;
   const [step, setStep] = useState(0);
   const [values, setValues] = useState<Values[]>(() => figs.map(defaultsOf));
@@ -155,7 +160,7 @@ export function LessonPlayer({ lesson }: { lesson: Lesson }) {
                 {line.letter}
               </Link>
               <ol className="bar-stops">
-                {lessonsOn(lesson.line).map((s) => (
+                {nav.stations.map((s) => (
                   <li key={s.slug}>
                     <Link href={`/learn/${s.slug}`} aria-current={s.slug === slug ? "page" : undefined} title={s.title}>
                       {s.code}
@@ -212,7 +217,13 @@ export function LessonPlayer({ lesson }: { lesson: Lesson }) {
             follow={flight?.id ?? null}
           />
         }
-        flight={flight && <FlightStrip v={flight} onClose={() => (follow.stop(), live.refresh())} />}
+        flight={
+          flight && (
+            <Suspense fallback={null}>
+              <FlightStrip v={flight} onClose={() => (follow.stop(), live.refresh())} />
+            </Suspense>
+          )
+        }
         summary={<MetricSummary metric={headline} columns={columns} verdict={verdict} onOpen={showTable} />}
         panel={
           <>
@@ -256,7 +267,9 @@ export function LessonPlayer({ lesson }: { lesson: Lesson }) {
                       {/* Reduced motion: the beats to step through take the caption's place (the stage still carries it). */}
                       <TermChips keys={b.terms} />
                       {live.reduced && b.list.length ? (
-                        <WatchList items={b.list} />
+                        <Suspense fallback={null}>
+                          <WatchList items={b.list} />
+                        </Suspense>
                       ) : (
                         <p className="step-text">
                           <Rich text={fig.caption} />
@@ -429,7 +442,9 @@ function Recap({ lesson, claim, onWrong }: { lesson: Lesson; claim: string | nul
           <span className="card-eyebrow">In numbers</span> <Rich text={sentence} />
         </p>
       )}
-      {lesson.checks?.map((c, i) => <CheckCard key={c.prompt} c={c} n={i + 1} onWrong={onWrong} />)}
+      <Suspense fallback={null}>
+        {lesson.checks?.map((c, i) => <CheckCard key={c.prompt} c={c} n={i + 1} onWrong={onWrong} />)}
+      </Suspense>
       <dl className="takeaways">
         <div>
           <dt>Use it when</dt>

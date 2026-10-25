@@ -1,5 +1,5 @@
 import type { Conn, Frame, NodeRt, Req } from "./model";
-import { Sim } from "./sim";
+import { Sim, attach } from "./sim";
 
 /**
  * Connections and windows. A sender with `connect` opens connections to its targets (a handshake of round trips first),
@@ -207,12 +207,6 @@ const connections: Partial<Sim> & ThisType<Sim> = {
     }
   },
 
-  /** Which connection a request travels on, for a layer 4 balancer: its client's connection, or (without one) its user. */
-  connKey(r: Req) {
-    const f = r.stack[0];
-    return f.conn ? `${f.id}#${f.conn}` : `${f.id}:${r.key}`;
-  },
-
   /** A crossing lost on a connection that resends: shown lost, it goes again from the start of the link, and may be lost again. */
   resend(r: Req) {
     const span = r.t1 - r.t0;
@@ -296,4 +290,4 @@ const connections: Partial<Sim> & ThisType<Sim> = {
   },
 };
 
-Object.assign(Sim.prototype, connections);
+attach("connections", connections);
