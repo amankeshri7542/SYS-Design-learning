@@ -51,6 +51,10 @@ export const SCENES: Record<string, Load> = {
   acknowledgements: () => import("./acknowledgements"),
   "delivery-guarantees": () => import("./delivery-guarantees"),
   backpressure: () => import("./backpressure"),
+  "handshakes-and-keep-alive": () => import("./handshakes-and-keep-alive"),
+  "windows-and-flow-control": () => import("./windows-and-flow-control"),
+  "congestion-control": () => import("./congestion-control"),
+  "head-of-line-blocking": () => import("./head-of-line-blocking"),
   // Operating
   "canary-rollouts": () => import("./canary-rollouts"),
   "graceful-shutdown": () => import("./graceful-shutdown"),

@@ -1249,6 +1249,7 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
     }
     case "lb":
       if (s.promote) sub = "to the primary";
+      else if (s.glyph === "router" && sim.flat(s.to).length === 1) sub = "shares one line";
       else if (s.layer === 4) sub = "per connection";
       else if (s.autoscale) sub = `target ${Math.round(s.autoscale.target * 100)}% busy`;
       else if (s.algo === "hash") sub = `key → ${sim.flat(s.to).length} nodes`;
