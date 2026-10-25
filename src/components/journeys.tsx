@@ -5,6 +5,7 @@ import { Suspense, use } from "react";
 import { STORIES, lineOf, prerequisitesOf } from "@/lib/lessons";
 import { loadStory } from "@/lib/lessons/stories";
 import type { LessonMeta } from "@/lib/lessons/types";
+import { whyOf } from "@/lib/lessons/words";
 import { ArrowIcon } from "./live";
 import { StoryScene } from "./station-preview";
 import { useVisited } from "./visited";
@@ -32,7 +33,7 @@ function JourneyCard({ meta, visited }: { meta: LessonMeta; visited: Set<string>
         <h3 className="journey-title">
           <span className="code-chip">{meta.code}</span> {meta.title}
         </h3>
-        <p className="journey-why">{meta.why}</p>
+        <p className="journey-why">{whyOf(meta.slug)}</p>
         <h4 className="journey-sub">The lessons it rides</h4>
         <ol className="journey-stops">
           {stops.map((s) => (

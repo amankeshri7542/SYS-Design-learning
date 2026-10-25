@@ -17,7 +17,7 @@ import { Stage } from "./stage";
  * A story on one screen: stage after stage of growth. Change the architecture until the target holds for the stage's
  * hold time, then move on. The cheapest design that holds wins.
  */
-export function StoryPlayer({ meta, def }: { meta: LessonMeta; def: StoryDef }) {
+export function StoryPlayer({ meta, why, def }: { meta: LessonMeta; why: string; def: StoryDef }) {
   const { stages, targets } = def;
   const [stage, setStage] = useState(0);
   const [arch, setArch] = useState<Values>(def.start);
@@ -79,7 +79,7 @@ export function StoryPlayer({ meta, def }: { meta: LessonMeta; def: StoryDef }) 
               ★
             </Link>
           </nav>
-          <h1 className="bar-title" title={meta.why}>
+          <h1 className="bar-title" title={why}>
             <span className="bar-code">{meta.code}</span>
             <span className="bar-name">{meta.title}</span>
           </h1>
@@ -154,7 +154,7 @@ export function StoryPlayer({ meta, def }: { meta: LessonMeta; def: StoryDef }) 
           </div>
           <div className="step" key={stage}>
             <h2 className="step-title">{S.name}</h2>
-            {stage === 0 && <p className="step-text">{meta.why}</p>}
+            {stage === 0 && <p className="step-text">{why}</p>}
             <p className="step-text">{S.brief}</p>
             <details className="story-hint">
               <summary>Hint</summary>

@@ -37,11 +37,15 @@ export function LineIndex() {
         const to = stops.find((s) => !visited.has(s.slug)) ?? stops[0];
         return (
           <li key={line.id} className={`line-${line.id}`}>
-            <Link href={`/learn/${to.slug}`} aria-label={`${line.name}: ${seen} of ${stops.length} visited. ${seen < stops.length ? "Next" : "First"}: ${to.code} ${to.title}`}>
+            {/* Its name starts with the words it shows, so a voice user can say what they see. */}
+            <Link href={`/learn/${to.slug}`}>
               <span className="roundel-sm" aria-hidden="true">
                 {line.letter}
               </span>
               <span className="li-name">{line.name}</span>
+              <span className="sr-only">
+                : {seen} of {stops.length} visited. {seen < stops.length ? "Next" : "First"}: {to.code} {to.title}
+              </span>
               <span className="li-pips" aria-hidden="true">
                 {stops.map((s) => (
                   <i key={s.slug} className={visited.has(s.slug) ? "on" : undefined} />

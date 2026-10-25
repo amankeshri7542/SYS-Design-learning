@@ -5,6 +5,7 @@ import { LEVELS, prerequisitesOf } from "@/lib/lessons";
 import { loadScene } from "@/lib/lessons/scenes";
 import { loadStory } from "@/lib/lessons/stories";
 import { defaultsOf, type LessonMeta } from "@/lib/lessons/types";
+import { whyOf } from "@/lib/lessons/words";
 import { MiniScene } from "./mini-scene";
 
 /** Where a preview sits, in px inside the map, and which side of its station it is on. */
@@ -36,7 +37,7 @@ export function StationPreview({ meta, spot, ready }: { meta: LessonMeta; spot: 
           {meta.kind === "story" ? <StoryScene meta={meta} /> : <LessonScene meta={meta} />}
         </Suspense>
       </div>
-      <p className="preview-why">{meta.why}</p>
+      <p className="preview-why">{whyOf(meta.slug)}</p>
       {after.length > 0 && <p className="preview-after">Best after {after.map((p) => `${p.code} ${p.title}`).join(", ")}</p>}
     </div>
   );

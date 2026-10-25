@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState, type FocusEvent, type PointerEvent } from "react";
 import { COURSE, LEVELS, STORIES, isReady, lessonsOn, lineOf, liveLines, nextFor, prerequisitesOf } from "@/lib/lessons";
 import type { LessonMeta, Level, Line, LineId } from "@/lib/lessons/types";
+import { tagsOf } from "@/lib/lessons/words";
 import { StationPreview, type PreviewSpot } from "./station-preview";
 import { useVisited } from "./visited";
 
@@ -312,7 +313,7 @@ function RoutePoster({ visited, next }: { visited: Set<string>; next?: LessonMet
 type LevelFilter = Level | "all";
 
 const matches = (e: LessonMeta, words: string[]) => {
-  const hay = [e.code, e.title, lineOf(e.line).name, ...e.tags].join(" ").toLowerCase();
+  const hay = [e.code, e.title, lineOf(e.line).name, ...tagsOf(e.slug)].join(" ").toLowerCase();
   return words.every((w) => hay.includes(w));
 };
 

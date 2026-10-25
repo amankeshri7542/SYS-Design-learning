@@ -644,16 +644,20 @@ svg.stroke {
   list-style: none;
 }
 
+/* Each line: its roundel beside its name, with a pip per lesson under the name (a long line's pips wrap, not spill). */
 .line-index a {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 4px 10px;
   min-height: 40px;
+  padding: 4px 0;
   color: var(--ink);
   text-decoration: none;
 }
 
 .line-index .roundel-sm {
+  grid-row: span 2;
   width: 26px;
   height: 26px;
   font-size: 13px;
@@ -670,6 +674,7 @@ svg.stroke {
 
 .li-pips {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 

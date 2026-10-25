@@ -89,18 +89,23 @@ export interface LessonMeta {
   code: string;
   line: LineId;
   title: string;
-  why: string;
   level: Level;
   /** Minutes it takes, end to end: 3–12 for a lesson, 15–25 for a story. */
   minutes: number;
-  /** What people search for: the concept's other names, and the products in its "Seen in". */
-  tags: string[];
   /** Slugs best seen first. A live entry lists only live ones. The map dims a station until they are visited. */
   requires?: string[];
   kind: "lesson" | "story";
   status: "live" | "planned";
   /** Old slugs that redirect here (`next.config.ts`). */
   aliases?: string[];
+}
+
+/** An entry's words (`words.ts`): kept apart from its metadata, so a page carries only its own. */
+export interface LessonWords {
+  /** Why it matters, in one line (under 220 characters). */
+  why: string;
+  /** What people search for: the concept's other names, and the products in its "Seen in". */
+  tags: string[];
 }
 
 /** A lesson's scenes and narration: the default export of `scenes/<slug>.ts`. */
@@ -116,10 +121,10 @@ export interface LessonScene {
   takeaways: { use: string; catch: string; seen: string; rule: string; interview?: string };
 }
 
-/** A lesson whole: its catalog entry and its scenes. */
-export type Lesson = LessonMeta & LessonScene;
+/** A lesson whole: its catalog entry, its why and its scenes. */
+export type Lesson = LessonMeta & LessonScene & { why: string };
 
-export const withScene = (meta: LessonMeta, scene: LessonScene): Lesson => ({ ...meta, ...scene });
+export const withScene = (meta: LessonMeta, scene: LessonScene, why: string): Lesson => ({ ...meta, ...scene, why });
 
 export function isChoice(k: Knob): k is ChoiceKnob {
   return "options" in k;

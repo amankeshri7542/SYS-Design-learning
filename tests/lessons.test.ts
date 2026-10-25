@@ -9,6 +9,7 @@ import { STORY_MODULES } from "../src/lib/lessons/stories";
 import { holds, type StoryDef } from "../src/lib/lessons/story";
 import { GLOSSARY, termOf } from "../src/lib/glossary";
 import { termsIn, unresolved, wordCount, type Focus } from "../src/lib/lessons/beats";
+import { WORDS } from "../src/lib/lessons/words";
 import { beatsOf, buildSteps, defaultsOf, headlineOf, type FigureDef, type Lesson, type Values } from "../src/lib/lessons/types";
 import { claimOf, stepFiring, walk } from "../src/lib/lessons/walk";
 import { Sim } from "../src/lib/sim/engine";
@@ -44,13 +45,14 @@ test("catalog: each line numbers its stations in level order, with its own lette
 });
 
 test("catalog: every entry has a level, minutes in range, a tag, a short why, and a line that exists", () => {
+  assert.deepEqual(Object.keys(WORDS).sort(), CATALOG.map((e) => e.slug).sort(), "every entry has words, and only entries do");
   for (const e of CATALOG) {
     assert.ok(LINES.some((l) => l.id === e.line), `${e.slug}: line ${e.line}`);
     assert.ok(e.level in LEVEL, `${e.slug}: level`);
     const [lo, hi] = e.kind === "story" ? [15, 25] : [3, 12];
     assert.ok(e.minutes >= lo && e.minutes <= hi, `${e.slug}: ${e.minutes} minutes`);
-    assert.ok(e.tags.length >= 1, `${e.slug}: at least one tag`);
-    assert.ok(e.why.length < 220, `${e.slug}: why is short`);
+    assert.ok(WORDS[e.slug].tags.length >= 1, `${e.slug}: at least one tag`);
+    assert.ok(WORDS[e.slug].why.length < 220, `${e.slug}: why is short`);
     assert.equal(e.kind === "story", e.line === "stories", `${e.slug}: stories, and only stories, are journeys`);
   }
 });
