@@ -27,7 +27,7 @@ export interface Sim {
   rate(n: NodeRt): number;
   gap(n: NodeRt, rate: number): number;
   arrivals(): void;
-  spawn(n: NodeRt, key: number, op: Op, first: number, attempt: number, cost: number, extra?: { logicalId?: number; absent?: boolean; poison?: boolean; deadline?: number; page?: number; news?: number; untraced?: boolean }): void;
+  spawn(n: NodeRt, key: number, op: Op, first: number, attempt: number, cost: number, extra?: { logicalId?: number; absent?: boolean; poison?: boolean; deadline?: number; page?: number; news?: number; untraced?: boolean; eventTime?: number }): void;
   finishAtClient(n: NodeRt, r: Req): void;
   timeout(r: Req): void;
   retry(n: NodeRt, r: Req): boolean;
@@ -153,11 +153,19 @@ export interface Sim {
   expireLocks(n: NodeRt): void;
   reserveBack(n: NodeRt, r: Req): void;
   sagaBack(n: NodeRt, r: Req): boolean;
+
+  // storage.ts
+  windowIn(n: NodeRt, r: Req): void;
+  closeWindows(n: NodeRt): void;
+  writeBehind(n: NodeRt, r: Req): void;
+  flushDirty(n: NodeRt): void;
+  lose(n: NodeRt): void;
 }
 
 /**
  * The simulation: its state, the fixed-tick loop, and the public controls. Behaviour by concern lives beside it
- * (control, clients, transport, routing, cache, data, work), attached to the prototype.
+ * (control, clients, transport, routing, cache, data, work, connections, realtime, coordination, storage), attached to the
+ * prototype.
  */
 export class Sim {
   t = 0;
@@ -240,6 +248,13 @@ export class Sim {
   /** Cluster health, sampled every 10 ms: samples taken, and those with no leader any member would follow. */
   leaderSamples: Win;
   leaderless: Win;
+  /** Events reaching stream processors, and those dropped because their window had closed. */
+  windowed: Win;
+  lateDropped: Win;
+  /** Each window a processor closed: when, and how long after it opened. */
+  windowLags: { t: number; ms: number }[] = [];
+  /** Writes acknowledged and then lost: a write-behind cache's unsaved keys, or a processor's open counts, at a crash. */
+  lostWrites: Win;
   tracing: boolean;
   seq = 0;
   truth = new Map<number, number>();
@@ -247,7 +262,7 @@ export class Sim {
   nextId = 1;
   acc = 0;
   /** Retries waiting for their moment. */
-  retrying: { at: number; client: string; key: number; op: Op; first: number; attempt: number; cost: number; logicalId: number; absent: boolean; poison: boolean; deadline: number; page: number; news: number }[] = [];
+  retrying: { at: number; client: string; key: number; op: Op; first: number; attempt: number; cost: number; logicalId: number; absent: boolean; poison: boolean; deadline: number; page: number; news: number; eventTime: number }[] = [];
   retryRng: () => number;
   cycleStart = 0;
   cursor = 0;
@@ -286,6 +301,9 @@ export class Sim {
     this.inconsistent = new Win(this.windowMs);
     this.leaderSamples = new Win(this.windowMs);
     this.leaderless = new Win(this.windowMs);
+    this.windowed = new Win(this.windowMs);
+    this.lateDropped = new Win(this.windowMs);
+    this.lostWrites = new Win(this.windowMs);
     this.retryRng = mulberry32(this.seed ^ 0x9e3779b9);
     this.reconfigure(spec);
   }
@@ -414,6 +432,9 @@ export class Sim {
       opened: "",
       raft: { role: "follower", term: 0, votedFor: "", votes: new Set(), lastBeat: this.t, timeout: 0, leader: "", nextBeat: 0 },
       locks: new Map(),
+      panes: new Map(),
+      dirty: new Map(),
+      nextFlush: this.t + (spec.flushMs ?? 0),
     };
     if (spec.client) {
       const r = this.rate(rt);
@@ -447,6 +468,8 @@ export class Sim {
     this.effect(up ? "recover" : "crash", id);
     if (!up) {
       n.downAt = this.t;
+      // What it held only in memory goes with it: unsaved writes, open windows.
+      this.lose(n);
       n.cache.clear();
       n.sessions.clear();
       // Every connection to it closes, and its own connections die with it: what waits to go out fails.
@@ -636,6 +659,7 @@ export class Sim {
     if (this.pageLog.length && this.pageLog[0].t < from) this.pageLog = this.pageLog.filter((d) => d.t >= from);
     if (this.newsLog.length && this.newsLog[0].t < from) this.newsLog = this.newsLog.filter((d) => d.t >= from);
     if (this.detects.length && this.detects[0].t < from) this.detects = this.detects.filter((d) => d.t >= from);
+    if (this.windowLags.length && this.windowLags[0].t < from) this.windowLags = this.windowLags.filter((d) => d.t >= from);
     // News items are kept a little longer: how far they reached is judged a second after each was published.
     if (this.news.length && this.news[0].t < from - 2000) this.news = this.news.filter((d) => d.t >= from - 2000);
     if (this.fx.length > 120) this.fx = this.fx.slice(-80);
@@ -707,6 +731,8 @@ export class Sim {
       reserving: 0,
       undoing: false,
       term: 0,
+      eventTime: this.t,
+      flushed: false,
     };
     this.reqs.push(r);
     return r;

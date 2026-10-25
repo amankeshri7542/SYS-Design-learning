@@ -133,6 +133,10 @@ export interface Req {
   undoing: boolean;
   /** A cluster message's term (a heartbeat, or a request for votes). */
   term: number;
+  /** When the event it carries happened: when it was sent, or earlier for a late one (`ClientSpec.lateness`). */
+  eventTime: number;
+  /** A write-behind cache saving a key: the database keeps the write's number rather than giving it a new one. */
+  flushed: boolean;
 }
 
 /** A request a server sent to several targets at once, waiting for enough of them. */
@@ -291,6 +295,11 @@ export interface NodeRt {
   raft: { role: "follower" | "candidate" | "leader"; term: number; votedFor: string; votes: Set<string>; lastBeat: number; timeout: number; leader: string; nextBeat: number };
   /** Lock: the request holding each key, and until when its lease lasts. */
   locks: Map<number, { holder: number; until: number }>;
+  /** Stream processor: its open windows, by start time, each counting events per key. */
+  panes: Map<number, Map<number, number>>;
+  /** Write-behind cache: keys written but not yet saved, with the write's number; and when it next saves them. */
+  dirty: Map<number, number>;
+  nextFlush: number;
 }
 
 export interface Note {

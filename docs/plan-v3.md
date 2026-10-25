@@ -1013,6 +1013,17 @@ Gates on 2026-10-25: typecheck, 378 unit tests (5 new in `tests/hooks.test.ts`, 
 - [ ] A run on a mid-range phone records no frame over 34 ms on the busiest scene.
 - [ ] All 57 lessons and 9 stories pass every gate.
 
+**Decisions made while building the M10 engine PR:**
+
+Engine PR gates on 2026-10-25: typecheck, 381 unit tests (3 new in `tests/hooks.test.ts`), build, and the browser suite: 1,148 tests, of which 1,137 passed and 11 were skipped, the 4 frame budgets included.
+
+- **One module, `storage.ts`,** rather than the plan's WAL and LSM rows: no M10 lesson needs a log or compaction, and the curriculum's NC20 and NC30 are what C6, A8 and S8 use.
+- **Stream windows** (`window: { sizeMs, latenessMs, to, checkpoint }` on a server): each event (a write) is counted in the window of its event time and answered at once. A window closes `latenessMs` after it ends, writing one row per key to `to` (a detached write, drawn as a copy). An event for a closed window is dropped: `lateDropped`, and a flat ink chip falls from the processor, since a lost count is data, not a request. `ClientSpec.lateness: { share, maxMs }` sends a share of events up to `maxMs` late, drawn from the client's own stream, so the arrival trace stays fair; a retry keeps its event time. `windowLag` is how long after a window opened its rows were written (its length plus the wait), which makes both knobs' cost visible.
+- **Cache write modes** (`writeMode` on a cache): `through` stores the value a write wrote on its way back; `around` drops the cached copy (what `invalidate` did); `behind` numbers the write, answers it, and saves each unsaved key once every `flushMs`. A save keeps the write's number (`Req.flushed`), so the database doesn't make the cache's copy look stale. Metrics: `unsaved` (keys confirmed but not yet saved) and `lostWrites`.
+- **A crash loses what was only in memory** (`lose`, called from `setUp`): a write-behind cache's unsaved keys, and a processor's open counts unless it checkpoints them. Both count as `lostWrites`.
+- **Stage:** a processor's sub-label reads "1 s windows · waits 2 s" ("1 s · waits 2 s" when narrow); a write-behind cache's reads "40/200 · 12 unsaved" ("12 unsaved"); a processor's rail to its table is drawn.
+- **Proof of no change:** every earlier scene hashes the same and `tune --json` is byte-identical. The two hook tests were checked against ten mutations; all were caught once write-behind reads were required to stay fresh until a crash. A scene with every batch 4 hook at once settles with every request accounted for and nothing held.
+
 ### M11 — Optional: a learning record (S/M, only with the owner's agreement)
 
 Pedagogy §5 describes a privacy-safe, localStorage-only event ring buffer, a `/progress` page with export and clear, and a dev-only `/stats` view to tune predictions and checks. It changes the `CLAUDE.md` rule on progress storage, so it waits for an explicit yes.

@@ -38,6 +38,8 @@ const control: Partial<Sim> & ThisType<Sim> = {
       if (n.spec.hold && n.subs.length) this.expireSubs(n);
       if (n.spec.client?.subscribe?.heartbeat && n.subOf.size) this.heartbeats(n);
       if (n.spec.hedgeMs) this.hedge(n);
+      if (n.spec.window && n.panes.size) this.closeWindows(n);
+      if (n.spec.writeMode === "behind" && n.up && this.t >= n.nextFlush) this.flushDirty(n);
       if (n.spec.cluster) this.raftTick(n);
       if (n.spec.lock && n.locks.size) this.expireLocks(n);
       if (n.spec.promote) {

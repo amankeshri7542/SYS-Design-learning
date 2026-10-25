@@ -260,6 +260,7 @@ const LIFE: Partial<Record<FxKind, number>> = {
   drop: DUR.hero,
   lost: 700,
   evict: 700,
+  late: 700,
   fill: DUR.base + DUR.fast,
   hit: 400,
   miss: 400,
@@ -326,9 +327,10 @@ export function drawFx(ctx: CanvasRenderingContext2D, f: FxDraw, real: number, P
       ctx.lineCap = "butt";
       break;
     }
-    case "evict": {
-      // Pushed out of a full cache: a chip of its bar drops from the bottom edge. A flat chip in ink, never a dot's
-      // shape or colour, because an evicted entry is data, not a request.
+    case "evict":
+    case "late": {
+      // Pushed out of a full cache (or a count too late for its window): a chip drops from the bottom edge. A flat chip in
+      // ink, never a dot's shape or colour, because an evicted entry is data, not a request.
       const y = reduced ? f.y : f.y + 0.5 * 600 * s * s;
       ctx.globalAlpha = reduced ? 0.8 : (1 - easeOut(u) * 0.9) * 0.8;
       ctx.fillStyle = P.muted;

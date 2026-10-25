@@ -1479,3 +1479,95 @@ test("an armed run stops after an event that ends it, so one script holds two se
   sim.step(1000);
   assert.deepEqual(order, ["crash", "back", "cut", "heal"]);
 });
+
+// Batch 4 (M10): stream windows and cache write modes.
+
+test("stream windows: late events are dropped unless the window waits for them, and the wait delays every count", () => {
+  const spec = (latenessMs: number, checkpoint = false) =>
+    scene(
+      [
+        client("u", 100, "p", { keys: 10, writes: 1, lateness: { share: 0.2, maxMs: 2000 } }),
+        server("p", { slots: 8, serviceMs: 1, window: { sizeMs: 1000, latenessMs, to: "db", checkpoint } }),
+        { id: "db", kind: "db", label: "db", at: [90, 50], slots: 4, serviceMs: 5 } as NodeSpec,
+      ],
+      { links: { "u>p": 5, "p>db": 5 }, windowMs: 4000 },
+    );
+  const eager = run(spec(0), 8000);
+  const patient = run(spec(3000), 8000);
+  assert.ok(value(eager, m("lateDropped")) > 0.1, `late clicks are dropped (${value(eager, m("lateDropped"))})`);
+  assert.equal(value(patient, m("lateDropped")), 0, "a wait longer than any lateness drops none");
+  const lag = (s: Sim) => value(s, m("windowLag"));
+  assert.ok(Math.abs(lag(eager) - 1000) < 50, `a window's counts are written as it closes (${lag(eager)})`);
+  assert.ok(Math.abs(lag(patient) - lag(eager) - 3000) < 50, `the wait adds to every count's delay (${lag(patient)})`);
+  // One row per key per window instead of one per click.
+  assert.ok(value(eager, m("load", { nodes: ["db"] })) < 15, `rows, not clicks (${value(eager, m("load", { nodes: ["db"] }))}/s)`);
+  assert.ok(value(eager, m("errors")) === 0, "every click is answered at once");
+  // A crash loses the open counts, unless they are checkpointed.
+  const crash = (checkpoint: boolean) => {
+    const s = run(spec(3000, checkpoint), 3000);
+    s.setUp("p", false);
+    s.step(100);
+    return value(s, m("lostWrites"));
+  };
+  assert.ok(crash(false) > 100, `open counts die with it (${crash(false)})`);
+  assert.equal(crash(true), 0);
+});
+
+test("cache write modes: write-behind is fast and loses unsaved writes in a crash; write-through loses none", () => {
+  const spec = (writeMode: "through" | "behind" | "around") =>
+    scene(
+      [
+        client("u", 80, "c", { keys: 20, writes: 0.5, timeoutMs: 2000 }),
+        { id: "c", kind: "cache", label: "cache", at: [40, 50], capacity: 50, to: ["db"], writeMode, flushMs: 1000 } as NodeSpec,
+        { id: "db", kind: "db", label: "db", at: [90, 50], slots: 8, serviceMs: 20 } as NodeSpec,
+      ],
+      { links: { "u>c": 5, "c>db": 20 }, windowMs: 2000 },
+    );
+  const writes = m("p95", { op: "write" });
+  // Half a second after a save: writes since then wait for the next.
+  const behind = run(spec("behind"), 3500);
+  const through = run(spec("through"), 3500);
+  const around = run(spec("around"), 3500);
+  assert.ok(value(behind, writes) < value(through, writes) / 3, `answered by the cache (${value(behind, writes)} vs ${value(through, writes)})`);
+  // Saved once per key per flush, however often it was written.
+  assert.ok(value(behind, m("load", { nodes: ["db"] })) < value(through, m("load", { nodes: ["db"] })) / 2, "fewer writes reach the database");
+  assert.ok(value(behind, m("unsaved")) > 0, "writes wait to be saved");
+  // A save brings the write's own number: the cache still holds the newest value, so its reads stay fresh.
+  assert.ok(value(behind, m("stale")) < 0.05, `fresh until a crash (${value(behind, m("stale"))})`);
+  // Every write-through write updates the cache: reads are fresh but for the moment a write's answer is on its way back
+  // to the cache, and they hit more than after write-around's drops.
+  assert.ok(value(through, m("stale")) < 0.05 && value(around, m("stale")) < 0.05, "reads are (nearly) always fresh");
+  assert.ok(value(through, m("hit", { nodes: ["c"] })) > value(around, m("hit", { nodes: ["c"] })), "write-through keeps the cache warm");
+  for (const s of [behind, through]) {
+    s.setUp("c", false);
+    s.step(20);
+    s.setUp("c", true);
+    s.step(1500);
+  }
+  assert.ok(value(behind, m("lostWrites")) > 0, "unsaved writes die with the cache");
+  assert.ok(value(behind, m("stale")) > 0, "and reads find the database's older values");
+  assert.equal(value(through, m("lostWrites")), 0);
+  assert.deepEqual(leakedHolds(behind), []);
+});
+
+test("property: every request is accounted for and nothing leaks, with every stream-and-durability hook at once", () => {
+  settles(
+    scene(
+      [
+        client("clicks", (t: number) => (t < 5000 ? 80 : 0), "proc", { keys: 20, writes: 1, timeoutMs: 1500, lateness: { share: 0.3, maxMs: 1500 } }, [0, 20]),
+        server("proc", { slots: 8, serviceMs: 1, window: { sizeMs: 500, latenessMs: 300, to: "agg" } }),
+        { id: "agg", kind: "db", label: "agg", at: [90, 20], slots: 2, serviceMs: 10 } as NodeSpec,
+        client("rw", (t: number) => (t < 5000 ? 60 : 0), "wb", { keys: 30, writes: 0.6, timeoutMs: 1500 }, [0, 60]),
+        { id: "wb", kind: "cache", label: "wb", at: [40, 60], capacity: 20, to: ["db"], writeMode: "behind", flushMs: 400 } as NodeSpec,
+        client("rw2", (t: number) => (t < 5000 ? 60 : 0), "wt", { keys: 30, writes: 0.6, timeoutMs: 1500 }, [0, 80]),
+        { id: "wt", kind: "cache", label: "wt", at: [40, 80], capacity: 20, to: ["db"], writeMode: "through" } as NodeSpec,
+        { id: "db", kind: "db", label: "db", at: [90, 70], slots: 4, serviceMs: 6 } as NodeSpec,
+      ],
+      {
+        windowMs: 1e9,
+        script: { loopMs: 1e9, events: [{ at: 2000, label: "proc down", run: (s: Sim) => s.setUp("proc", false) }, { at: 2300, label: "proc up", run: (s: Sim) => s.setUp("proc", true) }, { at: 3000, label: "wb down", run: (s: Sim) => s.setUp("wb", false) }, { at: 3200, label: "wb up", run: (s: Sim) => s.setUp("wb", true) }] },
+      },
+    ),
+    "batch 4",
+  );
+});

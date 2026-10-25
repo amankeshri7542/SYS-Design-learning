@@ -383,6 +383,11 @@ const work: Partial<Sim> & ThisType<Sim> = {
     // Sent out in parts and gathered back: to every shard, or to a quorum of replicas.
     if (n.spec.fanout) return this.scatter(n, r, n.spec.fanout.to, n.spec.fanout.need ?? n.spec.fanout.to.length, r.op);
     if (n.spec.quorum) return this.quorumDone(n, r);
+    // A stream processor counts an event in its window and answers it at once.
+    if (n.spec.window && r.op === "write") {
+      this.windowIn(n, r);
+      return this.respond(r, "ok");
+    }
     // A booking reads its key first (a plain read is served as usual).
     if (n.spec.reserve && r.op === "write") {
       r.reserving = 1;

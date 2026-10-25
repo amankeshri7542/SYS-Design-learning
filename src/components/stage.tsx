@@ -22,6 +22,7 @@ import {
   railSpan,
   sceneOf,
   subCurve,
+  windowSub,
   type Edge,
   type Frame,
   type Mode,
@@ -640,7 +641,7 @@ export function Stage({
         const b = L.boxes.get(f.node);
         const n = sim.nodes.get(f.node);
         if (!b || !n) continue;
-        const drawn = RINGS.has(f.kind) || FAINT.has(f.kind) || f.kind === "drop" || f.kind === "lost" || f.kind === "fill" || f.kind === "evict";
+        const drawn = RINGS.has(f.kind) || FAINT.has(f.kind) || f.kind === "drop" || f.kind === "lost" || f.kind === "fill" || f.kind === "evict" || f.kind === "late";
         if (!drawn) continue;
         // Rings at most one per node and kind every 250 ms (hits and misses share one budget); the rest a little faster.
         const key = `${f.node}:${FAINT.has(f.kind) ? "outcome" : f.kind}`;
@@ -661,6 +662,9 @@ export function Stage({
           const barY = b.y + b.h / 2 - 9.5 * sc;
           if (f.kind === "fill") Object.assign(fx, { x: b.x + b.w / 2 - 6 * sc, y: b.y, tx: barX(Math.min(1, n.cache.size / cap)), ty: barY });
           else Object.assign(fx, { x: barX(0.12), y: b.y + b.h / 2 });
+        } else if (f.kind === "late") {
+          // An event too late for its window: a count that drops out of the bottom of the processor, never counted.
+          Object.assign(fx, { y: b.y + b.h / 2 });
         }
         s.fx.push(fx);
       }
@@ -1268,7 +1272,7 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
       sub = s.limit?.shared ? `lets in ${s.limit.rps}/s` : `${s.limit?.rps}/s per client`;
       break;
     case "cache":
-      sub = `${n.cache.size}/${s.capacity ?? 0} items`;
+      sub = s.writeMode === "behind" && n.dirty.size ? `${n.cache.size}/${s.capacity ?? 0} · ${n.dirty.size} unsaved` : `${n.cache.size}/${s.capacity ?? 0} items`;
       break;
     case "queue":
       // Jobs out with workers and not yet acked, or producers held back by back-pressure, are news too.
@@ -1281,6 +1285,7 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
       if (s.cluster) sub = n.raft.role === "leader" ? `leads · term ${n.raft.term}` : n.raft.role === "candidate" ? "asks for votes" : `term ${n.raft.term}`;
       else if (s.lock) sub = `${n.locks.size} held · ${[...n.waiters.values()].reduce((a, w) => a + w.length, 0)} waiting`;
       else if (s.quorum) sub = `W=${s.quorum.w} R=${s.quorum.r}`;
+      else if (s.window) sub = windowSub(s.window);
       else if (s.hold) sub = `${n.subs.length}/${s.hold.max} open`;
       else if (s.maxConns !== undefined && !n.queue.length) sub = `${n.accepted}/${s.maxConns} connections`;
       else if (!slots) sub = n.queue.length ? `stalled · ${n.queue.length} waiting` : "stalled";

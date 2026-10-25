@@ -9,7 +9,9 @@ const cache: Partial<Sim> & ThisType<Sim> = {
   lookup(n: NodeRt, r: Req) {
     const origin = this.resolve(n, n.spec.to![0]);
     if (r.op === "write") {
-      if (n.spec.invalidate) n.cache.delete(r.key);
+      // Write-behind answers here; write-around drops the cached copy; write-through updates it on the way back.
+      if (n.spec.writeMode === "behind") return this.writeBehind(n, r);
+      if (n.spec.invalidate || n.spec.writeMode === "around") n.cache.delete(r.key);
       return this.send(r, origin);
     }
     if (this.existence(n, r)) return;
@@ -39,6 +41,11 @@ const cache: Partial<Sim> & ThisType<Sim> = {
   },
 
   fill(n: NodeRt, r: Req) {
+    if (r.op === "write" && n.spec.writeMode === "through" && r.result === "ok" && (n.spec.capacity ?? 0) > 0) {
+      n.cache.set(r.key, { seq: r.seq, exp: this.t + (n.spec.ttlMs ?? Infinity), last: this.t });
+      this.effect("fill", n.spec.id);
+      this.evict(n);
+    }
     if (r.op !== "read" || r.hit) return;
     const ok = r.result === "ok";
     // A "not found" is kept only by a cache told to remember it, and only for its own short while.

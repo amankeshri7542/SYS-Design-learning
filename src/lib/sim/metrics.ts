@@ -53,7 +53,11 @@ export type MetricId =
   | "doubleBookings"
   | "inconsistent"
   | "leaderless"
-  | "term";
+  | "term"
+  | "lateDropped"
+  | "windowLag"
+  | "lostWrites"
+  | "unsaved";
 
 export interface MetricSpec {
   id: MetricId;
@@ -136,6 +140,10 @@ const META: Record<MetricId, { unit: Unit; better: Better }> = {
   inconsistent: { unit: "count", better: "low" },
   leaderless: { unit: "pct", better: "low" },
   term: { unit: "count", better: "neutral" },
+  lateDropped: { unit: "pct", better: "low" },
+  windowLag: { unit: "ms", better: "low" },
+  lostWrites: { unit: "count", better: "low" },
+  unsaved: { unit: "count", better: "low" },
 };
 
 function recent(sim: Sim, m: MetricSpec) {
@@ -378,6 +386,22 @@ export function measure(sim: Sim, m: MetricSpec): number | null {
       const ns = nodes(sim, m.nodes).filter((n) => n.spec.cluster);
       return ns.length ? Math.max(...ns.map((n) => n.raft.term)) : null;
     }
+    case "lateDropped": {
+      const all = sim.windowed.count(sim.t);
+      return all ? sim.lateDropped.count(sim.t) / all : null;
+    }
+    case "windowLag": {
+      // How long after a window opened its counts were written: its size, plus the wait for late events.
+      const from = sim.t - sim.windowMs;
+      return percentile(sim.windowLags.filter((x) => x.t > from).map((x) => x.ms), 0.95);
+    }
+    case "lostWrites":
+      return sim.lostWrites.count(sim.t);
+    case "unsaved": {
+      // At the caches named, or at every write-behind cache.
+      const ns = (m.nodes ? nodes(sim, m.nodes) : sim.list).filter((n) => n.spec.writeMode === "behind");
+      return ns.length ? ns.reduce((sum, n) => sum + n.dirty.size, 0) : null;
+    }
   }
 }
 
@@ -432,7 +456,10 @@ export function toneOf(m: MetricSpec, v: number | null, sloMs: number): Tone {
     case "lostAcked":
     case "doubleBookings":
     case "inconsistent":
+    case "lostWrites":
       return v === 0 ? "good" : v < 3 ? "warn" : "bad";
+    case "lateDropped":
+      return v < 0.01 ? "good" : v < 0.05 ? "warn" : "bad";
     case "leaderless":
       return v < 0.01 ? "good" : v < 0.1 ? "warn" : "bad";
     case "pushLag":
@@ -541,6 +568,10 @@ const SAYS: Record<MetricId, (v: string) => string> = {
   inconsistent: (v) => `${v} orders were left half-done, with earlier steps never undone, in the window.`,
   leaderless: (v) => `${v} of the time, the group had no leader to take writes.`,
   term: (v) => `Term ${v}: the number of elections the group has held.`,
+  lateDropped: (v) => `${v} of events arrived after their window had closed, and were never counted.`,
+  windowLag: (v) => `A window's counts were written ${v} after it opened: its length, plus the wait for late events.`,
+  lostWrites: (v) => `${v} writes were confirmed and then lost in a crash, in the window.`,
+  unsaved: (v) => `${v} writes are confirmed but not yet saved to the database: a crash now would lose them.`,
 };
 
 /**
