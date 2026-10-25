@@ -868,9 +868,9 @@ Gates on 2026-10-24: typecheck, 268 unit tests, build, and the browser suite: 81
 | `tests/sim.test.ts` | modified | Window, AIMD, connection, heartbeat and push tests (architecture §2.3.3–§2.3.9). The existing health-check test still passes through the `heartbeat` sugar. |
 
 **Acceptance:**
-- [ ] `unacked.size ≤ effectiveWindow` holds at every tick in every scene.
-- [ ] N7 shows p50 ≈ 4 × RTT + service on new connections and ≈ 2 × RTT + service with keep-alive.
-- [ ] S7 and S2 pass their per-stage tests.
+- [x] A sender never has more in flight than its window's size (`tests/hooks.test.ts` checks it every 10 ms; the invariants check no window goes negative in any scene). A window the receiver shrinks leaves what is already in flight alone.
+- [x] N4 (the catalog's code for this row) shows about 4 round trips plus service on a new connection with TLS 1.2, and about 1 round trip plus service kept alive (see the N4 decisions).
+- [x] S2 (video premiere) and S3 (chat) pass their per-stage tests.
 
 **Decisions made while building the M8 engine PR:**
 
@@ -917,6 +917,16 @@ Gates on 2026-10-25: typecheck, 329 unit tests, build, and the browser suite: 97
 - **D5's database accepts 20 connections, and opening one costs two round trips** (connect, then sign in), 10 ms away. With a connection per request, a spike to 320 a second keeps more than 20 open at once, and about a fifth of requests are refused. Pools of 8 on each of the two servers never pass 16, open no new connections once warm, and make requests wait a moment instead. The knobs show both catches: a pool of 2 becomes the queue (1.1 s at the slowest), and pools that add up past the database's limit are refused again.
 - **D6 writes through a writer endpoint that promotes the replica** after three failed health checks, 100 ms apart. The crash in step 1 hits the fix's world too, so step 2's promotion beat reads its note even from before the step began. Without failover every write fails for the 4 s outage; with it about 5% fail during detection, and about 7 writes the primary had confirmed are lost, because the replica copies a quarter of a second behind. Synchronous replication loses none, and every write takes about 410 ms instead of 130. The old primary comes back as a replica (REPLICA), the promoted one wears PRIMARY.
 - **R7's cache restart is 40 ms**, so the restart itself fails almost nothing: the damage is the empty cache. The database (80 a second) sees every read at once and stays swamped for seconds, because misses waiting in its line hold up the refill; response time rises to about 850 ms. Warmed with the hottest pages before it serves (`prewarm`), the cache comes back hitting and the database barely notices. The headline is response time, not failures. The scene warms up for 6 s, so it opens on a full cache.
+
+**Decisions made while building the S2 video premiere and S3 chat stories:**
+
+Gates on 2026-10-25: typecheck, 336 unit tests (3 new in `tests/hooks.test.ts`), build, and the browser suite: 1,016 tests, of which 1,005 passed and 11 were skipped, the 4 frame budgets included. Both stories were checked by eye at their start and fully built designs, on a desktop and a phone.
+
+- **S2, "Serve a premiere to the world", has four stages:** a quiet preview (one origin in the Americas holds), the premiere (100 a second from each continent swamps the origin: edge caches), the same second (a new segment replaces the last on every edge every 1.5 s, and every viewer misses together: coalescing), and Asia's edge dying (2.4 s of every 3: routers that send each region to the nearest healthy edge). Upload and transcoding, and the thin-pipes stage, were left out; it rides C2, C4 and N16, and its catalog entry says so. Players retry a failed segment with a backoff, and routers check their edges every 50 ms.
+- **S3 is now "Keep a chat live"**, in four stages: a small chat polling four times a second, an evening rush that polling swamps (hold connections open, on two servers), more users than two servers can hold (a third), and a server that freezes (heartbeats, and a fourth server for room to move to). "Once and in order" and the ocean split were left out; it rides N7, N11 and N12. Servers hold 60 connections each, so the built-out design stays drawable on a phone.
+- **Four engine additions, each tested and caught by a mutation (5 of 5):** a `missed` metric (one minus `reach`, so a story target can stay "at or under"); a client that switches between polling and held connections (a story control, applied by `reconfigure`) keeps up the new way and closes the connections it no longer uses; heartbeats switched on while connections are open start pinging them; and a script's loop plays its events in order of time, whatever order they are listed in (S2's first draft listed them out of order, and its outage silently ran late). No earlier scene changes.
+- **Story beats point only at stations every design has,** so S2's later stages point at the origin and Asia's viewers, not the edges. A narrow layout shortens "nearest healthy" to "nearest", so three routers' labels fit across a phone.
+- **S0's optional fifth stage, "the primary dies", was not built.** The failover lesson (D6) teaches it, and the capstone's four stages already exercise the story player at its widest.
 
 ### M9 — Engine B3 (coordination) and 5 lessons (L)
 

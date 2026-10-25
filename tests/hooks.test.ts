@@ -1092,3 +1092,53 @@ test("taking a connection in costs a worker: a reconnect storm swamps the server
   assert.ok(storm(40) < 100, `taken in one worker at a time, 40 ms each, they wait their turn (${storm(40)} back)`);
   assert.ok(storm(1) >= 115, "taken in cheaply, they are all back at once");
 });
+
+test("a client that switches between polling and held connections keeps up the new way, and closes what it no longer uses", () => {
+  const spec = (push: boolean, heartbeat?: { everyMs: number; missAfter: number; timeoutMs: number }) =>
+    scene(
+      [
+        client("users", 0, "gw", push ? { keys: 30, subscribe: { holdMs: 1e9, reconnectMs: 100, heartbeat } } : { keys: 30, poll: 250 }),
+        client("news", 4, "gw", { news: true, writes: 1 }, [0, 90]),
+        server("gw", { slots: 8, serviceMs: 2, hold: { max: 100 }, feed: true, downMode: "hang" }),
+      ],
+      { links: { "users>gw": 20, "news>gw": 5 }, windowMs: 2000 },
+    );
+  const sim = run(spec(false), 2000);
+  assert.ok(value(sim, m("empty")) > 0, "polling");
+  sim.reconfigure(spec(true));
+  sim.step(1500);
+  assert.equal(value(sim, m("connections", { nodes: ["gw"] })), 30, "every user now holds a connection");
+  // Heartbeats switched on with connections already open start with them: a freeze is noticed.
+  sim.reconfigure(spec(true, { everyMs: 100, missAfter: 2, timeoutMs: 100 }));
+  sim.setUp("gw", false);
+  sim.step(600);
+  assert.ok(sim.detects.length > 20, `noticed ${sim.detects.length} silent connections`);
+  sim.setUp("gw", true);
+  sim.reconfigure(spec(false));
+  sim.step(1500);
+  assert.equal(value(sim, m("connections", { nodes: ["gw"] })), 0, "back to polling: no connection held");
+  assert.ok(value(sim, m("missed", { nodes: ["users"] })) < 0.05, "and users still hear the news");
+  assert.deepEqual(leakedHolds(sim), []);
+});
+
+test("a script's loop plays its events in order of time, whatever order they are listed in", () => {
+  const order: string[] = [];
+  const spec = scene([client("u", 5, "s"), server("s")], {
+    script: { loopMs: 1000, events: ["late", "early"].map((label) => ({ at: label === "late" ? 700 : 200, label, run: () => void order.push(label) })) },
+  });
+  run(spec, 2100);
+  assert.deepEqual(order, ["early", "late", "early", "late"]);
+});
+
+test("missed is the share of users who hadn't had each news item a second after it was published", () => {
+  const sim = run(
+    scene([client("users", 0, "gw", { keys: 40, subscribe: { holdMs: 1e9 } }), client("news", 4, "gw", { news: true, writes: 1 }, [0, 90]), server("gw", { slots: 8, serviceMs: 2, hold: { max: 30 } })], {
+      links: { "users>gw": 20, "news>gw": 5 },
+      windowMs: 2000,
+    }),
+    4000,
+  );
+  // Ten users never got a connection.
+  assert.ok(Math.abs(value(sim, m("missed", { nodes: ["users"] })) - 10 / 40) < 0.03);
+  assert.ok(Math.abs(value(sim, m("missed", { nodes: ["users"] })) + value(sim, m("reach", { nodes: ["users"] })) - 1) < 1e-9);
+});

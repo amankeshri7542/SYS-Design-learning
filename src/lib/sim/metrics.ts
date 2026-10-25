@@ -47,7 +47,8 @@ export type MetricId =
   | "empty"
   | "detectMs"
   | "falseAlarms"
-  | "lostAcked";
+  | "lostAcked"
+  | "missed";
 
 export interface MetricSpec {
   id: MetricId;
@@ -124,6 +125,7 @@ const META: Record<MetricId, { unit: Unit; better: Better }> = {
   detectMs: { unit: "ms", better: "low" },
   falseAlarms: { unit: "count", better: "low" },
   lostAcked: { unit: "count", better: "low" },
+  missed: { unit: "pct", better: "low" },
 };
 
 function recent(sim: Sim, m: MetricSpec) {
@@ -322,6 +324,7 @@ export function measure(sim: Sim, m: MetricSpec): number | null {
       const ns = nodes(sim, m.nodes).filter((n) => n.spec.client?.window);
       return ns.length ? ns.reduce((s, n) => s + sim.windowOf(n), 0) / ns.length : null;
     }
+    case "missed":
     case "reach": {
       // Of the news items published one second ago and earlier, over a window: the share of users (of the clients named)
       // who have had each one.
@@ -338,7 +341,8 @@ export function measure(sim: Sim, m: MetricSpec): number | null {
           for (let u = 0; u < k; u++) if ((c.seen.get(u) ?? 0) >= item.seq) got++;
         }
       }
-      return all ? got / all : null;
+      if (!all) return null;
+      return m.id === "missed" ? 1 - got / all : got / all;
     }
     case "empty": {
       const all = sim.polls.count(sim.t);
@@ -406,6 +410,8 @@ export function toneOf(m: MetricSpec, v: number | null, sloMs: number): Tone {
       return v <= sloMs ? "good" : v <= sloMs * 2 ? "warn" : "bad";
     case "reach":
       return v > 0.99 ? "good" : v > 0.9 ? "warn" : "bad";
+    case "missed":
+      return v < 0.01 ? "good" : v < 0.1 ? "warn" : "bad";
     case "empty":
       return v < 0.5 ? "good" : v < 0.8 ? "warn" : "bad";
     case "errors":
@@ -499,6 +505,7 @@ const SAYS: Record<MetricId, (v: string) => string> = {
   detectMs: (v) => `A dead connection went unnoticed for ${v} or longer (the slowest 1 in 20).`,
   falseAlarms: (v) => `${v} healthy connections were given up on as dead in the window.`,
   lostAcked: (v) => `${v} writes were confirmed to the user and then lost when a replica took over.`,
+  missed: (v) => `${v} of users hadn't had each news item a second after it was published.`,
 };
 
 /**

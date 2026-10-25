@@ -19,7 +19,9 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     for (const n of this.list) {
       const c = n.spec.client;
       if (!c) continue;
-      if ((c.subscribe || c.poll) && !n.opened && !this.holding) this.opens(n);
+      // Users start keeping up once traffic starts, and start again in the new way when the client changes it.
+      const mode = c.poll ? "poll" : c.subscribe ? "sub" : "";
+      if (mode && n.opened !== mode && !this.holding) this.opens(n);
       let guard = 0;
       while (n.nextArrival <= t && guard++ < 50) {
         const rate = this.rate(n);
@@ -55,7 +57,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
         this.resubs = this.resubs.filter((p) => p.at > t);
         for (const p of due) {
           const n = this.nodes.get(p.client);
-          if (!n) continue;
+          if (!n || !!p.poll !== !!n.spec.client?.poll) continue;
           // A poll goes now, and the next is due one interval on, whatever this one meets.
           if (p.poll) {
             this.spawn(n, p.user, "read", t, 0, 1, { untraced: true });

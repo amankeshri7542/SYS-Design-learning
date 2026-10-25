@@ -13,8 +13,22 @@ const realtime: Partial<Sim> & ThisType<Sim> = {
    * 0), or first polls at a moment of its own within its polling interval.
    */
   opens(n: NodeRt) {
-    n.opened = true;
     const c = n.spec.client!;
+    n.opened = c.poll ? "poll" : "sub";
+    // Switched to polling: the connections held open close.
+    if (c.poll) {
+      for (const sub of n.subOf.values()) {
+        const at = this.nodes.get(sub.at);
+        const i = at ? at.subs.indexOf(sub) : -1;
+        if (at && i >= 0) at.subs.splice(i, 1);
+        sub.abandoned = true;
+        this.release(sub);
+        if (sub.phase !== "travel") sub.phase = "gone";
+      }
+      n.subOf.clear();
+      n.beats.clear();
+    }
+    this.resubs = this.resubs.filter((p) => p.client !== n.spec.id);
     const spread = c.poll ?? (c.subscribe?.reconnectMs || 500);
     for (let u = 0; u < (c.keys ?? 1); u++) this.resubs.push({ at: this.t + Math.max(TICK, n.rng() * spread), client: n.spec.id, user: u, poll: !!c.poll });
   },
@@ -36,6 +50,11 @@ const realtime: Partial<Sim> & ThisType<Sim> = {
    * away, the user tries again later.
    */
   holdSub(n: NodeRt, r: Req) {
+    // Given up on by its user while on its way (it switched to polling): nothing to hold.
+    if (r.abandoned) {
+      r.phase = "gone";
+      return;
+    }
     if (n.subs.length >= n.spec.hold!.max) return this.refuse(n, r);
     r.phase = "wait";
     r.started = this.t;
@@ -98,10 +117,11 @@ const realtime: Partial<Sim> & ThisType<Sim> = {
   /** Every 10 ms at a client with heartbeats: each user with a connection open pings the server holding it, once every `everyMs`. */
   heartbeats(n: NodeRt) {
     const hb = n.spec.client!.subscribe!.heartbeat!;
-    for (const [user, b] of n.beats) {
+    for (const [user, sub] of n.subOf) {
+      // Heartbeats switched on while connections were already open start with them.
+      let b = n.beats.get(user);
+      if (!b) n.beats.set(user, (b = { misses: 0, next: this.t + hb.everyMs, out: 0 }));
       if (this.t < b.next || b.out) continue;
-      const sub = n.subOf.get(user);
-      if (!sub) continue;
       // Only a connection held open is pinged: one on its way, or waiting to be taken in, isn't open yet.
       const held = sub.phase === "wait" && !!this.nodes.get(sub.at)?.subs.includes(sub);
       if (!held && (sub.phase === "travel" || sub.phase === "wait" || sub.phase === "work")) continue;
@@ -133,7 +153,7 @@ const realtime: Partial<Sim> & ThisType<Sim> = {
       return;
     }
     const s = n.spec.client!.subscribe!;
-    if (++b.misses < s.heartbeat!.missAfter) return;
+    if (++b.misses < (s.heartbeat?.missAfter ?? Infinity)) return;
     const sub = n.subOf.get(r.key);
     n.subOf.delete(r.key);
     n.beats.delete(r.key);
