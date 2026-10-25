@@ -8,7 +8,13 @@ const work: Partial<Sim> & ThisType<Sim> = {
     n.arrivals.add(this.t);
     if (r.op === "repl") return this.applyRepl(n, r);
     if (r.op === "probe") {
-      if (n.up) return this.respond(r, "ok");
+      // A heartbeat passes through the nodes on its connection's path, on to the server holding the connection.
+      if (r.beat && r.probeOf !== n.spec.id && n.up && n.on) {
+        const path = this.nodes.get(r.client)?.subOf.get(r.key)?.stack.map((f) => f.id) ?? [];
+        return this.send(r, path[path.indexOf(n.spec.id) + 1] ?? r.probeOf);
+      }
+      // A handshake is refused past the node's connection limit.
+      if (n.up) return this.respond(r, r.hand && !this.admitConn(n, r) ? "error" : "ok");
       if (n.spec.downMode === "hang") return this.park(n, r);
       return this.respond(r, "error");
     }
@@ -25,7 +31,8 @@ const work: Partial<Sim> & ThisType<Sim> = {
     }
     switch (n.spec.kind) {
       case "lb":
-        return this.route(n, r);
+        // A balancer that reads each request (an L7 gateway with `serviceMs`) parses it first, in line for a worker.
+        return n.spec.serviceMs ? this.admit(n, r) : this.route(n, r);
       case "limiter":
         return this.limit(n, r);
       case "cache":
@@ -43,6 +50,7 @@ const work: Partial<Sim> & ThisType<Sim> = {
         if (this.existence(n, r)) return;
         return this.admit(n, r);
       default:
+        if (r.op === "sub" && n.spec.hold) return this.holdSub(n, r);
         if (n.spec.sessions && !this.signedIn(n, r)) return this.respond(r, "error");
         if (n.spec.idempotent && this.repeat(n, r)) return;
         if (r.deliveryOf && this.nodes.get(r.stack[0]?.id)?.spec.ack?.mode === "receive") this.sendAck(n, r);
@@ -178,6 +186,7 @@ const work: Partial<Sim> & ThisType<Sim> = {
     c.at = n.spec.id;
     c.logicalId = r.logicalId;
     c.poison = r.poison;
+    c.news = r.news;
     return c;
   },
 
@@ -360,7 +369,21 @@ const work: Partial<Sim> & ThisType<Sim> = {
     n.served++;
     // A bad deploy: some share of the work fails.
     if (n.spec.failRate && n.rng() < n.spec.failRate) return this.fail(n, r);
+    if (n.spec.kind === "lb") return this.route(n, r);
     if (n.spec.kind === "db") return this.dbDone(n, r);
+    // A feed keeps the latest news item it hears of, and a server holding connections pushes each one down all of them;
+    // an item handed on by a topic needs no answer. A read of a feed is answered with its latest item.
+    if (r.news && (n.spec.feed || n.spec.hold)) {
+      if (n.spec.feed) n.latest = Math.max(n.latest, r.news);
+      if (n.spec.hold) this.fanOut(n, r);
+      if (r.detached) {
+        r.phase = "gone";
+        return;
+      }
+    } else if (n.spec.feed && r.op === "read") {
+      r.news = n.latest;
+      r.polled = true;
+    }
     const calls = (n.spec.calls?.[r.op === "write" ? "write" : "read"] ?? n.spec.to ?? []).slice();
     // A poison job fails wherever it is finally handled: a worker, or the last server on its way (a dead website).
     if (r.poison && (n.spec.sink || !calls.length)) return this.fail(n, r);
@@ -399,22 +422,54 @@ const work: Partial<Sim> & ThisType<Sim> = {
     r.stack[r.stack.length - 1].calls = rest;
     r.calledAt = this.t;
     if (n.spec.blocking) n.held.push(r);
-    this.send(r, this.resolve(n, next));
+    if (n.spec.connect) this.dial(n, r, this.resolve(n, next));
+    else this.send(r, this.resolve(n, next));
   },
 
   back(n: NodeRt, r: Req) {
     if (r.op === "probe") {
+      // A heartbeat or a handshake goes back the way it came; at its sender, it reports.
+      if (r.beat || r.hand) {
+        if (r.stack.length > 1) return this.respond(r);
+        r.phase = "gone";
+        return r.hand ? this.shaken(n, r) : this.beatResult(n, r, r.result === "ok");
+      }
       if (!r.abandoned) this.healthResult(n, r.probeOf, r.result === "ok");
       r.phase = "gone";
+      return;
+    }
+    // A push goes back along its connection's path to its user.
+    if (r.op === "push") {
+      if (r.stack.length > 1) return this.respond(r);
+      r.phase = "gone";
+      return this.heard(n, r);
+    }
+    // A replica confirms a copy its primary was waiting for: once every copy is confirmed, the write is answered.
+    if (r.op === "repl") {
+      r.phase = "gone";
+      const w = this.syncWait.get(r.syncFor);
+      if (!w || --w.left > 0) return;
+      this.syncWait.delete(r.syncFor);
+      const i = n.waiting.indexOf(w.write);
+      if (i >= 0) {
+        n.waiting.splice(i, 1);
+        this.respond(w.write, "ok");
+      }
       return;
     }
     if (r.orphanAt === n.spec.id) {
       r.phase = "gone";
       return;
     }
-    // An ack lands at its queue, which forgets the job; an outbox event accepted downstream leaves the outbox.
+    // An ack lands at its queue, which forgets the job; an outbox event accepted downstream leaves the outbox. A window
+    // update travels back to its sender, which may send again.
     if (r.op === "ack") {
+      if (r.stack.length > 1) return this.respond(r);
       if (n.spec.kind === "queue") n.inflight.delete(r.deliveryOf);
+      else if (r.window >= 0 && n.spec.client?.window) {
+        n.peerWindow = r.window;
+        this.pump(n);
+      }
       r.phase = "gone";
       return;
     }
@@ -432,8 +487,11 @@ const work: Partial<Sim> & ThisType<Sim> = {
       return;
     }
     const frame = r.stack[r.stack.length - 1];
+    // The exchange is over: the connection it went out on is free.
+    if (frame.conn) this.hangUp(n, frame);
     switch (n.spec.kind) {
       case "client":
+        if (r.op === "sub") return this.subEnded(n, r);
         return this.finishAtClient(n, r);
       case "lb":
         if (frame.via) n.out.set(frame.via, Math.max(0, (n.out.get(frame.via) ?? 1) - 1));

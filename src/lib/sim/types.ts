@@ -13,7 +13,8 @@ export type Kind =
 /** Visual identity. Defaults to the kind; overrides give a node a different glyph. */
 export type Glyph = Kind | "edge" | "router" | "worker" | "bot";
 
-export type Op = "read" | "write" | "probe" | "repl" | "ack";
+/** `sub`: a user keeping a connection open for news; `push`: a news item sent down one. */
+export type Op = "read" | "write" | "probe" | "repl" | "ack" | "sub" | "push";
 
 /** How a request ended, from the client's point of view. */
 export type Result = "ok" | "stale" | "fallback" | "rejected" | "error";
@@ -42,6 +43,32 @@ export interface LinkSpec {
   perCostMs?: number;
   /** Text drawn on the link. */
   label?: string;
+  /** With `parallel`: how many crossings may wait at the link's start for a lane. One more is dropped there (a full buffer). */
+  buffer?: number;
+}
+
+/**
+ * The connections a node opens to whatever it sends to: a browser's to a server, or a server's pool to its database. A
+ * new connection costs `handshakeRtts` round trips (small grey rings out and back) before its first request goes; one
+ * left idle for `keepAliveMs` closes.
+ */
+export interface ConnectSpec {
+  /** Round trips before a new connection carries anything: 1 for TCP, 2 or 3 with TLS, 0 for none. */
+  handshakeRtts: number;
+  /** How long an idle connection stays open for the next request: 0 closes it after each exchange. */
+  keepAliveMs: number;
+  /** Connections open at once to one target. Requests beyond them wait at the sender for a free one. */
+  max: number;
+  /**
+   * `one` (default): one exchange at a time per connection (HTTP/1.1). `multiplex`: many at once, but one lost packet
+   * holds up every answer behind it on that connection (HTTP/2 over TCP). `independent`: many at once, each on its own
+   * (HTTP/3).
+   */
+  streams?: "one" | "multiplex" | "independent";
+  /** A request that has waited this long for a connection fails (a pool's wait limit). */
+  waitMs?: number;
+  /** A crossing lost on one of these connections is sent again by the connection itself, this long after it was sent. */
+  rtoMs?: number;
 }
 
 export interface ClientSpec {
@@ -72,6 +99,23 @@ export interface ClientSpec {
   absentKeys?: number;
   /** Share of its jobs that are poison: every worker that tries one fails it. */
   poison?: number;
+  /**
+   * A sending window: at most `size` requests in flight (sent and not yet answered); the rest wait at the sender. `aimd`:
+   * the window grows by one for each window's worth answered (by one per answer while it is below half its last peak)
+   * and halves on a loss, up to `max`. A receiver that `advertise`s its room caps it further.
+   */
+  window?: { size: number; max?: number; mode?: "fixed" | "aimd" };
+  /** Each arrival is a page of this many requests at once (keys 0 to page − 1). `pageMs` measures the whole page. */
+  page?: number;
+  /** Each request is a news item, numbered in the order they are sent. */
+  news?: boolean;
+  /**
+   * Each of its `keys` users keeps a connection open for news, instead of sending requests. A connection is held for
+   * up to `holdMs`, then opened again; one that fails is opened again after a random wait of up to `reconnectMs` (0:
+   * at once). With `heartbeat`, each user pings its server every `everyMs` and, after `missAfter` pings unanswered
+   * within `timeoutMs`, gives up on the connection and opens a new one.
+   */
+  subscribe?: { holdMs: number; reconnectMs?: number; heartbeat?: { everyMs: number; missAfter: number; timeoutMs: number } };
 }
 
 export interface NodeSpec {
@@ -181,6 +225,34 @@ export interface NodeSpec {
   negativeTtlMs?: number;
   /** Cache or database: an existence check answers most requests for absent keys at once; `fp` slip through. */
   bloom?: { fp: number };
+  /** The connections it opens to the nodes it sends to (a client's, or a server's pool). */
+  connect?: ConnectSpec;
+  /** Accepts at most this many open connections: a handshake past them is refused. */
+  maxConns?: number;
+  /**
+   * Balancer: 4 picks a target once per connection and pins it there; it never reads the requests, so `byTag` doesn't
+   * apply. 7 (default) picks a target for each request. Without client connections, each user is one connection.
+   */
+  layer?: 4 | 7;
+  /**
+   * A receiver that tells its senders how much room it has: `high` minus the requests waiting in its line, on every
+   * answer. A sender told 0 waits, and hears again once the line has drained to `low` (a window update).
+   */
+  advertise?: { high: number; low?: number };
+  /** Keeps up to `max` subscribers' connections open, and pushes each news item it receives down every one. */
+  hold?: { max: number };
+  /** Keeps the latest news item it has received, and answers every read with it (a poll). */
+  feed?: boolean;
+  /** Database primary: answer a write once every replica has its copy (`sync`), or at once (`async`, default). */
+  replication?: "sync" | "async";
+  /**
+   * Balancer in front of a primary database and its replicas, in order: every request goes to the first healthy one.
+   * When health checks bench the primary, the next is promoted: it takes the writes, the other replicas copy from it,
+   * and writes the old primary acknowledged but never copied are lost (`lostAcked`).
+   */
+  promote?: boolean;
+  /** Cache: comes back up already holding this many of the hottest keys (warmed before it serves). */
+  prewarm?: number;
 }
 
 export interface ScriptEvent {
@@ -252,7 +324,11 @@ export type FxKind =
   /** A queue handed out a job again: its worker never acknowledged it. */
   | "redeliver"
   /** A queue gave up on a job and moved it to its dead-letter queue. */
-  | "dead";
+  | "dead"
+  /** A connection was closed under its requests (its server went down, or a sender gave up on it). */
+  | "hangup"
+  /** A replica was promoted to primary. */
+  | "promote";
 
 export interface Fx {
   t: number;

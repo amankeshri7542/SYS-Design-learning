@@ -11,6 +11,29 @@ export interface Frame {
   calls: Call[];
   /** Load balancer: which target this request was sent to. */
   via?: string;
+  /** The connection this node sent the request on (its id among the node's `conns`); it is freed when the answer is back. */
+  conn?: number;
+}
+
+/** One connection a node has open to a target. */
+export interface Conn {
+  id: number;
+  to: string;
+  /** Exchanges on it now. */
+  busy: number;
+  /** When it last carried something (an idle connection closes `keepAliveMs` after this). */
+  lastUsed: number;
+  /** Its handshake is done: requests on it go at once. */
+  ready: boolean;
+  /** Round trips of handshake still to make. */
+  rtts: number;
+  /** The target counted it against its `maxConns`. */
+  accepted: boolean;
+  /**
+   * `multiplex`: a lost answer on it is being resent, and every answer behind it waits: answers due between `from` and
+   * `until` arrive at `until`.
+   */
+  stall: { from: number; until: number };
 }
 
 export interface Req {
@@ -77,6 +100,28 @@ export interface Req {
   relay: boolean;
   /** On its way to a dead-letter queue: it is stored there, and nothing answers it. */
   deadLetter: boolean;
+  /** How many times a connection has resent this crossing after losing it (each resend has its own fate). */
+  resent: number;
+  /** The page it belongs to (a client with `page`), 0 if none. */
+  page: number;
+  /** The news item it carries (a news write, a push, or a poll's answer), 0 if none. */
+  news: number;
+  /** On an answer from a receiver that advertises its room: how many more it can take (-1: it doesn't say). */
+  window: number;
+  /** A copy sent to a replica while the write it belongs to waits for it (`replication: "sync"`): the write's id. */
+  syncFor: number;
+  /** Counted in its sender's window (until it is answered or given up on). */
+  flew: boolean;
+  /** A read answered by a feed: its answer says whether there was news. */
+  polled: boolean;
+  /** A handshake round trip for this connection of its sender (its id), 0 if none. */
+  hand: number;
+  /** A heartbeat from a user to the server holding its connection. */
+  beat: boolean;
+  /** On a connection that resends what it loses: its resend timeout (0: a loss is final). */
+  rto: number;
+  /** When it left its sender (a sender with a window measures round trips from here). */
+  outAt: number;
 }
 
 export interface Entry {
@@ -176,11 +221,44 @@ export interface NodeRt {
   dupes: Win;
   /** Queue with acks: jobs handed out and not yet acknowledged, by the copy's id. */
   inflight: Map<number, { job: Req; at: number }>;
-  /** Queue with back-pressure: producers' requests held until there is room. */
+  /** Queue with back-pressure: producers' requests held until there is room. Primary replicating `sync`: writes waiting for their copies. */
   waiting: Req[];
   /** Database with an outbox: events not yet accepted downstream. */
   outbox: { id: number; key: number; tag: string; t: number; sentAt: number }[];
   nextRelay: number;
+  /** Connections it has open, and requests waiting at it to be sent: for a connection, or for room in its window. */
+  conns: Conn[];
+  sendq: Req[];
+  /** Connections it accepted (counted against `maxConns`). */
+  accepted: number;
+  /** Sender with a window: requests in flight, the window, its slow-start mark, the room the receiver last advertised, a round-trip estimate, and when it last halved. */
+  flying: number;
+  cwnd: number;
+  ssthresh: number;
+  peerWindow: number;
+  srtt: number;
+  cutAt: number;
+  /** Receiver that advertises: the senders it told there was no room, owed a window update. */
+  starved: Set<string>;
+  /** Balancer at layer 4: the target each connection is pinned to. */
+  pins: Map<string, string>;
+  /** Server with `hold`: subscribers' connections it holds open. Server with `feed`: the latest news item it has. */
+  subs: Req[];
+  latest: number;
+  /** Client that subscribes: each user's connection, its heartbeat (misses so far, next ping), and the latest news item each user has seen. */
+  subOf: Map<number, Req>;
+  beats: Map<number, { misses: number; next: number; out: number }>;
+  seen: Map<number, number>;
+  /** Client with `page`: pages still loading, by id. */
+  pages: Map<number, { t0: number; left: number }>;
+  /** Balancer that promotes: the target it treats as primary now. */
+  primary: string;
+  /** When it last went down. */
+  downAt: number;
+  /** Sender with a window: when the receiver last said it had no room (-1: it has room). */
+  zeroAt: number;
+  /** Client that subscribes: its users have opened their first connections. */
+  opened: boolean;
 }
 
 export interface Note {

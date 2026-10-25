@@ -387,7 +387,7 @@ function audit(spec: SceneSpec, ms: number) {
     sim.step(50);
     broken.push(...leakedHolds(sim));
   }
-  for (const r of made) if (clients.has(r.client) && r.op !== "probe" && !r.detached) sent.add(`${r.client}:${r.logicalId}`);
+  for (const r of made) if (clients.has(r.client) && r.op !== "probe" && r.op !== "sub" && !r.detached) sent.add(`${r.client}:${r.logicalId}`);
   return { sim, sent, recorded, broken };
 }
 
@@ -412,7 +412,11 @@ function settles(spec: SceneSpec, label: string) {
   // consumers (a dead-letter queue) keeps its jobs on purpose.
   for (const n of sim.list) {
     const store = n.spec.kind === "queue" && !sim.flat(n.spec.to).length;
-    assert.equal((store ? 0 : n.queue.length) + n.work.length + n.held.length + n.incoming + n.waiters.size + n.waiting.length + n.inflight.size, 0, `${n.spec.id} is idle: ${label}`);
+    // Health checks and heartbeats never stop: one may be on its way.
+    const probes = sim.reqs.filter((r) => r.phase === "travel" && r.dir === 1 && r.to === n.spec.id && r.op === "probe").length;
+    assert.equal((store ? 0 : n.queue.length) + n.work.length + n.held.length + n.incoming - probes + n.waiters.size + n.waiting.length + n.inflight.size + n.sendq.length + n.subs.length, 0, `${n.spec.id} is idle: ${label}`);
+    assert.ok(n.conns.every((k) => k.busy === 0), `${n.spec.id}'s connections are all free: ${label}`);
+    if (n.spec.client?.window) assert.equal(n.flying, 0, `${n.spec.id} has nothing in flight: ${label}`);
     for (const [id, k] of n.out) assert.equal(k, 0, `${n.spec.id} → ${id} has nothing outstanding: ${label}`);
   }
   return sim;
@@ -694,4 +698,367 @@ test("a fetcher acks its job by answering; a dead site's job comes back; a crash
   assert.ok(value(crash("receive", 200), m("lostJobs")) > value(crash("receive"), m("lostJobs")));
   assert.equal(value(crash("finish"), m("lostJobs")), 0);
   assert.ok(value(crash("finish"), m("redelivered")) > 0, "acked when done, they are handed out again");
+});
+
+// ------------------------------------------------------------------------------------------------ batch 2b: connections and real time
+
+const db = (id: string, extra: Partial<NodeSpec> = {}): NodeSpec => ({ id, kind: "db", label: id, at: [90, 50], slots: 8, serviceMs: 10, ...extra });
+
+test("a new connection costs its handshake's round trips; keep-alive pays them once", () => {
+  // 50 ms each way: a round trip is 100 ms. Two handshake round trips, then the request's own.
+  const spec = (keepAliveMs: number) =>
+    scene([{ ...client("u", 4, "s"), connect: { handshakeRtts: 2, keepAliveMs, max: 6 } }, server("s", { serviceMs: 10 })], { links: { "u>s": 50 } });
+  const fresh = run(spec(0), 6000);
+  const p50 = value(fresh, m("p50"));
+  assert.ok(Math.abs(p50 - (3 * 100 + 10)) < 25, `new connection each time: p50 ${p50} ≈ 3 round trips + service`);
+  assert.ok(value(fresh, m("handshakes")) > 3, "a handshake for every request");
+  const kept = run(spec(5000), 6000);
+  assert.ok(Math.abs(value(kept, m("p50")) - (100 + 10)) < 25, `kept alive: p50 ${value(kept, m("p50"))} ≈ 1 round trip + service`);
+  assert.equal(value(kept, m("handshakes")), 0, "no handshakes once the connections are open");
+  assert.ok(value(kept, m("connections", { nodes: ["u"] })) <= 6);
+  // Kept alive only briefly, a connection closes between requests a quarter of a second apart.
+  assert.ok(value(run(spec(60), 6000), m("handshakes")) > 1, "idle connections close");
+  // The handshake shows where the time went: on the wire.
+  const d = fresh.done.filter((x) => x.result === "ok");
+  assert.ok(mean(d.map((x) => x.wire)) > 280);
+});
+
+test("one exchange per connection makes requests wait their turn; a multiplexed connection carries them all at once", () => {
+  const spec = (streams: "one" | "multiplex") =>
+    scene([{ ...client("u", 3, "s", { page: 6 }), connect: { handshakeRtts: 1, keepAliveMs: 5000, max: 1, streams } }, server("s", { slots: 16, serviceMs: 20 })], { links: { "u>s": 30 } });
+  const one = run(spec("one"), 6000);
+  const mux = run(spec("multiplex"), 6000);
+  assert.ok(value(one, m("sendWait")) > 100, `one at a time: requests wait at the browser (${value(one, m("sendWait"))} ms)`);
+  assert.equal(value(mux, m("sendWait")), 0);
+  assert.ok(value(one, m("pageMs")) > 3 * value(mux, m("pageMs")), "a page of six waits six round trips on one lane");
+});
+
+test("a database refuses connections past its limit; a pool of a few kept open never reaches it", () => {
+  const spec = (pool: boolean) =>
+    scene([
+      client("u", 150, "app", { timeoutMs: 2000 }),
+      server("app", { slots: 64, serviceMs: 2, to: ["db"], blocking: true, connect: pool ? { handshakeRtts: 1, keepAliveMs: Infinity, max: 6, waitMs: 800 } : { handshakeRtts: 1, keepAliveMs: 0, max: 1000 } }),
+      db("db", { slots: 8, serviceMs: 30, maxConns: 6 }),
+    ], { links: { "app>db": 8 } });
+  const each = run(spec(false), 4000);
+  assert.ok(value(each, m("errors")) > 0.1, `a connection per request: past 6 open, refused (${value(each, m("errors"))})`);
+  const pool = run(spec(true), 4000);
+  assert.equal(value(pool, m("errors")), 0);
+  assert.ok(value(pool, m("connections", { nodes: ["db"] })) <= 6);
+  assert.ok(value(pool, m("sendWait")) > 0, "requests wait briefly for a pooled connection");
+  // A pool too small for the load: requests that wait past its limit fail fast, at the server.
+  const tiny = scene([client("u", 150, "app", { timeoutMs: 2000 }), server("app", { slots: 64, serviceMs: 2, to: ["db"], blocking: true, connect: { handshakeRtts: 1, keepAliveMs: Infinity, max: 1, waitMs: 100 } }), db("db", { slots: 8, serviceMs: 30 })], { links: { "app>db": 8 } });
+  const small = run(tiny, 4000);
+  assert.ok(value(small, m("errors")) > 0.3 && value(small, m("p95")) < 600, "a pool of one turns most away within its 100 ms wait");
+});
+
+test("restarting a server drops every connection to it: each client shakes hands again at once", () => {
+  const spec = scene(
+    Array.from({ length: 6 }, (_, i): NodeSpec => ({ ...client(`u${i}`, 5, "s", {}, [0, i * 15]), connect: { handshakeRtts: 2, keepAliveMs: 1e9, max: 2 } })).concat([server("s", { serviceMs: 10 })]),
+    { links: Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`u${i}>s`, 40])) },
+  );
+  const sim = run(spec, 3000);
+  assert.equal(value(sim, m("handshakes")), 0, "settled: no new connections");
+  sim.setUp("s", false);
+  sim.step(50);
+  assert.equal(value(sim, m("connections", { nodes: ["s"] })), 0);
+  sim.setUp("s", true);
+  sim.step(800);
+  assert.ok(value(sim, m("handshakes")) >= 6, "every client opened a connection again");
+  assert.deepEqual(leakedHolds(sim), []);
+});
+
+test("a connection that resends what it loses delivers everything, once, without the client retrying", () => {
+  const spec = (rtoMs?: number) =>
+    scene(
+      [{ ...client("u", 30, "s", { timeoutMs: 1500, retry: { mode: "now", max: 3 } }), connect: { handshakeRtts: 0, keepAliveMs: 1e9, max: 1, streams: "independent", rtoMs } }, server("s", { slots: 16, serviceMs: 5 })],
+      { links: { "u>s": { ms: 30, loss: 0.2 } }, windowMs: 1e9 },
+    );
+  const resent = run(spec(200), 5000);
+  assert.ok(value(resent, m("answered")) > 0.99);
+  assert.ok(Math.abs(value(resent, m("amplify")) - 1) < 1e-9, "no request sent twice by the client");
+  assert.ok(resent.fx.some((f) => f.kind === "lost"), "losses still show where they happened");
+  assert.ok(value(run(spec(), 5000), m("amplify")) > 1.2, "without it, the client's timeout resends");
+});
+
+test("head-of-line blocking: on a multiplexed connection one loss holds up the answers behind it; independent streams don't wait", () => {
+  const spec = (streams: "multiplex" | "independent") =>
+    scene(
+      [{ ...client("u", 2, "s", { page: 12 }), connect: { handshakeRtts: 0, keepAliveMs: 1e9, max: 1, streams, rtoMs: 300 } }, server("s", { slots: 16, serviceMs: 5 })],
+      { links: { "u>s": { ms: 30, loss: 0.08, perCostMs: 12, parallel: 1 } }, windowMs: 1e9 },
+    );
+  const mux = run(spec("multiplex"), 12_000);
+  const ind = run(spec("independent"), 12_000);
+  assert.ok(mean(mux.pageLog.map((p) => p.lat)) > mean(ind.pageLog.map((p) => p.lat)) + 40, `multiplex ${mean(mux.pageLog.map((p) => p.lat))} vs independent ${mean(ind.pageLog.map((p) => p.lat))}`);
+  assert.ok(mean(mux.done.map((d) => d.lat)) > mean(ind.done.map((d) => d.lat)), "every answer waits behind a loss, not only the lost one");
+});
+
+test("stop-and-wait sends one per round trip; a window of eight sends eight", () => {
+  const spec = (size: number) => scene([client("u", 150, "s", { window: { size }, timeoutMs: 1e9 }), server("s", { slots: 64, serviceMs: 6 })], { links: { "u>s": 25 }, timeoutMs: undefined });
+  const one = average(spec(1), m("throughput"));
+  const eight = average(spec(8), m("throughput"));
+  assert.ok(Math.abs(one - 1000 / 56) < 3, `one in flight: ${one}/s ≈ 1 ÷ 56 ms`);
+  assert.ok(eight > 7 * one, `eight in flight: ${eight}/s`);
+  // A request waiting its turn isn't timed yet: the timer starts when it goes out.
+  const backlog = run(scene([client("u", 40, "s", { window: { size: 1 }, timeoutMs: 500 }), server("s", { serviceMs: 6 })], { links: { "u>s": 25 }, timeoutMs: undefined }), 4000);
+  assert.equal(value(backlog, m("errors")), 0);
+});
+
+test("a receiver that advertises its room never overflows: the sender waits instead of losing messages", () => {
+  const spec = (advertise: boolean) =>
+    scene(
+      [client("u", 60, "s", { window: { size: 40 }, timeoutMs: 4000, retry: { mode: "now", max: 5 } }), server("s", { slots: 1, serviceMs: 25, queueMax: 20, advertise: advertise ? { high: 15, low: 5 } : undefined })],
+      { links: { "u>s": 100 }, timeoutMs: undefined, windowMs: 1e9 },
+    );
+  const blind = run(spec(false), 6000);
+  assert.ok(blind.fx.some((f) => f.kind === "drop" && f.node === "s"), "a full receiver drops what doesn't fit");
+  const told = new Sim(spec(true));
+  for (let t = 0; t < 6000; t += 10) {
+    told.step(10);
+    const u = told.nodes.get("u")!;
+    assert.ok(u.flying <= 40, "never more in flight than the window");
+  }
+  assert.ok(!told.fx.some((f) => f.kind === "drop"), "nothing dropped");
+  assert.ok(value(told, m("sendWait")) > 0, "the sender waits instead");
+  assert.ok(told.reqs.length > 0 && told.nodes.get("u")!.peerWindow < 40, "it heard how much room there was");
+});
+
+test("AIMD: two senders on one narrow link grow their windows, halve on loss, and share it fairly", () => {
+  const sender = (id: string, y: number): NodeSpec => ({ ...client(id, 600, "r", { window: { size: 1, max: 64, mode: "aimd" }, timeoutMs: 400, retry: { mode: "now", max: 8 } }, [0, y]) });
+  const spec = scene([sender("a", 20), sender("b", 80), lb("r", ["s"]), server("s", { slots: 256, serviceMs: 2 })], {
+    // The buffer holds about one round trip's worth, so halving both windows still keeps the link busy.
+    links: { "a>r": 10, "b>r": 10, "r>s": { ms: 20, parallel: 8, buffer: 24 } },
+    timeoutMs: undefined,
+    windowMs: 1e9,
+  });
+  const sim = new Sim(spec);
+  const seen: number[] = [];
+  const ok = { a: 0, b: 0 };
+  const record = sim.record.bind(sim);
+  sim.record = (r, result) => {
+    if (sim.t > 3000 && result === "ok") ok[r.client as "a" | "b"]++;
+    record(r, result);
+  };
+  for (let t = 0; t < 10_000; t += 10) {
+    sim.step(10);
+    if (sim.t > 3000) seen.push(sim.nodes.get("a")!.cwnd);
+  }
+  assert.ok(Math.max(...seen) >= 2 * Math.min(...seen), `a sawtooth: ${Math.min(...seen)} to ${Math.max(...seen)}`);
+  const goodput = (ok.a + ok.b) / 7;
+  assert.ok(goodput > 0.8 * 400, `the link stays busy: ${goodput}/s of 400`);
+  assert.ok(Math.abs(ok.a - ok.b) / (ok.a + ok.b) < 0.25, `fair shares: ${ok.a} vs ${ok.b}`);
+  assert.ok(value(sim, m("lost")) > 0, "a full buffer drops, and that is the signal");
+});
+
+test("a layer 4 balancer pins each connection to one server, so busy users pile up; layer 7 spreads requests", () => {
+  const spec = (layer: 4 | 7) =>
+    scene([
+      client("u", 120, "lb", { keys: 12, skew: 1.4 }),
+      lb("lb", ["a", "b", "c"], { layer }),
+      server("a", { slots: 2, serviceMs: 20 }),
+      server("b", { slots: 2, serviceMs: 20 }),
+      server("c", { slots: 2, serviceMs: 20 }),
+    ]);
+  const l4 = new Sim(spec(4));
+  const where = new Map<number, Set<string>>();
+  const send = l4.send.bind(l4);
+  l4.send = (r: Req, to: string, ms?: number) => {
+    if (r.stack[r.stack.length - 1].id === "lb" && r.dir === 1) where.set(r.key, (where.get(r.key) ?? new Set()).add(to));
+    send(r, to, ms);
+  };
+  l4.step(5000);
+  assert.ok([...where.values()].every((s) => s.size === 1), "each user's requests all went to one server");
+  const peak = (sim: Sim) => value(sim, m("peak", { nodes: ["a", "b", "c"] }));
+  assert.ok(peak(l4) > peak(run(spec(7), 5000)) + 0.15, "the server with the busiest users runs hotter");
+});
+
+test("at layer 4 a balancer can't route by path; an L7 gateway can, and parsing costs it a worker's time", () => {
+  const spec = (layer: 4 | 7, serviceMs?: number) =>
+    scene([
+      client("u", 60, "gw", { tag: "pay", keys: 30 }),
+      lb("gw", ["web"], { layer, byTag: { pay: ["pay"] }, serviceMs, slots: serviceMs ? 2 : undefined }),
+      server("web", { serviceMs: 5 }),
+      server("pay", { serviceMs: 5 }),
+    ]);
+  assert.equal(run(spec(4), 3000).nodes.get("pay")!.served, 0, "layer 4 sends everything to the general pool");
+  const l7 = run(spec(7, 6), 3000);
+  assert.ok(l7.nodes.get("pay")!.served > 100);
+  assert.ok(value(l7, m("util", { nodes: ["gw"] })) > 0.05, "the gateway's workers are busy reading requests");
+  assert.ok(value(l7, m("p50")) > value(run(spec(7), 3000), m("p50")) + 4, "and each request waits for it");
+});
+
+test("push: held connections get every news item within a round trip; polling mostly hears nothing new, late", () => {
+  const push = scene(
+    [
+      client("users", 0, "gw", { keys: 200, subscribe: { holdMs: 1e9 } }),
+      client("news", 5, "topic", { news: true, writes: 1 }, [0, 90]),
+      { id: "topic", kind: "topic", label: "topic", at: [40, 90], to: ["gw"] },
+      server("gw", { slots: 4, serviceMs: 2, hold: { max: 500 } }),
+    ],
+    { links: { "users>gw": 30, "news>topic": 5, "topic>gw": 5 }, windowMs: 2000 },
+  );
+  const p = run(push, 5000);
+  assert.equal(value(p, m("connections", { nodes: ["gw"] })), 200);
+  assert.ok(p.newsLog.length > 200 * 10, "every item reached every user");
+  assert.ok(value(p, m("pushLag")) < 2 * 30 + 40, `news in about one trip: ${value(p, m("pushLag"))} ms`);
+  assert.ok(value(p, m("reach", { nodes: ["users"] })) > 0.99);
+  assert.ok(value(p, m("util", { nodes: ["gw"] })) < 0.2, "the server works once per item, not once per user");
+  // Each user polls about once a second; news comes once every ten seconds.
+  const poll = scene(
+    [client("users", 200, "feed", { keys: 200 }), client("news", 0.1, "feed", { news: true, writes: 1 }, [0, 90]), server("feed", { slots: 4, serviceMs: 2, feed: true })],
+    { links: { "users>feed": 30, "news>feed": 5 }, windowMs: 15_000 },
+  );
+  const q = run(poll, 20_000);
+  assert.ok(value(q, m("empty")) > 0.9, `most polls hear nothing new (${value(q, m("empty"))})`);
+  assert.ok(value(q, m("pushLag")) > 500, `news waits for the next poll: ${value(q, m("pushLag"))} ms`);
+  assert.ok(value(q, m("util", { nodes: ["feed"] })) > 2 * value(p, m("util", { nodes: ["gw"] })), "and the server answers every poll");
+});
+
+test("a server holds only so many connections; long polls are opened again as each one ends", () => {
+  const spec = (holdMs: number, max: number) =>
+    scene([client("users", 0, "gw", { keys: 50, subscribe: { holdMs, reconnectMs: 300 } }), server("gw", { slots: 4, serviceMs: 2, hold: { max } })], { links: { "users>gw": 20 } });
+  const capped = run(spec(1e9, 30), 3000);
+  assert.equal(value(capped, m("connections", { nodes: ["gw"] })), 30, "the rest are turned away");
+  assert.ok(capped.fx.some((f) => f.kind === "reject" && f.node === "gw"));
+  const polls = new Sim(spec(400, 100));
+  let low = Infinity;
+  for (let t = 0; t < 4000; t += 50) {
+    polls.step(50);
+    if (polls.t > 1000) low = Math.min(low, value(polls, m("connections", { nodes: ["gw"] })));
+  }
+  assert.ok(low >= 30, `long polls reopen at once: at least ${low} of 50 open at any moment`);
+});
+
+test("when a push server crashes, its users reconnect: all at once, or spread over a random wait", () => {
+  const spec = (reconnectMs: number) =>
+    scene(
+      [client("users", 0, "lb", { keys: 120, subscribe: { holdMs: 1e9, reconnectMs } }), lb("lb", ["a", "b"], { health: { everyMs: 50, failAfter: 1, passAfter: 1, timeoutMs: 100 } }), server("a", { hold: { max: 500 } }), server("b", { hold: { max: 500 } })],
+      { links: { "users>lb": 20 } },
+    );
+  const burst = (reconnectMs: number) => {
+    const sim = run(spec(reconnectMs), 2000);
+    sim.setUp("a", false);
+    let peak = 0;
+    let before = sim.nodes.get("b")!.arrivals.count(sim.t);
+    for (let t = 0; t < 1500; t += 10) {
+      sim.step(10);
+      const now = sim.nodes.get("b")!.arrivals.count(sim.t);
+      peak = Math.max(peak, now - before);
+      before = now;
+    }
+    assert.ok(value(sim, m("connections", { nodes: ["b"] })) > 110, "everyone ends up on the server that's left");
+    return peak;
+  };
+  assert.ok(burst(0) > 3 * burst(1000), "with no wait, the reconnects arrive in one burst (a storm)");
+});
+
+test("heartbeats: a hung server's connections are noticed and moved; too eager a heartbeat raises false alarms", () => {
+  const spec = (heartbeat?: { everyMs: number; missAfter: number; timeoutMs: number }, link = 20) =>
+    scene(
+      [
+        client("users", 0, "lb", { keys: 60, subscribe: { holdMs: 1e9, reconnectMs: 100, heartbeat } }),
+        client("news", 4, "topic", { news: true, writes: 1 }, [0, 90]),
+        { id: "topic", kind: "topic", label: "topic", at: [40, 90], to: ["a", "b"] },
+        lb("lb", ["a", "b"], { health: { everyMs: 50, failAfter: 2, passAfter: 2, timeoutMs: 100 } }),
+        server("a", { hold: { max: 500 }, downMode: "hang" }),
+        server("b", { hold: { max: 500 }, downMode: "hang" }),
+      ],
+      { links: { "users>lb": link, "lb>a": 10, "lb>b": 10 }, windowMs: 2000 },
+    );
+  const hang = (heartbeat?: { everyMs: number; missAfter: number; timeoutMs: number }) => {
+    const sim = run(spec(heartbeat), 2000);
+    sim.setUp("a", false);
+    sim.step(4000);
+    return sim;
+  };
+  const silent = hang();
+  assert.ok(value(silent, m("reach", { nodes: ["users"] })) < 0.7, `without heartbeats, a's users never hear again (${value(silent, m("reach", { nodes: ["users"] }))})`);
+  const beating = hang({ everyMs: 100, missAfter: 2, timeoutMs: 150 });
+  assert.ok(value(beating, m("reach", { nodes: ["users"] })) > 0.99);
+  assert.ok(beating.detects.length > 20 && Math.max(...beating.detects.map((d) => d.ms)) <= 450, `noticed within 450 ms: ${Math.max(...beating.detects.map((d) => d.ms))}`);
+  const eager = run(spec({ everyMs: 20, missAfter: 1, timeoutMs: 10 }, 15), 3000);
+  assert.ok(eager.falseAlarms.count(eager.t) > 0, "a ping slower than its timeout looks like death");
+});
+
+test("failover: a replica is promoted once health checks bench the primary; async loses acknowledged writes, sync doesn't", () => {
+  const spec = (replication: "async" | "sync") =>
+    scene(
+      [
+        client("u", 80, "w", { writes: 1, keys: 400, timeoutMs: 1500 }),
+        lb("w", ["p", "r1", "r2"], { promote: true, health: { everyMs: 50, failAfter: 3, passAfter: 2, timeoutMs: 100 } }),
+        db("p", { replication }),
+        db("r1", { replicaOf: "p", lagMs: 150 }),
+        db("r2", { replicaOf: "p", lagMs: 150 }),
+      ],
+      { windowMs: 1e9, links: { "w>p": 10, "w>r1": 10, "w>r2": 10 } },
+    );
+  const crash = (replication: "async" | "sync") => {
+    const sim = run(spec(replication), 2000);
+    sim.setUp("p", false);
+    sim.step(3000);
+    return sim;
+  };
+  const a = crash("async");
+  assert.equal(a.nodes.get("w")!.primary, "r1", "the first healthy replica took over");
+  assert.ok(a.notes.some((n) => n.text.includes("promoted")));
+  assert.ok(value(a, m("lostAcked")) > 3, `writes acknowledged but never copied are lost (${value(a, m("lostAcked"))})`);
+  const late = a.done.filter((d) => d.t > 4000);
+  assert.ok(late.length > 50 && late.every((d) => d.result === "ok"), "writes succeed again on the new primary");
+  assert.equal(a.replicaOf(a.nodes.get("r2")!), "r1", "the other replica copies from the new primary");
+  const s = crash("sync");
+  assert.equal(value(s, m("lostAcked")), 0);
+  assert.ok(value(run(spec("sync"), 2000), m("p50")) > value(run(spec("async"), 2000), m("p50")) + 140, "but every write waits for its copies (150 ms away)");
+});
+
+test("a link's buffer: past it, crossings are dropped where they would have waited", () => {
+  const spec = (buffer?: number) => scene([client("u", 300, "s", { timeoutMs: 1e9 }), server("s", { slots: 64, serviceMs: 1 })], { links: { "u>s": { ms: 20, parallel: 2, buffer } }, timeoutMs: undefined });
+  assert.equal(value(run(spec(), 3000), m("lost")), 0);
+  assert.ok(value(run(spec(4), 3000), m("lost")) > 0.3);
+});
+
+test("a cache warmed before it serves comes back hitting; a cold one comes back missing", () => {
+  const spec = (prewarm?: number) =>
+    scene([client("u", 200, "c", { keys: 500, skew: 1 }), { id: "c", kind: "cache", label: "c", at: [50, 50], to: ["db"], capacity: 200, prewarm }, db("db", { slots: 64, serviceMs: 5 })], { windowMs: 300 });
+  const restart = (prewarm?: number) => {
+    const sim = run(spec(prewarm), 3000);
+    sim.setUp("c", false);
+    sim.step(50);
+    sim.setUp("c", true);
+    sim.step(300);
+    return value(sim, m("hit", { nodes: ["c"] }));
+  };
+  assert.ok(restart(150) > restart() + 0.3, `${restart(150)} warm vs ${restart()} cold`);
+});
+
+test("property: every request is accounted for and nothing leaks, with every connection-and-real-time hook at once", () => {
+  settles(
+    scene(
+      [
+        { ...client("web", (t: number) => (t < 5000 ? 40 : 0), "lb", { page: 3, timeoutMs: 1200, retry: { mode: "backoff", max: 2, baseMs: 50 } }, [0, 20]), connect: { handshakeRtts: 2, keepAliveMs: 300, max: 2, streams: "multiplex", rtoMs: 150 } },
+        client("bulk", (t: number) => (t < 5000 ? 80 : 0), "lb", { window: { size: 2, max: 16, mode: "aimd" }, timeoutMs: 900, retry: { mode: "now", max: 2 } }, [0, 50]),
+        client("users", 0, "lb", { keys: 30, subscribe: { holdMs: 600, reconnectMs: 200, heartbeat: { everyMs: 100, missAfter: 2, timeoutMs: 150 } } }, [0, 80]),
+        client("news", (t: number) => (t < 5000 ? 5 : 0), "topic", { news: true, writes: 1 }, [0, 95]),
+        { id: "topic", kind: "topic", label: "topic", at: [40, 95], to: ["a", "b"] },
+        lb("lb", ["a", "b"], { layer: 4, health: { everyMs: 50, failAfter: 2, passAfter: 2, timeoutMs: 100 } }),
+        server("a", { slots: 6, serviceMs: 8, hold: { max: 20 }, to: ["w"], blocking: true, callTimeoutMs: 400, connect: { handshakeRtts: 1, keepAliveMs: 1e9, max: 3, waitMs: 300 }, advertise: { high: 10, low: 3 }, queueMax: 30 }),
+        server("b", { slots: 6, serviceMs: 8, hold: { max: 20 }, to: ["w"], downMode: "hang" }),
+        lb("w", ["p", "r"], { promote: true, health: { everyMs: 50, failAfter: 2, passAfter: 2, timeoutMs: 100 } }),
+        db("p", { replication: "sync", maxConns: 4 }),
+        db("r", { replicaOf: "p", lagMs: 30 }),
+      ],
+      {
+        links: { "web>lb": { ms: 20, loss: 0.05 }, "bulk>lb": { ms: 15, parallel: 6, buffer: 4 }, "lb>a": 10, "lb>b": 10, "w>p": 10, "w>r": 10 },
+        windowMs: 1e9,
+        script: {
+          loopMs: 1e9,
+          events: [
+            { at: 1500, label: "b hangs", run: (s: Sim) => s.setUp("b", false) },
+            { at: 2500, label: "b is back", run: (s: Sim) => s.setUp("b", true) },
+            { at: 3000, label: "p crashes", run: (s: Sim) => s.setUp("p", false) },
+          ],
+        },
+      },
+    ),
+    "batch 2b",
+  );
 });

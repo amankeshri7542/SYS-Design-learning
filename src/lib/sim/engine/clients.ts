@@ -19,6 +19,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     for (const n of this.list) {
       const c = n.spec.client;
       if (!c) continue;
+      if (c.subscribe && !n.opened && !this.holding) this.opens(n);
       let guard = 0;
       while (n.nextArrival <= t && guard++ < 50) {
         const rate = this.rate(n);
@@ -37,8 +38,25 @@ const clients: Partial<Sim> & ThisType<Sim> = {
         const poison = !!c.poison && n.rng() < c.poison;
         // Held clients keep their clock and their draws, and send nothing: whenever the traffic starts, it is the
         // same traffic from then on.
-        if (!this.holding) this.spawn(n, k, absent ? "read" : op, t, 0, absent ? 1 : cost, { absent, poison });
+        if (this.holding) {
+          // Sent nothing: the draws above are all this arrival is.
+        } else if (c.page) {
+          // A page: all its requests at once (a request per key, each its own size).
+          const page = ++this.pageSeq;
+          n.pages.set(page, { t0: t, left: c.page });
+          for (let i = 0; i < c.page; i++) this.spawn(n, i, "read", t, 0, c.heavy && n.rng() < c.heavy.share ? c.heavy.cost : 1, { page });
+        } else this.spawn(n, k, absent ? "read" : op, t, 0, absent ? 1 : cost, { absent, poison });
         n.nextArrival += this.gap(n, rate);
+      }
+    }
+    if (this.resubs.length && !this.holding) {
+      const due = this.resubs.filter((p) => p.at <= t);
+      if (due.length) {
+        this.resubs = this.resubs.filter((p) => p.at > t);
+        for (const p of due) {
+          const n = this.nodes.get(p.client);
+          if (n && !n.subOf.has(p.user)) this.subscribe(n, p.user);
+        }
       }
     }
     if (this.retrying.length) {
@@ -63,19 +81,32 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     r.logicalId = extra.logicalId ?? (hashStr(n.spec.id) ^ Math.imul(++n.spawned, 0x9e3779b1)) >>> 0;
     r.absent = !!extra.absent;
     r.poison = !!extra.poison;
+    r.page = extra.page ?? 0;
+    // A news item gets the next number (a retry keeps its own).
+    if (c.news) {
+      r.news = extra.news ?? ++this.newsSeq;
+      if (!extra.news) this.news.push({ seq: r.news, t: this.t });
+    }
     const timeout = c.timeoutMs ?? this.spec.timeoutMs;
-    if (extra.deadline !== undefined && c.retry?.deadline === "shared") r.deadline = extra.deadline;
+    // A sender with a window times a request from when it goes out (its resend timer), not while it waits its turn.
+    if (c.window) r.deadline = Infinity;
+    else if (extra.deadline !== undefined && c.retry?.deadline === "shared") r.deadline = extra.deadline;
     else if (timeout) r.deadline = this.t + timeout;
     this.attempts.add(this.t);
     if (attempt === 0) this.logical.add(this.t);
     if (attempt === 0 && this.tracing) this.trace.push({ t: this.t, client: n.spec.id, key, op, cost });
     const target = n.spec.to?.[0];
-    if (target) this.send(r, this.resolve(n, target));
+    if (!target) return;
+    if (n.spec.connect || c.window) this.dial(n, r, this.resolve(n, target));
+    else this.send(r, this.resolve(n, target));
   },
 
   finishAtClient(n: NodeRt, r: Req) {
     r.phase = "gone";
+    // Any answer, even an error, acks the request: only silence says the way is congested.
+    this.flown(n, r, true);
     if (r.abandoned || r.detached) return;
+    if (r.polled && r.result === "ok") this.heard(n, r);
     const res: Result = r.result === "ok" && r.stale ? "stale" : (r.result ?? "error");
     if (res === "error" && this.retry(n, r)) return;
     this.record(r, res);
@@ -85,6 +116,15 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     r.abandoned = true;
     // Lost on a link: it was kept only until now, when the client stops waiting for it.
     if (r.phase === "lost") r.phase = "gone";
+    // A handshake that never came back fails its connection; a heartbeat that never came back is a miss.
+    if (r.op === "probe" && (r.hand || r.beat)) {
+      const n = this.nodes.get(r.client);
+      const k = n && r.hand ? n.conns.find((c) => c.id === r.hand) : undefined;
+      if (n && k && !k.ready) this.dropConn(n, k, true);
+      if (n && r.beat) this.beatResult(n, r, false);
+      if (r.phase === "parked") r.phase = "gone";
+      return;
+    }
     if (r.op === "probe") {
       const lb = this.nodes.get(r.client);
       if (lb) this.healthResult(lb, r.probeOf, false);
@@ -95,6 +135,16 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     if (r.detached || r.orphanAt) return;
     this.effect("timeout", r.client);
     const n = this.nodes.get(r.client);
+    if (n) {
+      // Still waiting at its sender, it leaves the line; a connection it was on is given up; its window place frees.
+      const q = r.phase === "wait" && r.at === n.spec.id ? n.sendq.indexOf(r) : -1;
+      if (q >= 0) {
+        n.sendq.splice(q, 1);
+        r.phase = "gone";
+      }
+      if (r.stack[0]?.conn) this.hangUp(n, r.stack[0], true);
+      this.flown(n, r, false);
+    }
     if (n && this.retry(n, r)) return;
     this.record(r, "error");
   },
@@ -109,7 +159,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     // One deadline for every attempt: once it has passed, there is no point trying again.
     if (p.deadline === "shared" && r.deadline <= at) return false;
     this.retries.add(this.t);
-    this.retrying.push({ at, client: n.spec.id, key: r.key, op: r.op, first: r.first, attempt: r.attempt + 1, cost: r.cost, logicalId: r.logicalId, absent: r.absent, poison: r.poison, deadline: r.deadline });
+    this.retrying.push({ at, client: n.spec.id, key: r.key, op: r.op, first: r.first, attempt: r.attempt + 1, cost: r.cost, logicalId: r.logicalId, absent: r.absent, poison: r.poison, deadline: r.deadline, page: r.page, news: r.news });
     return true;
   },
 };

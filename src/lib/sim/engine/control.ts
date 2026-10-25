@@ -31,6 +31,18 @@ const control: Partial<Sim> & ThisType<Sim> = {
       if ((n.spec.callTimeoutMs || n.spec.deadlines === "honour") && n.held.length) this.callTimeouts(n);
       if (n.spec.deadlines === "honour" && n.work.length) this.cancelLate(n);
       if (n.spec.ack && n.inflight.size) this.visibility(n);
+      if (n.spec.connect && (n.conns.length || n.sendq.length)) this.tidyConns(n);
+      // A sender told its receiver has no room tries again in time (a zero-window probe).
+      if (n.spec.client?.window && n.sendq.length && !n.flying) this.pump(n);
+      if (n.spec.advertise && n.starved.size) this.updateWindows(n);
+      if (n.spec.hold && n.subs.length) this.expireSubs(n);
+      if (n.spec.client?.subscribe?.heartbeat && n.beats.size) this.heartbeats(n);
+      if (n.spec.promote) {
+        // Health checks benched the primary: promote the first healthy target after it.
+        if (!n.primary) n.primary = this.flat(n.spec.to)[0] ?? "";
+        const c = this.candidates(n);
+        if (n.primary && c.length && !c.includes(n.primary)) this.promote(n, c[0]);
+      }
       if (n.spec.outbox && t >= n.nextRelay) this.relay(n);
       if (n.spec.health && t >= n.nextProbe) {
         n.nextProbe = t + n.spec.health.everyMs;
@@ -211,6 +223,13 @@ const control: Partial<Sim> & ThisType<Sim> = {
     n.held.splice(n.held.indexOf(r), 1);
     r.orphanAt = n.spec.id;
     const depth = r.stack.findIndex((f) => f.id === n.spec.id);
+    // Still waiting to go out, it never will; on its way, its connection is given up on too.
+    const q = n.sendq.indexOf(r);
+    if (q >= 0) {
+      n.sendq.splice(q, 1);
+      r.phase = "gone";
+    }
+    if (r.stack[depth]?.conn) this.hangUp(n, r.stack[depth], true);
     const c = this.make(r.client, r.op, r.key, r.tag);
     Object.assign(c, {
       first: r.first,

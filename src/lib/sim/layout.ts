@@ -491,8 +491,11 @@ export function badgeBox(chars: number, k: number, scale: number) {
 function badgeChars(n: NodeSpec, spec: SceneSpec) {
   const leads = spec.nodes.some((m) => m.leader === n.id);
   const armed = spec.script?.events.some((e) => e.armed && e.node === n.id);
-  const role = Math.max(n.leader ? 8 : leads ? 6 : 0, armed ? 5 : 0, n.version?.length ?? 0);
-  const state = n.shed ? 8 : n.breaker || n.leader ? 7 : n.kind === "server" || n.kind === "db" || n.kind === "cache" ? 4 : 0;
+  // A database behind a balancer that promotes can become PRIMARY, or go back to being a REPLICA.
+  const promotable = spec.nodes.some((m) => m.promote && flat(m.to).includes(n.id));
+  const role = Math.max(n.leader ? 8 : leads ? 6 : 0, promotable ? 7 : 0, armed ? 5 : 0, n.version?.length ?? 0);
+  // A sender whose receiver has no room waits (WAIT).
+  const state = n.shed ? 8 : n.breaker || n.leader ? 7 : n.kind === "server" || n.kind === "db" || n.kind === "cache" || n.client?.window ? 4 : 0;
   return { state, role };
 }
 
@@ -508,8 +511,12 @@ export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
   const all = (): string[] => {
     switch (n.kind) {
       case "client":
-        return ["999 req/s"];
+        if (n.client?.window) return ["99/99 in flight"];
+        if (n.client?.subscribe) return ["999 connected"];
+        return n.connect ? ["999 req/s · 9 open"] : ["999 req/s"];
       case "lb":
+        if (n.promote) return ["to the primary"];
+        if (n.layer === 4) return ["per connection"];
         if (n.autoscale) return ["target 99% busy"];
         if (n.algo === "hash") return ["key → 9 nodes"];
         if (n.algo === "ring") return ["ring of 64 points each"];
@@ -530,7 +537,9 @@ export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
         // Clients give up long before a line reaches three digits; a queue node can hold more and says so.
         const work = n.slots ? ["99 waiting", `${n.slots}/${n.slots} busy`] : ["stalled · 99 waiting"];
         const overload = n.overload && n.slots ? ["restarting…", `warming up · ${n.slots}/${n.slots} busy`] : [];
-        return [...work, down, ...(checked ? ["rejoining…"] : []), ...(canary ? ["rolled back"] : []), ...overload, ...states];
+        // Connections held open, or accepted against a limit.
+        const open = n.hold ? [`${n.hold.max}/${n.hold.max} open`] : n.maxConns !== undefined ? [`${n.maxConns}/${n.maxConns} connections`] : [];
+        return [...work, down, ...(checked ? ["rejoining…"] : []), ...(canary ? ["rolled back"] : []), ...overload, ...open, ...states];
       }
     }
   };
@@ -548,6 +557,8 @@ const SHORT: [RegExp, string][] = [
   [/^(\d+)\/s per client$/, "$1/s each"],
   [/^key → (\d+) nodes$/, "$1 nodes"],
   [/^ring of 64 points each$/, "ring"],
+  [/^(\d+) req\/s · (\d+) open$/, "$1/s · $2 open"],
+  [/^(\d+\/\d+) connections$/, "$1 open"],
 ];
 
 /** The shorter wording a secondary label takes in the narrow (compact and tall) layouts. */

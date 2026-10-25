@@ -7,7 +7,7 @@ import { formatMetric, measure, type MetricId, type MetricSpec } from "../sim/me
 import type { FxKind } from "../sim/types";
 
 /** The dot kinds a scene shows: its local key. Shapes and colours are fixed (CLAUDE.md). */
-export type DotKind = "req" | "late" | "ok" | "stale" | "turned" | "failed" | "gaveup" | "copy" | "job" | "probe" | "lost" | "ack";
+export type DotKind = "req" | "late" | "ok" | "stale" | "turned" | "failed" | "gaveup" | "copy" | "job" | "probe" | "lost" | "ack" | "push" | "hand";
 
 /** What a beat points at. What it names stays bright; the rest of the stage steps back. */
 export interface Focus {
@@ -384,7 +384,7 @@ export function fillIn(text: string, ctx: FillContext): string {
 
 /** Can every placeholder in the text be read in this lesson? Returns the ones that can't. */
 export function unresolved(text: string, ctx: Pick<FillContext, "tones" | "current"> & { nodes: Set<string>[]; tags?: Set<string> }): string[] {
-  const ids = new Set<string>(["p50", "p95", "errors", "rejected", "stale", "fallback", "throughput", "hit", "util", "peak", "load", "inRotation", "queue", "servers", "moved", "amplify", "conflicts", "answered", "jobWait", "unsynced", "p99", "wasted", "lost", "availability", "budget", "wire", "wait", "work", "filtered", "duplicates", "redelivered", "deadLettered", "lostJobs", "lostEvents", "reordered", "consumed"] satisfies MetricId[]);
+  const ids = new Set<string>(["p50", "p95", "errors", "rejected", "stale", "fallback", "throughput", "hit", "util", "peak", "load", "inRotation", "queue", "servers", "moved", "amplify", "conflicts", "answered", "jobWait", "unsynced", "p99", "wasted", "lost", "availability", "budget", "wire", "wait", "work", "filtered", "duplicates", "redelivered", "deadLettered", "lostJobs", "lostEvents", "reordered", "consumed", "connections", "handshakes", "sendWait", "window", "pageMs", "pushLag", "reach", "empty", "detectMs", "falseAlarms", "lostAcked"] satisfies MetricId[]);
   return placeholdersIn(text)
     .filter((p) => {
       if (p.id === "before" || p.id === "after") return false;
