@@ -257,12 +257,26 @@ node scripts/weight.mjs 3300 # against `npx next start -p 3300` on the fresh bui
 | `tests/browser/my-system.spec.ts` | Template → running in one tap; crash a part; blast report; add a cache; compare; share link reopens the same system; four sizes fit; stage-fit on every template. |
 
 **Acceptance:**
-- [ ] From `/my-system`, one tap on a template shows it running with labelled parts; the document never scrolls on desktop; on phones only the panel does.
-- [ ] Every template passes stage-fit at four sizes and the invariants.
-- [ ] "What breaks if…" names every single point of failure in every template, with measured numbers.
-- [ ] Adding a part, removing one, changing a count, and "sends to" all work with keyboard and touch (≥40 px).
-- [ ] A shared link reopens the identical system in a fresh browser; nothing is sent anywhere.
-- [ ] `/my-system` ≤ 200 KB; lesson pages unchanged.
+- [x] From `/my-system`, one tap on a template shows it running with labelled parts; the document never scrolls; on phones only the panel does (`my-system.spec.ts`).
+- [x] Every template passes the lessons' stage-fit checks at four sizes (labels inside and full size, no collisions, nothing over a station, no rail through a label, 40 px targets on phones) and the engine invariants (`system.test.ts`).
+- [x] "What breaks if…" measures every part's outage on a headless copy and names the single points of failure with numbers; every "Try the fix" is checked to make that outage "barely noticed".
+- [x] Adding any part to any template (where it fits), removing it, copies, settings and "sends to" leave a doc that compiles and runs (unit test over every template × kind); controls are ≥ 40 px on touch.
+- [x] A shared link reopens the identical system in a fresh browser; the system travels in the link's fragment and nothing is sent anywhere.
+- [x] `/my-system` 164 KB (gallery) and 197.4 KB with a system open; lesson pages 189.5–196.7 KB, journeys about 190.
+
+**Decisions made while building Phase 2:**
+- **Thirteen part kinds now** (users, bots, DNS, CDN, balancer, limiter, service, worker, outside service, cache, database, queue, topic) and ten templates: web app, read-heavy with copies and failover, shop, background jobs, event-driven orders, video to the world, crawler, write-heavy (shards), social feed (a celebrity key), start small. All run on the engine's core: no optional module loads. **Not yet:** multi-region, chat (held connections), flash sale (locks), payments (idempotency and sagas) and click counting (stream windows); each needs a kind wired to an optional module (§6.2 lists the mapping) and a template, in Phase 2b.
+- **People share one tag** (`users`), so the table and "What breaks" count people's requests apart from bots' (a limiter then gives all people one budget: "Users" stands for many people).
+- **"It dies" means** one of several copies, a database's main copy (its read copies and failover are the point), one shard, or the whole part (`outage.ts`); the crash menu and "What breaks" take down the same stations. A part drawn as one station for many copies loses one copy's workers in "What breaks".
+- **Every outage of consequence comes with the usual fix**, in a sentence; where the builder can draw it (a second copy, a copy that takes over), "Try the fix" opens it beside yours on the same traffic, and the tests prove it turns the outage to "barely noticed". Caches say honestly that in this model nothing falls back to the database unless your code does.
+- **Writes go through a cache, which forgets its copy** (`invalidate`): the common cache-aside pattern, and it keeps write rails from cutting across labels. A cache in front of a database with read copies passes writes straight to the database's writer (a cache has one way on).
+- **Adding a part puts it where it usually goes**: a cache in front of the first database, a balancer/limiter/DNS/CDN in front of what the users talk to, a queue or topic after the first service with a worker taking from it. The menu offers only kinds that fit (`canAdd`).
+- **Faults sit in the panel**, under the tabs, as a lesson's do: a "Break something" menu (crash, or slow a part down 5×) and a surge of traffic ×3. The dock keeps the transport.
+- **"Explain like I'm new"** walks the parts in the order a request meets them, one beat each on the strip, the stage dimming everything else; its words load the first time.
+- **Systems open 2.5 s in**, so caches are warm and the first numbers are the steady ones. The shop's target is 0.6 s (a page target) and its breaker starts off: the breaker is the fix to try when recommendations hang.
+- **A lone database's extra stations have short names** ("Writer", "Copy 1", "Shard 1"); with several databases, each says whose it is. Long names collided on a landscape phone.
+- **Weight:** the stage no longer imports the lesson runner: the strip and callout moved to `strip.tsx`, plain narration text to `rich.tsx`, scene beats to `scene-beats.ts`, the site header and footer to `site.tsx`. "What breaks" and the tour load on first use.
+- **Not built in this phase:** following one request in the builder (the lesson's follow tracker needs a client to follow; easy to add), editing link latencies or regions, and a still preview of each template in the gallery (the list shows each one's shape in arrows instead).
 
 ### Phase 3: Level 1, structured import (M) — branch `v4/p3-import`
 

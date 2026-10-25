@@ -3,12 +3,13 @@
 import { useMemo } from "react";
 import { COURSE } from "@/lib/lessons";
 import { HERO } from "@/lib/lessons/hero";
-import { BeatStrip, type BeatView } from "./beats";
+import { BeatStrip, type BeatView } from "./strip";
 import { useMode } from "./hooks";
 import { DOTS, Dot } from "./legend";
 import type { Explain } from "./part-card";
 import { Transport, useLiveSims } from "./live";
-import { MetricList, useSceneBeats } from "./scene-run";
+import { useSceneBeats } from "./scene-beats";
+import { MetricList } from "./scene-run";
 import { Stage } from "./stage";
 
 const BEATS = HERO.beats ?? [];

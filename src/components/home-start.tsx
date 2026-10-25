@@ -40,6 +40,7 @@ export function Start() {
           </a>
         </div>
         <LineIndex />
+        <MineLink />
       </>
     );
   }
@@ -69,7 +70,21 @@ export function Start() {
           or pick any station
         </a>
       </div>
+      <MineLink />
     </section>
+  );
+}
+
+/** The way into My System, under the ride: for anyone with a system of their own. */
+function MineLink() {
+  return (
+    <p className="mine-link">
+      Have a system of your own?{" "}
+      <Link href="/my-system">
+        Map it, and crash its parts
+        <ArrowIcon />
+      </Link>
+    </p>
   );
 }
 

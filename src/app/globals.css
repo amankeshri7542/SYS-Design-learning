@@ -714,6 +714,28 @@ svg.stroke {
   text-decoration-color: currentColor;
 }
 
+/* Under the ride: the way into My System. */
+.mine-link {
+  margin: var(--sp-4) 0 0;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-size: var(--fs-ui);
+}
+
+.mine-link a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  font-weight: 700;
+}
+
+.mine-link svg {
+  width: 14px;
+  height: 14px;
+}
+
 /* A button's time, after its words: quieter, in the number face. */
 .cta-min {
   margin-left: 2px;
@@ -4776,8 +4798,14 @@ svg.stroke {
   }
 }
 
-/* A narrow phone: four links and the brand's name don't fit one row, so the brand keeps only its mark (its link is still
-   named "System Lab home"). */
+/* A narrow phone: the links and the brand's name don't fit one row, so the brand keeps only its mark (its link is still
+   named "System Lab home"), and the glossary is reached from the footer and from every term. */
+@media (max-width: 520px) {
+  .site-nav .nav-wide {
+    display: none;
+  }
+}
+
 @media (max-width: 440px) {
   .site-head .brand-name {
     display: none;
@@ -4970,5 +4998,564 @@ svg.stroke {
   *::after {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ my system */
+
+/* The gallery: a promise, the systems kept here, and the systems to start from as a list of rides. */
+.my-head {
+  padding-block: clamp(24px, 5vh, 56px) var(--sp-4);
+}
+
+.my-head h1 {
+  margin: 0;
+  font-size: clamp(2.2rem, 3.4vw, 3.2rem);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.035em;
+}
+
+.my-bad {
+  color: var(--t-bad);
+}
+
+.my-saved,
+.my-start {
+  margin-top: var(--sp-6);
+}
+
+.my-saved ul,
+.tpl-list {
+  display: grid;
+  gap: 0;
+  margin: var(--sp-4) 0 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+  list-style: none;
+}
+
+.my-saved li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.my-saved-open {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-height: 56px;
+  padding: 8px 4px;
+  color: var(--ink);
+  text-align: left;
+}
+
+.my-saved-open strong {
+  font: 700 17px/1.2 var(--font-body);
+}
+
+.my-saved-open span {
+  color: var(--muted);
+  font: 500 var(--fs-meta)/1.3 var(--font-mono);
+}
+
+.tpl-list {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr));
+  column-gap: var(--sp-6);
+}
+
+.tpl-list li {
+  border-bottom: 1px solid var(--rule);
+}
+
+.tpl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name arrow"
+    "shape arrow"
+    "line arrow";
+  align-items: center;
+  gap: 2px var(--sp-4);
+  width: 100%;
+  min-height: 64px;
+  padding: 12px 4px;
+  color: var(--ink);
+  text-align: left;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.tpl:hover {
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.tpl-name {
+  grid-area: name;
+  font: 600 1.25rem/1.2 var(--font-guide);
+}
+
+.tpl-shape {
+  grid-area: shape;
+  color: var(--t-req);
+  font: 500 var(--fs-meta)/1.35 var(--font-mono);
+}
+
+.tpl-line {
+  grid-area: line;
+  color: var(--ink-2);
+  font-size: var(--fs-ui);
+  line-height: 1.45;
+}
+
+.tpl svg {
+  grid-area: arrow;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+}
+
+/* The workspace: the bar's back button and actions, and the panel's tabs and editor. */
+.bar-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.bar-actions .key-btn {
+  margin-left: 0;
+}
+
+.sys-back {
+  border: 0;
+  background: var(--ink);
+  color: var(--paper);
+  cursor: pointer;
+}
+
+.sys-back svg {
+  width: 16px;
+  height: 16px;
+}
+
+.key-btn.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.sys-title input {
+  width: 100%;
+  min-height: 40px;
+  margin: 2px 0 6px;
+  padding: 4px 0;
+  border: 0;
+  border-bottom: 1px dashed var(--rule);
+  background: none;
+  color: var(--ink);
+  font: 500 22px/1.2 var(--font-guide);
+}
+
+.sys-title input:focus-visible {
+  border-bottom-color: var(--accent);
+  outline: none;
+}
+
+.sys-issues {
+  margin-bottom: var(--sp-3);
+  padding: 10px 12px;
+  border-left: 3px solid var(--bad);
+  background: color-mix(in srgb, var(--bad) 7%, transparent);
+  font-size: var(--fs-meta);
+}
+
+.sys-issues-h {
+  margin: 0 0 4px;
+  font-weight: 700;
+}
+
+.sys-issues ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.sys-parts {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+  list-style: none;
+}
+
+.sys-part {
+  border-bottom: 1px solid var(--rule);
+}
+
+.sys-part-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name kind"
+    "sum sum";
+  gap: 2px 8px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 2px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sys-part-head:hover .sys-part-name {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.sys-part-name {
+  grid-area: name;
+  font: 700 var(--fs-ui)/1.25 var(--font-body);
+}
+
+.sys-part-kind {
+  grid-area: kind;
+  color: var(--muted);
+  font: 600 var(--fs-caption)/1.25 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sys-part-sum {
+  grid-area: sum;
+  color: var(--ink-2);
+  font: 500 var(--fs-meta)/1.3 var(--font-mono);
+}
+
+.sys-part-body {
+  display: grid;
+  gap: 10px;
+  padding: 4px 2px 14px;
+}
+
+.sys-field {
+  display: grid;
+  gap: 4px;
+  font: 700 var(--fs-ui)/1.2 var(--font-body);
+}
+
+.sys-field input[type="text"],
+.sys-number input {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-ctl);
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 var(--fs-body) var(--font-body);
+}
+
+.sys-number {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.sys-number-in {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font: 500 var(--fs-meta) var(--font-mono);
+}
+
+.sys-number input {
+  width: 92px;
+  font-family: var(--font-mono);
+}
+
+.sys-warn {
+  margin: 0 0 10px;
+  color: var(--t-warn);
+  font-size: var(--fs-meta);
+}
+
+.sys-sends {
+  display: grid;
+  gap: 6px;
+}
+
+.sys-sends-label {
+  font: 700 var(--fs-ui)/1.2 var(--font-body);
+}
+
+.sys-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sys-chip {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-ctl);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: 600 var(--fs-meta) var(--font-body);
+  cursor: pointer;
+}
+
+.sys-chip[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.sys-remove {
+  justify-self: start;
+  min-height: 36px;
+  padding: 0 2px;
+  color: var(--t-bad);
+  font: 600 var(--fs-meta) var(--font-body);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.sys-add {
+  margin-top: var(--sp-3);
+}
+
+.sys-add-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sys-menu {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sys-menu button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-ctl);
+  background: var(--surface);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sys-menu button:hover {
+  border-color: var(--ink-2);
+}
+
+.sys-menu strong {
+  font: 700 var(--fs-ui)/1.2 var(--font-body);
+}
+
+.sys-menu span {
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  line-height: 1.3;
+}
+
+.sys-targets {
+  display: grid;
+  gap: 8px;
+  margin: var(--sp-4) 0 0;
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.sys-targets legend {
+  padding: 0;
+  color: var(--muted);
+  font: 600 var(--fs-caption)/1.2 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Trying a change: what is being changed, and the two ways out. */
+.sys-trying {
+  margin-bottom: var(--sp-3);
+  padding: 10px 12px;
+  border-left: 3px solid var(--good);
+  background: color-mix(in srgb, var(--good) 8%, transparent);
+  font-size: var(--fs-meta);
+}
+
+.sys-trying p {
+  margin: 0;
+}
+
+.sys-trying-go {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.sys-trying-go .btn-primary {
+  height: 40px;
+  font-size: var(--fs-ui);
+}
+
+.sys-compare .seg {
+  margin-top: var(--sp-3);
+}
+
+/* What breaks: the parts worst first, each verdict a word on a tone, with the fix and a way to try it. */
+.sys-blast {
+  display: grid;
+  gap: 0;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+  list-style: none;
+}
+
+.sys-blast li {
+  padding: 10px 0 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.sys-blast-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  font: 700 var(--fs-ui)/1.3 var(--font-body);
+}
+
+.sys-verdict {
+  padding: 2px 6px;
+  border-radius: var(--r-chip);
+  font: 600 var(--fs-caption)/1.3 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.v-spof .sys-verdict {
+  background: var(--bad);
+  color: var(--on-bad);
+}
+
+.v-hurts .sys-verdict {
+  background: var(--warn);
+  color: var(--on-warn);
+}
+
+.v-slower .sys-verdict {
+  border: 1px solid var(--rule);
+  color: var(--t-warn);
+}
+
+.v-fine .sys-verdict {
+  border: 1px solid var(--rule);
+  color: var(--t-ok);
+}
+
+.sys-blast-text,
+.sys-blast-fix {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+  font-size: var(--fs-meta);
+  line-height: 1.45;
+}
+
+.sys-blast-fix {
+  color: var(--ink);
+}
+
+.sys-blast-fix::before {
+  content: "Fix: ";
+  font-weight: 700;
+}
+
+.sys-blast-go {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.sys-blast-go .btn[aria-pressed="true"] {
+  border-color: var(--bad);
+  color: var(--t-bad);
+}
+
+/* Faults, under the tabs: a menu of parts to crash or slow down, and a surge of traffic. */
+.sys-faults {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 var(--sp-3);
+}
+
+/* The fault menu: a native select, with the bolt beside it. */
+.sys-crash {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 4px 0 10px;
+  border: 1px solid color-mix(in srgb, var(--t-bad) 45%, var(--rule));
+  border-radius: var(--r-ctl);
+  color: var(--t-bad);
+}
+
+.sys-crash svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sys-crash select {
+  max-width: 13em;
+  height: 38px;
+  border: 0;
+  background: none;
+  color: var(--t-bad);
+  font: 600 var(--fs-ui) var(--font-body);
+}
+
+.part-edit {
+  margin-top: 10px;
+}
+
+@media (pointer: coarse) {
+  .sys-chip,
+  .sys-remove {
+    min-height: 40px;
+  }
+}
+
+/* Phones: the bar keeps the way back and the actions; the system's name is the panel's heading. */
+@media (max-width: 640px) {
+  .system .bar-title {
+    display: none;
+  }
+  .system .bar-actions {
+    gap: 4px;
+  }
+  .system .bar-actions .key-btn {
+    padding: 0 10px;
+  }
+  .sys-crash {
+    flex: 1;
+  }
+  .sys-crash select {
+    flex: 1;
+    max-width: none;
   }
 }

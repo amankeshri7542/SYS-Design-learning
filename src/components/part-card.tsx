@@ -18,6 +18,8 @@ export interface Explain {
   learn?: PageNav["learn"];
   figs?: FigureDef[];
   step?: number;
+  /** My System: the card can open the station's part for changing. */
+  edit?: (station: string) => void;
 }
 
 /**
@@ -179,6 +181,18 @@ export default function PartCard({
           <dd>{readOf(rt, key)}</dd>
         </div>
       </dl>
+      {explain.edit && (
+        <button
+          type="button"
+          className="btn part-edit"
+          onClick={() => {
+            explain.edit!(id);
+            onClose();
+          }}
+        >
+          Change it
+        </button>
+      )}
       {to && learn && (
         <Link href={`/learn/${to}`} className="part-learn" onClick={() => record("next", { to, from: "part" })}>
           Learn more in {learn.code} {learn.title}

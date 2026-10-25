@@ -20,33 +20,3 @@ export function Brand({ compact = false, plain = false }: { compact?: boolean } 
     </A>
   );
 }
-
-export function SiteHeader({ plain = false }: Plain) {
-  const A = plain ? "a" : Link;
-  return (
-    <header className="site-head">
-      <Brand plain={plain} />
-      <nav className="site-nav" aria-label="Site">
-        <A href="/#route">Map</A>
-        <A href="/#journeys">Journeys</A>
-        <A href="/glossary">Glossary</A>
-        <A href="/progress">Progress</A>
-      </nav>
-    </header>
-  );
-}
-
-export function SiteFooter() {
-  return (
-    <footer className="site-foot">
-      <p>Simulations are deterministic models with real queueing behaviour, slowed down so you can follow each request.</p>
-      <p>
-        Made with care by{" "}
-        <a href="https://amankeshri.com" rel="noopener">
-          Aman
-        </a>
-        .
-      </p>
-    </footer>
-  );
-}
