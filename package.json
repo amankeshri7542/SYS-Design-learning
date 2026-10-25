@@ -10,6 +10,7 @@
     "test": "node --import tsx --test tests/*.test.ts",
     "test:browser": "playwright test",
     "tune": "tsx scripts/tune.ts",
+    "stats": "tsx scripts/stats.ts",
     "new-lesson": "tsx scripts/new-lesson.ts"
   },
   "dependencies": {

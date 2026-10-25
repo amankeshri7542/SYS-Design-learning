@@ -2,10 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { markVisited, readVisited } from "@/lib/progress";
+import { record, recordingFor } from "@/lib/record";
 
-/** Records a visit to this page: the only progress the site keeps. */
+/** Records a visit to this page, and starts its learning record: what happens here is noted against it. */
 export function MarkVisited({ slug }: { slug: string }) {
-  useEffect(() => markVisited(slug), [slug]);
+  useEffect(() => {
+    markVisited(slug);
+    if (recordingFor(slug)) record("open");
+  }, [slug]);
   return null;
 }
 

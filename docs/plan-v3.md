@@ -51,7 +51,7 @@ The catalog grows from 18 to 57 lessons on seven lines in three levels. That inc
 | # | Assumption | Status | If wrong |
 |---|---|---|---|
 | A1 | No new runtime dependencies (`CLAUDE.md`). | confirmed | Motion would move to a library; the plan avoids that on purpose. |
-| A2 | Learner storage stays "a localStorage list of visited lessons and nothing more" (`CLAUDE.md`). Predictions and check answers live in component state only. | confirmed as today's rule | If the owner wants a learning record (prediction accuracy, chosen path), build milestone M11 and change the `CLAUDE.md` rule first. |
+| A2 | Learner storage stays "a localStorage list of visited lessons and nothing more" (`CLAUDE.md`). Predictions and check answers live in component state only. | superseded: the owner chose M11 on 2026-10-25 | If the owner wants a learning record (prediction accuracy, chosen path), build milestone M11 and change the `CLAUDE.md` rule first. |
 | A3 | Overpass, Overpass Mono, Atkinson Hyperlegible Next and Newsreader are all variable on Google Fonts. | confirmed (`next/font` font data) | Keep weight arrays; font payload stays at 13 files. |
 | A4 | Next 16.3.7, React 19.3.0, Playwright 1.63.0 are installed; Node 22+ in CI. | confirmed | Re-read `node_modules/next/dist/docs/` for the installed version. |
 | A5 | The target viewports are 1440×900, 1280×720, 390×844 and a landscape phone at 844×390. | confirmed (`CLAUDE.md`, `playwright.config.ts`, design audit) | Add or drop Playwright projects. |
@@ -1070,6 +1070,17 @@ Gates on 2026-10-25: typecheck, 394 unit tests (3 new in `tests/needs.test.ts`),
 
 Pedagogy §5 describes a privacy-safe, localStorage-only event ring buffer, a `/progress` page with export and clear, and a dev-only `/stats` view to tune predictions and checks. It changes the `CLAUDE.md` rule on progress storage, so it waits for an explicit yes.
 
+**Decisions made while building it (the owner said yes on 2026-10-25):**
+
+Gates: typecheck, unit tests (3 new in `tests/record.test.ts`), build, and the browser suite (1 new spec, `tests/browser/progress.spec.ts`, on all four sizes). Lesson pages still ship under 200 KB of gzipped JavaScript (the heaviest, 199.6).
+
+- **Storage, as pedagogy §5 says:** `syslab.v1.events`, a ring of the latest 600 events `{ t, lesson, kind, data }` with `t` in whole seconds, and `syslab.v1.progress`, a tally per lesson the ring can't forget (opens, beats seen, predictions and checks right, the Recap reached, a journey's stages cleared, how it felt). No identifiers, no network. The visited list stays where it was.
+- **What is recorded:** opens, every beat fired, the prediction (chosen, right, how long it took; a skipped one is an event, not counted), checks, steps left and the Recap reached, knobs where they come to rest, faults, terms and metrics opened, following a request, a journey's stages cleared with their price, and how the lesson felt. Not recorded: a beat's dwell time and replays; the step's beats are enough to find a step people leave.
+- **How it felt:** the Recap's last card asks "Did this one land?" (Yes / Not quite); Not quite asks what got in the way (the numbers, the dots, the words), the three causes pedagogy §5 maps to fixes.
+- **`/progress`** reads the record after mount (so the server render and the first client render agree): lessons opened, watched to the end (every beat seen), predictions and checks right, journeys, each line with a pip per station, how lessons felt, and the latest things done in words. Download keeps a dated JSON copy; Clear forgets the record and the visited list, after a second press. Progress joined the site's header, whose brand keeps only its mark below 440 px so four links fit a phone.
+- **Tuning:** `npm run stats -- <export.json…>` adds exports together and prints, per lesson, opens, predictions right (aim 50–70%), checks right (aim 60–80%), beats seen, Recaps reached, how it felt, the metrics and terms looked up, and each journey's stages cleared, marking numbers off their aim. A script, not a `/stats` route, so nothing of it ships.
+- **React runs a page's effects twice in development,** which would count each open twice; `recordingFor` ignores the same lesson again within a second.
+
 ---
 
 ## 8. Authoring rules for every lesson (v3)
@@ -1156,7 +1167,7 @@ Visual check: run the dev server through the preview tool (`.claude/launch.json`
 
 These do not block M0–M4. Each has a default the plan follows.
 
-1. **Learning record.** Keep progress storage to the visited list (default), or allow M11's prediction and check history?
+1. **Learning record.** Keep progress storage to the visited list (default), or allow M11's prediction and check history? *Decided 2026-10-25: build M11.*
 2. **A fourth typeface.** Newsreader for titles (default), or stay with three faces?
 3. **Branches and PRs.** One PR per milestone with Vercel previews (default), or direct commits to `main`?
 4. **Catalog size.** 57 lessons and 9 stories (default). Curriculum §8 shows how to trim to 48 lessons by dropping nine should-haves, if a smaller course is preferred.

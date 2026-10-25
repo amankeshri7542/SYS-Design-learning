@@ -49,10 +49,15 @@ export const MAX_EVENTS = 600;
 let lesson = "";
 let openedAt = 0;
 
-/** The page's lesson: what every event is about until another page sets its own. */
-export function recordingFor(slug: string) {
+/**
+ * The page's lesson: what every event is about until another page sets its own. False when it is the same lesson set
+ * again within a second (React runs a page's effects twice in development), so the open isn't counted twice.
+ */
+export function recordingFor(slug: string): boolean {
+  const again = slug === lesson && Date.now() - openedAt < 1000;
   lesson = slug;
-  openedAt = Date.now();
+  if (!again) openedAt = Date.now();
+  return !again;
 }
 
 /** Seconds since the page's lesson opened. */
@@ -84,7 +89,8 @@ export function record(kind: RecordKind, data?: RecordEvent["data"]) {
     const t = { ...blank(), ...tallies[lesson] };
     if (kind === "open") t.opened++;
     if (kind === "beat" && !t.beats.includes(String(data?.at))) t.beats.push(String(data?.at));
-    if (kind === "predict") {
+    // A prediction counts once answered: a skipped one (no `chosen`) is only an event.
+    if (kind === "predict" && typeof data?.chosen === "number") {
       t.predicted++;
       if (data?.correct) t.predictedRight++;
     }

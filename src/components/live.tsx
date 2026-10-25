@@ -4,6 +4,7 @@ import { Suspense, lazy, useEffect, useRef, useState, type CSSProperties } from 
 import { Sim } from "@/lib/sim/engine/core";
 import { betterIs, changeSize, formatChange, formatClock, formatDiff, formatMetric, formatTarget, measure, toneOf, type MetricId, type MetricSpec } from "@/lib/sim/metrics";
 import { stepGrid } from "@/lib/lessons/beats";
+import { record } from "@/lib/record";
 import type { SceneSpec } from "@/lib/sim/types";
 import { useMode, useReducedMotion, useVisible } from "./hooks";
 import type { DrawFn } from "./stage";
@@ -356,6 +357,7 @@ export function Compare({ metrics, columns, verdict, spot, why = {} }: { metrics
   const explain = (m: MetricSpec, from: HTMLButtonElement) => {
     const r = from.getBoundingClientRect();
     opener.current = from;
+    record("metric", { label: m.label });
     setOpen({ m, x: Math.max(12, Math.min(r.left, innerWidth - 332)), y: innerHeight - r.top + 8 });
     if (!pop.current?.matches(":popover-open")) pop.current?.showPopover();
   };

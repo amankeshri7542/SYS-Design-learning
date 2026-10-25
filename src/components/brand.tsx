@@ -22,6 +22,7 @@ export function SiteHeader() {
         <Link href="/#route">Map</Link>
         <Link href="/#journeys">Journeys</Link>
         <Link href="/glossary">Glossary</Link>
+        <Link href="/progress">Progress</Link>
       </nav>
     </header>
   );

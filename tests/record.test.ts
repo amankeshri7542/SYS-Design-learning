@@ -21,10 +21,11 @@ test("the record keeps events and a tally per lesson, to the second", () => {
   record("beat", { at: "0:hit" });
   record("beat", { at: "0:hit" });
   record("predict", { chosen: 1, correct: true });
+  record("predict", { skipped: true });
   record("check", { n: 1, chosen: 0, correct: false });
   record("recap", { s: 40 });
   const events = readEvents();
-  assert.equal(events.length, 6);
+  assert.equal(events.length, 7);
   assert.ok(events.every((e) => Number.isInteger(e.t) && e.lesson === "caching"), "whole seconds, and the lesson");
   const t = readTallies().caching;
   assert.deepEqual({ ...t }, { opened: 1, beats: ["0:hit"], predicted: 1, predictedRight: 1, checks: 1, checksRight: 0, recap: true, stages: [] });

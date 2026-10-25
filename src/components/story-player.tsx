@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { holds, type Control, type StoryDef, type Target } from "@/lib/lessons/story";
 import type { LessonMeta, PageNav, Values } from "@/lib/lessons/types";
 import type { Sim } from "@/lib/sim/engine";
 import { formatMetric, formatTarget, measure } from "@/lib/sim/metrics";
+import { record } from "@/lib/record";
 import { BeatStrip, useSceneBeats } from "./beats";
 import { KeyPopover } from "./key";
 import { ArrowIcon, Clock, MetricList, Transport, freshNote, useLiveSims } from "./live";
@@ -65,6 +66,13 @@ export function StoryPlayer({ meta, nav, why, def }: { meta: LessonMeta; nav: Pa
   const allDone = cleared.every(Boolean);
   const pct = Math.min(1, held / S.hold);
   const cost = def.cost(arch);
+  // The learning record: each stage cleared, once, with the design's price.
+  const noted = useRef(new Set<number>());
+  useEffect(() => {
+    if (!cleared[stage] || noted.current.has(stage)) return;
+    noted.current.add(stage);
+    record("stage", { stage, cost });
+  }, [cleared, stage, cost]);
 
   return (
     <Shell

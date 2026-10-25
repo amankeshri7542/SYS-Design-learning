@@ -59,6 +59,10 @@ In a journey you grow the architecture yourself. In the flash sale you add a sea
 
 ![The URL shortener journey: architecture controls, cost, and a target that has to hold](docs/screenshots/capstone.png)
 
+## Your progress
+
+**[/progress](https://sys-design-learning.vercel.app/progress)** shows what you've done: lessons opened and watched to the end, predictions and checks you got right, journeys finished, each line station by station, and the latest things you did. It is kept only in your browser (no account, nothing sent anywhere), and you can download it or clear it. Each lesson's Recap ends by asking whether it landed, and what got in the way if not.
+
 ## How to read a scene
 
 - **Dots are requests.** Cobalt: in flight. Amber: running late. Green: answered. Violet donut: stale data. Slate square: turned away. Red diamond: failed. Hollow red: the user gave up.
@@ -85,6 +89,7 @@ npm run build
 npx playwright install chromium
 npm run test:browser   # four screen sizes: fit, labels, motion, controls; then frame budgets with the CPU slowed 4×
 npm run tune           # each figure's metrics over a simulated run (--beats, --json, --line=, --level=)
+npm run stats -- <export.json>   # per-lesson tuning numbers from records downloaded on /progress
 ```
 
 `npm test` asserts that, for every lesson, the fix beats the problem on its headline metric, that every beat fires in a learner's run and every prediction comes true, and that a problem and its fix see the same traffic. A tuning change that would make an animation teach something false fails the build. For a journey, each stage's own design must clear it and the previous stage's must not.

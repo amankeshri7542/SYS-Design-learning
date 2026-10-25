@@ -7,6 +7,7 @@ import { beatsOf, buildSteps, defaultsOf, headlineOf, isChoice, type FigureDef, 
 import type { Sim } from "@/lib/sim/engine";
 import type { MetricSpec } from "@/lib/sim/metrics";
 import { BeatStrip, PredictCard, useBeats } from "./beats";
+import { record, secondsOpen } from "@/lib/record";
 import { useFollow } from "./follow";
 import { useTouch } from "./hooks";
 import { KeyPopover } from "./key";
@@ -19,6 +20,7 @@ import { Rich, TermChips, TermProvider } from "./term";
 const cards = () => import("./cards");
 const CheckCard = lazy(() => cards().then((m) => ({ default: m.CheckCard })));
 const WatchList = lazy(() => cards().then((m) => ({ default: m.WatchList })));
+const FeelCard = lazy(() => cards().then((m) => ({ default: m.FeelCard })));
 // So does the strip that follows one request.
 const FlightStrip = lazy(() => import("./flight").then((m) => ({ default: m.FlightStrip })));
 
@@ -65,10 +67,19 @@ export function LessonPlayer({ lesson, nav }: { lesson: Lesson; nav: PageNav }) 
   const fig = figs[shown];
   const sim = live.sims[shown];
   const go = (s: number) => setStep(Math.max(0, Math.min(last, s)));
+  // The learning record: each step left for another, and the Recap reached.
+  const was = useRef(step);
+  useEffect(() => {
+    if (was.current === step) return;
+    record("tab", { from: was.current, to: step });
+    if (step === last) record("recap", { s: secondsOpen() });
+    was.current = step;
+  }, [step, last]);
 
   const isOn = (id: string) => figs.some((f, j) => f.actions?.find((x) => x.id === id)?.isOn(live.sims[j]));
   // The same fault (matched by id) hits every step's world, so the comparison stays fair.
   const runFault = (id: string, on: boolean) => {
+    record("fault", { id, on });
     figs.forEach((f, j) => f.actions?.find((x) => x.id === id)?.run(live.sims[j], on));
     live.refresh();
   };
@@ -91,6 +102,7 @@ export function LessonPlayer({ lesson, nav }: { lesson: Lesson; nav: PageNav }) 
     const client = fig.trace?.client ?? sim.list.find((n) => n.spec.client)?.spec.id;
     if (!client) return;
     follow.begin(sim, client);
+    record("trace");
     follow.holdResult(live.reduced);
     // Reduced motion: run on to the end of the request's life and show it whole, on one still frame.
     if (live.reduced) live.advance(() => follow.look(sim), 20000);
@@ -133,7 +145,15 @@ export function LessonPlayer({ lesson, nav }: { lesson: Lesson; nav: PageNav }) 
     return figs.flatMap((f) => f.metrics).find((m) => m.label === label)!;
   }, [figs]);
 
-  const setKnob = (k: Knob, v: number) => setValues((all) => all.map((vals, i) => (i === shown ? { ...vals, [k.id]: v } : vals)));
+  // A knob is noted where it comes to rest, not at every step of a drag.
+  const knobAt = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // One still settling when the page goes would land on the next lesson: it is dropped.
+  useEffect(() => () => clearTimeout(knobAt.current), []);
+  const setKnob = (k: Knob, v: number) => {
+    setValues((all) => all.map((vals, i) => (i === shown ? { ...vals, [k.id]: v } : vals)));
+    clearTimeout(knobAt.current);
+    knobAt.current = setTimeout(() => record("knob", { id: k.id, value: v }), 600);
+  };
   const nextLabel = step < last - 1 ? figs[step + 1].short : "Recap";
   // Only a problem and its fix earn a better/worse verdict; explore and trade-off steps just differ.
   const verdict = figs.map((f) => f.tone).join(",") === "problem,fix";
@@ -346,7 +366,7 @@ export function LessonPlayer({ lesson, nav }: { lesson: Lesson; nav: PageNav }) 
                 <NextLabel b={b} breakLabel={breakLabel} next={nextLabel} />
               </button>
             ) : next ? (
-              <Link href={`/learn/${next.slug}`} className="btn-primary btn-next">
+              <Link href={`/learn/${next.slug}`} className="btn-primary btn-next" onClick={() => record("next", { to: next.slug })}>
                 <span className="btn-next-label">
                   <span className="when-wide">Next stop: </span>
                   {next.code} {next.title}
@@ -465,6 +485,9 @@ function Recap({ lesson, claim, onWrong }: { lesson: Lesson; claim: string | nul
           </div>
         )}
       </dl>
+      <Suspense fallback={null}>
+        <FeelCard />
+      </Suspense>
     </>
   );
 }

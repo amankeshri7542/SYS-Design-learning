@@ -2507,6 +2507,28 @@ svg.stroke {
   padding-block: 10px;
 }
 
+/* How the lesson landed, at the Recap's end: two answers in a row, then (Not quite) what got in the way. A chosen answer
+   is outlined in ink, not a verdict colour: there is no right answer to how it felt. */
+.card.feel .card-options {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.card.feel .opt[aria-pressed="true"] {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.feel-snags {
+  display: grid;
+  gap: 6px;
+}
+
+.feel-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-caption);
+}
+
 .card-result strong {
   color: var(--ink);
 }
@@ -4002,6 +4024,148 @@ svg.stroke {
   font-size: var(--fs-meta);
 }
 
+/* Progress: the learner's own numbers, from this browser's storage. Tiles, then each line with a pip per station (a
+   thin ring not opened, a thick ring opened, filled finished), then the latest things done. */
+.progress {
+  padding: var(--sp-8) 0 var(--sp-9);
+}
+
+.progress h1 {
+  margin: 12px 0 0;
+  font: 600 clamp(2rem, 4.4vw, 3rem)/1.08 var(--font-guide), Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+.progress .lede {
+  max-width: 36em;
+}
+
+.progress-empty {
+  margin: var(--sp-6) 0 0;
+  color: var(--ink-2);
+}
+
+.progress-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: var(--sp-4);
+  margin: var(--sp-7) 0 0;
+}
+
+.progress-stats > div {
+  padding: var(--sp-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.progress-stats dt {
+  color: var(--muted);
+  font: 600 var(--fs-caption)/1.2 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.progress-stats dd {
+  margin: 8px 0 0;
+  font: 700 28px/1.1 var(--font-display);
+}
+
+.progress-stats dd span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font: 500 var(--fs-meta)/1.3 var(--font-body);
+}
+
+.progress-h2 {
+  margin: var(--sp-7) 0 var(--sp-3);
+  font: 600 var(--fs-h3)/1.2 var(--font-guide), Georgia, serif;
+}
+
+.progress-lines,
+.progress-recent {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.progress-lines li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.progress-lines .roundel-sm {
+  grid-row: span 2;
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+}
+
+.progress-line-name {
+  font: 700 15px/1.2 var(--font-display);
+}
+
+.progress-line-nums {
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  text-align: right;
+}
+
+.progress-pips {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 2 / -1;
+  gap: 4px;
+}
+
+.progress-pips i {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-round);
+  box-shadow: inset 0 0 0 1.5px var(--lc);
+}
+
+.progress-pips i.on {
+  box-shadow: inset 0 0 0 3px var(--lc);
+}
+
+.progress-pips i.done {
+  background: var(--lc);
+}
+
+.progress-felt {
+  margin: var(--sp-5) 0 0;
+  color: var(--ink-2);
+}
+
+.progress-recent li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--fs-ui);
+}
+
+.progress-recent time {
+  flex: none;
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1.4 var(--font-mono);
+}
+
+.progress-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: var(--sp-7) 0 0;
+}
+
 .lost {
   padding-top: var(--sp-9);
 }
@@ -4261,6 +4425,17 @@ svg.stroke {
   .site-nav a {
     padding: 0 var(--sp-2);
     font-size: var(--fs-ui);
+  }
+}
+
+/* A narrow phone: four links and the brand's name don't fit one row, so the brand keeps only its mark (its link is still
+   named "System Lab home"). */
+@media (max-width: 440px) {
+  .site-head .brand-name {
+    display: none;
+  }
+  .site-nav a {
+    padding: 0 var(--sp-2);
   }
 }
 

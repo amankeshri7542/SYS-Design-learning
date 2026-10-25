@@ -21,3 +21,12 @@ export function markVisited(slug: string) {
     // Storage unavailable (private mode, blocked): progress simply isn't remembered.
   }
 }
+
+/** Forget which lessons this browser has opened. */
+export function clearVisited() {
+  try {
+    window.localStorage.removeItem(KEY);
+  } catch {
+    // Nothing to clear.
+  }
+}
