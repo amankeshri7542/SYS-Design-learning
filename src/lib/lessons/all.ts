@@ -34,6 +34,11 @@ import statelessVsStateful from "./scenes/stateless-vs-stateful";
 import ninesAndErrorBudgets from "./scenes/nines-and-error-budgets";
 import negativeCaching from "./scenes/negative-caching";
 import indexes from "./scenes/indexes";
+import loadShedding from "./scenes/load-shedding";
+import bulkheads from "./scenes/bulkheads";
+import cascadingFailures from "./scenes/cascading-failures";
+import canaryRollouts from "./scenes/canary-rollouts";
+import gracefulShutdown from "./scenes/graceful-shutdown";
 import capstone from "./stories/capstone";
 
 export const SCENE_DEFS: Record<string, LessonScene> = {
@@ -65,6 +70,11 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
   "nines-and-error-budgets": ninesAndErrorBudgets,
   "negative-caching": negativeCaching,
   indexes,
+  "load-shedding": loadShedding,
+  bulkheads,
+  "cascading-failures": cascadingFailures,
+  "canary-rollouts": canaryRollouts,
+  "graceful-shutdown": gracefulShutdown,
 };
 
 export const STORY_DEFS: Record<string, StoryDef> = { capstone };
