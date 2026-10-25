@@ -1,6 +1,7 @@
 import { hashStr, mulberry32, zipfCdf } from "../rng";
 import type { Call, Fx, FxKind, LinkSpec, NodeSpec, Op, Result, SceneSpec, ScriptEvent } from "../types";
 import { TICK, Win, type Conn, type Done, type Frame, type Gather, type NodeRt, type Note, type Req, type Spawn } from "./model";
+import { needsOf, type ModuleName } from "./needs";
 import { SAMPLE_KEYS, sameTargets } from "./ring";
 
 /**
@@ -46,6 +47,7 @@ export interface Sim {
   unwind(r: Req): void;
 
   // routing.ts
+  connKey(r: Req): string;
   candidates(n: NodeRt, r?: Req): string[];
   route(n: NodeRt, r: Req): void;
   forward(n: NodeRt, r: Req, pick: string): void;
@@ -107,7 +109,6 @@ export interface Sim {
   abort(n: NodeRt, r: Req): void;
   tidyConns(n: NodeRt): void;
   connsLost(id: string): void;
-  connKey(r: Req): string;
   admitConn(n: NodeRt, r: Req): boolean;
   resend(r: Req): void;
   windowOf(n: NodeRt): number;
@@ -130,7 +131,7 @@ export interface Sim {
   promote(lb: NodeRt, id: string): void;
   toPrimary(n: NodeRt, r: Req): void;
 
-  // coordination.ts
+  // gather.ts, elections.ts, bookings.ts
   scatter(n: NodeRt, r: Req, targets: (string | string[])[], need: number, op: Req["op"], free?: boolean): void;
   check(n: NodeRt, g: Gather): void;
   lead(n: NodeRt): void;
@@ -164,9 +165,18 @@ export interface Sim {
 
 /**
  * The simulation: its state, the fixed-tick loop, and the public controls. Behaviour by concern lives beside it
- * (control, clients, transport, routing, cache, data, work, connections, realtime, coordination, storage), attached to the
+ * (control, clients, transport, routing, cache, data, work, connections, realtime, gather, elections, bookings, storage), attached to the
  * prototype.
  */
+/** The optional modules loaded so far, each with the methods it attached. */
+export const MODULES = new Map<ModuleName, string[]>();
+
+/** An optional module puts its methods on every simulation. */
+export function attach(name: ModuleName, methods: object) {
+  Object.assign(Sim.prototype, methods);
+  MODULES.set(name, Object.keys(methods));
+}
+
 export class Sim {
   t = 0;
   spec: SceneSpec;
@@ -312,6 +322,9 @@ export class Sim {
   }
 
   reconfigure(spec: SceneSpec) {
+    // A scene can only run on the modules it needs: a page loads them first (`loadModules`).
+    const missing = needsOf(spec).filter((m) => !MODULES.has(m));
+    if (missing.length) throw new Error(`This scene needs the engine's ${missing.join(", ")} module: load it first (loadModules).`);
     this.spec = spec;
     // The loop plays its events in order of time, whatever order the script lists them in.
     this.loop = (spec.script?.events ?? []).filter((e) => !e.armed).sort((a, b) => a.at - b.at);
@@ -472,11 +485,11 @@ export class Sim {
     if (!up) {
       n.downAt = this.t;
       // What it held only in memory goes with it: unsaved writes, open windows.
-      this.lose(n);
+      if (MODULES.has("storage")) this.lose(n);
       n.cache.clear();
       n.sessions.clear();
       // Every connection to it closes, and its own connections die with it: what waits to go out fails.
-      this.connsLost(id);
+      if (MODULES.has("connections")) this.connsLost(id);
       for (const k of [...n.conns]) this.dropConn(n, k, false);
       n.accepted = 0;
       for (const r of n.sendq.splice(0)) this.abort(n, r);

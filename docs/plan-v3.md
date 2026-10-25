@@ -1009,7 +1009,7 @@ Gates on 2026-10-25: typecheck, 378 unit tests (5 new in `tests/hooks.test.ts`, 
 
 **Acceptance:**
 - [x] Lighthouse accessibility ≥ 95 on the home page and three lessons (100 on the home page and four lesson and story pages).
-- [ ] No lesson page ships more than 200 KB of gzipped JavaScript. Not met: lesson and story pages ship 202–206 KB (from 234–244 before the final pass); see below.
+- [x] No lesson page ships more than 200 KB of gzipped JavaScript: 193–199 KB after the page-weight follow-up (234–244 before the final pass, 202–206 after it); see below.
 - [x] A run on a mid-range phone records no frame over 34 ms on the busiest scene (a Pixel 7 profile with the CPU slowed 4×: worst frame 16.8 ms).
 - [x] All 57 lessons and 9 stories pass every gate.
 
@@ -1050,12 +1050,21 @@ Gates on 2026-10-25: typecheck, 391 unit tests, build, the browser suite (1,192 
   - **The glossary stays on the server:** a lesson's static page finds the terms its text marks and sends only those (`TermDefs`); 7 KB.
   - **Each entry's why and tags moved to `words.ts`:** a lesson page gets its own why from its server page; the home page imports the words; 5 KB.
   - **Both players are lazy,** so a story page no longer carries the lesson player; and the page's own chunk no longer imports the beats runtime (the term pattern moved to `term-mark.ts`, `withScene` is inlined there), which had put the beats and metrics modules on the page twice.
-  - **Not done, so the 200 KB target is missed by up to 6 KB:** loading the engine's optional modules (connections, real time, coordination, storage: 4.3 KB) only for the scenes that use them needs every core call into them guarded first, and the rest would mean a lighter renderer. Both are follow-ups, not quick wins.
+  - **Not done in this pass, so the 200 KB target was missed by up to 6 KB:** loading the engine's optional modules only for the scenes that use them, which needed every core call into them guarded first. The follow-up below did it, with more, and met the target.
 - **Accessibility:** Lighthouse scores 100 on the home page, C1, A8, N1 and S3. Its one finding: the home page's line index links were named by an `aria-label` that didn't start with the words they show; their extra words are now visually hidden text after the visible name.
 - **Frames:** with the CPU slowed 4×, desktop and a Pixel 7 profile, A8 (300 clicks a second at `timeScale` 0.25), the news feed at 500 feeds a second and the flash sale at full load (every switch on and off) all keep the worst frame at 16.8 ms and the app's work under 1.5 ms a frame. The frame-budget tests still cover rate limiting and the built-out capstone.
 - **The home page's line index** puts each line's pips under its name, so Networking's 16 no longer run into the column beside it.
 - **README and screenshots** describe v3: the seven lines and nine journeys, how a lesson teaches, the engine's modules. The screenshots were retaken.
 - **Not built:** the optional visual snapshot job (`tests/browser/visual.spec.ts`); the stage-fit, motion and frame-budget suites cover what it would check.
+
+**Decisions made in the page-weight follow-up (after the owner merged #7–#27):**
+
+Gates on 2026-10-25: typecheck, 394 unit tests (3 new in `tests/needs.test.ts`), build, and the browser suite (below). Every scene hashes the same as on `main` and `tune --json` is byte-identical. Lesson and story pages ship 193–199 KB of gzipped JavaScript (the heaviest, D9, 198.9), measured as before; the home page 224 KB.
+
+- **The engine's optional modules load on demand.** The core (control, clients, transport, routing, cache, data, work) is `core.ts`; connections, real time, gathering, elections, bookings and storage register with `attach` and load through `loadModules`. Coordination is three modules now, so a lesson about locks doesn't load elections. `needsOf(spec)` names what a scene's features use, and a lesson page loads `engineNeeds(slug)`, the union over every scene it can show (each knob's ends and choices, every story design and stage), sent by its server page; 45 of the 66 pages need none. `Sim.reconfigure` throws, by name, if a scene needs a module that isn't loaded, and `tests/needs.test.ts` runs every one of those scenes, firing each fault, and fails if anything reaches a module the page wouldn't load. The two core calls that run regardless of features (on a crash) are guarded by `MODULES.has`; a layer 4 balancer's connection key moved into the core. The home page's previews load every module, as they may show any lesson.
+- **Lesson pages no longer carry the catalog:** the server page sends a `PageNav` (the entry, its line's stations, the stops either side).
+- **What shows only on demand loads on demand:** the Key's rows, the Recap's check cards and the reduced-motion list, the flight strip, and a metric's sentences (`metric-words.ts`). The prediction card stays with the player: loaded late, it appeared a moment after its beat, and a quick Next could pass the question by (a browser test caught it).
+- **Tried and dropped:** a webpack build (6 KB heavier per page) and a custom `global-error` page (Next's own error styles stay in its chunk either way).
 
 ### M11 — Optional: a learning record (S/M, only with the owner's agreement)
 

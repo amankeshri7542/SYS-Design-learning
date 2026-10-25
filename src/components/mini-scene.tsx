@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { use, useMemo } from "react";
+import { ALL_MODULES, loadModules } from "@/lib/sim/engine/core";
 import type { SceneSpec } from "@/lib/sim/types";
 import { useLiveSims } from "./live";
 import { Stage } from "./stage";
@@ -10,6 +11,8 @@ import { Stage } from "./stage";
  * only while it is on screen, opens already warmed, and is a still frame under reduced motion.
  */
 export function MiniScene({ spec, label, warm = 1500 }: { spec: SceneSpec; label: string; warm?: number }) {
+  // A preview may be any lesson's: the engine's optional modules load with the first one shown.
+  use(loadModules(ALL_MODULES));
   const specs = useMemo(() => [spec], [spec]);
   const live = useLiveSims(specs, { warm });
   return (

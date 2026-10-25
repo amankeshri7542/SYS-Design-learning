@@ -114,7 +114,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
   finishAtClient(n: NodeRt, r: Req) {
     r.phase = "gone";
     // Any answer, even an error, acks the request: only silence says the way is congested.
-    this.flown(n, r, true);
+    if (r.flew) this.flown(n, r, true);
     if (r.abandoned || r.detached) return;
     if (r.polled && r.result === "ok") this.heard(n, r);
     const res: Result = r.result === "ok" && r.stale ? "stale" : (r.result ?? "error");
@@ -154,7 +154,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
         r.phase = "gone";
       }
       if (r.stack[0]?.conn) this.hangUp(n, r.stack[0], true);
-      this.flown(n, r, false);
+      if (r.flew) this.flown(n, r, false);
     }
     if (n && this.retry(n, r)) return;
     this.record(r, "error");

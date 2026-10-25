@@ -2,13 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { neighbours } from "@/lib/lessons";
 import { holds, type Control, type StoryDef, type Target } from "@/lib/lessons/story";
-import type { LessonMeta, Values } from "@/lib/lessons/types";
+import type { LessonMeta, PageNav, Values } from "@/lib/lessons/types";
 import type { Sim } from "@/lib/sim/engine";
 import { formatMetric, formatTarget, measure } from "@/lib/sim/metrics";
 import { BeatStrip, useSceneBeats } from "./beats";
-import { KeyPopover } from "./legend";
+import { KeyPopover } from "./key";
 import { ArrowIcon, Clock, MetricList, Transport, freshNote, useLiveSims } from "./live";
 import { Shell, usePlayerKeys } from "./shell";
 import { Stage } from "./stage";
@@ -17,7 +16,7 @@ import { Stage } from "./stage";
  * A story on one screen: stage after stage of growth. Change the architecture until the target holds for the stage's
  * hold time, then move on. The cheapest design that holds wins.
  */
-export function StoryPlayer({ meta, why, def }: { meta: LessonMeta; why: string; def: StoryDef }) {
+export function StoryPlayer({ meta, nav, why, def }: { meta: LessonMeta; nav: PageNav; why: string; def: StoryDef }) {
   const { stages, targets } = def;
   const [stage, setStage] = useState(0);
   const [arch, setArch] = useState<Values>(def.start);
@@ -26,7 +25,7 @@ export function StoryPlayer({ meta, why, def }: { meta: LessonMeta; why: string;
   const holdRef = useRef(0);
   const S = stages[stage];
   const specs = useMemo(() => [def.scene(arch, S)], [def, arch, S]);
-  const { prev, next } = neighbours(meta.slug);
+  const { prev, next } = nav;
 
   const onFrame = useCallback(
     ([sim]: Sim[], dt: number) => {

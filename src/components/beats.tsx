@@ -453,27 +453,7 @@ export function Callout({ id, text, spot, waiting }: { id: string; text: string;
   );
 }
 
-// ------------------------------------------------------------------------------------------------ panel cards
-
-/** Reduced motion: the step's beats as a list. Next (or Step) brings each one on, on a still frame. */
-export function WatchList({ items }: { items: { id: string; text: string; seen: boolean; now: boolean }[] }) {
-  // One line each, so the list fits beside the knobs; the beat on screen reads in full.
-  if (!items.length) return null;
-  return (
-    <section className="watch" aria-labelledby="watch-h">
-      <h3 id="watch-h" className="card-eyebrow">
-        What to watch
-      </h3>
-      <ol>
-        {items.map((it) => (
-          <li key={it.id} className={it.now ? "now" : it.seen ? "seen" : undefined} aria-current={it.now ? "step" : undefined}>
-            <Rich text={it.text} />
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
+// ------------------------------------------------------------------------------------------------ the prediction
 
 /** Commit to a guess before the break. While it is open the scene waits; afterwards it says what you chose, then how it went. */
 export function PredictCard({ p, onAnswer }: { p: PredictView; onAnswer: (i: number) => void }) {
@@ -516,46 +496,7 @@ export function PredictCard({ p, onAnswer }: { p: PredictView; onAnswer: (i: num
   );
 }
 
-/** A question on the Recap. Any answer shows the same line of why; a wrong one also points the stage at the answer. */
-export function CheckCard({ c, n, onWrong }: { c: Check; n: number; onWrong: (f: Focus) => void }) {
-  const [chose, setChose] = useState<number | null>(null);
-  const done = chose !== null;
-  return (
-    <section className="card check" aria-labelledby={`check-${n}`}>
-      <h3 id={`check-${n}`} className="card-eyebrow">
-        Check {n}
-      </h3>
-      <p className="card-prompt">
-        <Rich text={c.prompt} />
-      </p>
-      <div className="card-options">
-        {c.options.map((o, i) => (
-          <button
-            key={o}
-            type="button"
-            className={`opt${done && i === c.answer ? " right" : ""}${chose === i && i !== c.answer ? " wrong" : ""}`}
-            aria-pressed={chose === i}
-            disabled={done && chose !== i && i !== c.answer}
-            onClick={() => {
-              setChose(i);
-              if (i !== c.answer && c.focus) onWrong(c.focus);
-            }}
-          >
-            {done && (i === c.answer || chose === i) && <Mark right={i === c.answer} />}
-            {o}
-          </button>
-        ))}
-      </div>
-      {done && (
-        <p className="card-why" aria-live="polite">
-          <Rich text={c.why} />
-        </p>
-      )}
-    </section>
-  );
-}
-
-function Mark({ right }: { right: boolean }) {
+export function Mark({ right }: { right: boolean }) {
   return (
     <svg viewBox="0 0 16 16" className={`mark-${right ? "right" : "wrong"} stroke`} role="img" aria-label={right ? "Right." : "Not quite."}>
       <path d={right ? "M3.5 8.5l3 3 6-7" : "M4.5 4.5l7 7M11.5 4.5l-7 7"} />

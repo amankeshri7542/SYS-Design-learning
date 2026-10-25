@@ -100,6 +100,18 @@ export interface LessonMeta {
   aliases?: string[];
 }
 
+/**
+ * What a lesson or story page needs of the catalog, sent by its server page so the page doesn't carry the catalog: its
+ * entry, its line and that line's stations (the bar), and the stops before and after it on the path.
+ */
+export interface PageNav {
+  meta: LessonMeta;
+  line: Line;
+  stations: LessonMeta[];
+  prev?: LessonMeta;
+  next?: LessonMeta;
+}
+
 /** An entry's words (`words.ts`): kept apart from its metadata, so a page carries only its own. */
 export interface LessonWords {
   /** Why it matters, in one line (under 220 characters). */

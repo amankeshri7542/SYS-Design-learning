@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Sim } from "@/lib/sim/engine";
-import { betterIs, changeSize, explainMetric, formatChange, formatClock, formatDiff, formatMetric, formatTarget, measure, toneOf, type MetricId, type MetricSpec } from "@/lib/sim/metrics";
+import { Suspense, lazy, useEffect, useRef, useState, type CSSProperties } from "react";
+import { Sim } from "@/lib/sim/engine/core";
+import { betterIs, changeSize, formatChange, formatClock, formatDiff, formatMetric, formatTarget, measure, toneOf, type MetricId, type MetricSpec } from "@/lib/sim/metrics";
 import { stepGrid } from "@/lib/lessons/beats";
 import type { SceneSpec } from "@/lib/sim/types";
 import { useMode, useReducedMotion, useVisible } from "./hooks";
 import type { DrawFn } from "./stage";
+
+// A metric's sentences load the first time one is opened.
+const MetricExplanation = lazy(() => import("./metric-explanation"));
 
 const HISTORY = 40;
 
@@ -446,11 +449,9 @@ export function Compare({ metrics, columns, verdict, spot, why = {} }: { metrics
                   </div>
                   {open.m.hint && <p className="term-short">{open.m.hint}</p>}
                   <p className="term-alias">{columns[activeIndex].label}, now:</p>
-                  {explainMetric(open.m, measure(columns[activeIndex].sim, open.m), columns[activeIndex].sim).map((l) => (
-                    <p key={l} className="metric-line">
-                      {l}
-                    </p>
-                  ))}
+                  <Suspense fallback={null}>
+                    <MetricExplanation m={open.m} sim={columns[activeIndex].sim} />
+                  </Suspense>
                   {why[open.m.label] && (
                     <p className="metric-why">
                       <strong>Why it moved.</strong> {why[open.m.label]}

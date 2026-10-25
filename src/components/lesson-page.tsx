@@ -1,11 +1,11 @@
 "use client";
 
 import { Suspense, lazy, use, useEffect, useMemo } from "react";
-import { getLesson, neighbours } from "@/lib/lessons";
 import { loadScene } from "@/lib/lessons/scenes";
 import { loadStory } from "@/lib/lessons/stories";
-import type { Lesson, LessonMeta } from "@/lib/lessons/types";
+import type { Lesson, LessonMeta, PageNav } from "@/lib/lessons/types";
 import type { Term } from "@/lib/glossary";
+import { loadModules, type ModuleName } from "@/lib/sim/engine/core";
 import { Brand } from "./brand";
 import { TermDefs } from "./term-defs";
 import { MarkVisited } from "./visited";
@@ -18,37 +18,41 @@ const StoryPlayer = lazy(() => import("./story-player").then((m) => ({ default: 
  * A lesson page: its scenes arrive in a chunk of their own, so a page carries one lesson's code, not the course's.
  * Until they do (a client navigation that wasn't fetched ahead), the page shows the shell with an empty stage.
  */
-export function LessonPage({ slug, why, terms }: { slug: string; why: string; terms: Term[] }) {
-  const meta = getLesson(slug)!;
+export function LessonPage({ nav, why, terms, needs }: { nav: PageNav; why: string; terms: Term[]; needs: ModuleName[] }) {
+  const { meta } = nav;
   return (
     <TermDefs terms={terms}>
       {/* The visit counts from the moment the page opens, not once its scenes arrive. */}
-      <MarkVisited slug={slug} />
+      <MarkVisited slug={meta.slug} />
       <Suspense fallback={<ShellSkeleton meta={meta} why={why} />}>
-        {meta.kind === "story" ? <LoadedStory meta={meta} why={why} /> : <LoadedLesson meta={meta} why={why} />}
+        {meta.kind === "story" ? <LoadedStory nav={nav} why={why} needs={needs} /> : <LoadedLesson nav={nav} why={why} needs={needs} />}
       </Suspense>
     </TermDefs>
   );
 }
 
-function LoadedLesson({ meta, why }: { meta: LessonMeta; why: string }) {
+function LoadedLesson({ nav, why, needs }: { nav: PageNav; why: string; needs: ModuleName[] }) {
+  const { meta } = nav;
+  // The engine's optional modules this lesson's scenes use, if any, load beside its scenes.
+  use(loadModules(needs));
   const scene = use(loadScene(meta.slug));
   // `withScene`, inlined: importing it would bring the beats runtime into the page's own chunk, ahead of the player.
   const lesson = useMemo((): Lesson => ({ ...meta, ...scene, why }), [meta, scene, why]);
-  useFetchNext(meta.slug);
-  return <LessonPlayer lesson={lesson} />;
+  useFetchNext(nav.next);
+  return <LessonPlayer lesson={lesson} nav={nav} />;
 }
 
-function LoadedStory({ meta, why }: { meta: LessonMeta; why: string }) {
+function LoadedStory({ nav, why, needs }: { nav: PageNav; why: string; needs: ModuleName[] }) {
+  const { meta } = nav;
+  use(loadModules(needs));
   const def = use(loadStory(meta.slug));
-  useFetchNext(meta.slug);
-  return <StoryPlayer meta={meta} why={why} def={def} />;
+  useFetchNext(nav.next);
+  return <StoryPlayer meta={meta} nav={nav} why={why} def={def} />;
 }
 
 /** Once the page is idle, fetch the next stop's code, so "Next stop" opens at once. */
-function useFetchNext(slug: string) {
+function useFetchNext(next: LessonMeta | undefined) {
   useEffect(() => {
-    const next = neighbours(slug).next;
     if (!next) return;
     const fetchIt = () => void (next.kind === "story" ? loadStory(next.slug) : loadScene(next.slug));
     if (typeof requestIdleCallback === "function") {
@@ -57,7 +61,7 @@ function useFetchNext(slug: string) {
     }
     const t = setTimeout(fetchIt, 1500);
     return () => clearTimeout(t);
-  }, [slug]);
+  }, [next]);
 }
 
 /**
