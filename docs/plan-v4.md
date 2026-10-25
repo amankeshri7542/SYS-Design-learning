@@ -288,7 +288,25 @@ node scripts/weight.mjs 3300 # against `npx next start -p 3300` on the fresh bui
 | `src/components/system-import.tsx` | Paste box + file picker + format auto-detect + preview of guesses with one-tap kind changes; lazy. |
 | `tests/import.test.ts` | Fixtures per format, good and broken, with exact messages; round trip import → compile → run. |
 
-**Acceptance:** each format's fixtures import; a 40-service compose file groups to ≤14 stations and says what it grouped; every error names a line; nothing leaves the browser.
+**Acceptance:**
+- [x] Arrows, CSV of calls, System Lab JSON (or a list of calls) and docker-compose YAML read into a system that compiles and runs (`tests/import.test.ts`, fixtures inline).
+- [x] Every error a reader finds names its line and what to do ("Line 1: there's nothing after an arrow.", "Line 4: anchors and merges (& * <<) aren't read here; paste the file with them written out.").
+- [x] Numbered copies (`api-1`, `api-2`) count as one part; past 24 parts the rest are grouped as "Other services", and the notes say so.
+- [x] Nothing leaves the browser: the text is read in the page; a file is read with `File.text()`.
+- [x] Weight: the import box ships with the gallery but its readers and sizing load on "Open it": `/my-system` 165.5 KB, 199.1 KB opened from a link (the closest page to the budget); lesson pages unchanged (≤196.7).
+- [x] An import opens healthy: no part saturated, its queue empty, its people's p95 within its target, and every guess, addition and size said in a note (`tests/import.test.ts`, `my-system-import.spec.ts` at four sizes).
+- [ ] OpenAPI and Kubernetes service lists: not built (below).
+
+**Decisions made while building Phase 3:**
+- **Kinds come from names, then images** (`import/infer.ts`); a bracket says it outright (`Orders [database]`). The editor gained "What it is", so any guess is one change away.
+- **The reader draws what a person would:** a cache and a database called by the same part become cache in front of database; a part nothing calls that "depends on" a queue another part feeds takes jobs from it (a worker); whatever is published (`ports`), or nothing calls, gets Users in front; a sender talking to several parts gets a load balancer; arrows the engine can't draw are left out. Each change is a note, shown above the parts when the system opens.
+- **Grouping is by part count (24), not stations (14 in §6.4):** copies above four already draw as one station, so 24 parts stay readable; stage-fit is checked on templates, not on imports, which vary.
+- **An import opens healthy** (`import/size.ts`): a file rarely says how many workers a part has, so each part that does work and wasn't given a number gets enough to run about 60% busy, measured on headless runs of the engine (doubling while a line keeps growing); if its slowest 1 in 20 already take longer than the usual 400 ms, "working" means about half again what it takes now. Both are notes, so the person can set their own numbers. Under 25 ms for the example.
+- **Queues and topics hand work to workers only** (`SENDS`): nobody waits on a job for an answer, which is what the engine's consumers model; an import draws a service fed only by a queue as a worker, and says so.
+- **"What it is"** changes a part's kind in the editor; arrows the new kind can't send or take are dropped, and copies go if it has none.
+- **The import box is plain markup with the gallery;** its readers (`read.ts`, `graph.ts`, `infer.ts`) and the sizing engine load on "Open it", so a shared link doesn't fetch them. `detect.ts` names the format as someone types. It refuses text over 1,000 KB, says so if its code can't load, and can't be opened twice at once.
+- **Found while checking:** on phones the builder lost its way back (the lesson bar's line of stops is hidden there, and the back button sat in it); it now stays, 40 px on touch. A template opened and left as it came is no longer added to "Yours".
+- **Not built:** OpenAPI (paths need an L7 gateway kind that routes by path, which the engine has as `byTag` but the builder doesn't expose yet) and Kubernetes manifests (multi-document YAML with services and deployments; the YAML reader handles one document). Both belong with Phase 2b's advanced kinds.
 
 ### Phase 4: Level 2, trace replay from files (L) — branch `v4/p4-replay`
 

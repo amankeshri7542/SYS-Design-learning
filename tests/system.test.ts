@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { Sim } from "../src/lib/sim/engine";
 import { accounted, arrivalTrace, leakedHolds } from "../src/lib/sim/invariants";
 import { compile, type Compiled } from "../src/lib/system/compile";
-import { validate, type SystemDoc } from "../src/lib/system/doc";
+import { KINDS, validate, type PartKind, type SystemDoc } from "../src/lib/system/doc";
 import { TEMPLATES } from "../src/lib/system/templates";
 
 // My System: a doc someone describes becomes a scene the engine runs. Every template compiles cleanly, runs with every
@@ -216,4 +216,20 @@ test("removing a part sends its callers on to what it called", async () => {
   const noCache = removePart(web, "cache");
   assert.deepEqual(noCache.parts.find((p) => p.id === "app")!.to, ["db"]);
   assert.deepEqual(validate(noCache).filter((i) => i.level === "error"), []);
+});
+
+test("changing what a part is keeps only the arrows the new kind can send and take", async () => {
+  const { updatePart } = await import("../src/lib/system/edit");
+  for (const t of TEMPLATES)
+    for (const p of t.doc.parts)
+      for (const kind of Object.keys(KINDS) as PartKind[]) {
+        const next = updatePart(t.doc, p.id, { kind });
+        const bad = validate(next).filter((i) => /can't send|copies must/.test(i.text));
+        assert.deepEqual(bad, [], `${t.id}: ${p.id} → ${kind}`);
+        assert.equal(next.parts.find((q) => q.id === p.id)!.kind, kind);
+      }
+  // A service turned into a worker keeps its calls (users, who can't send to a worker, lose theirs).
+  const jobs = TEMPLATES.find((t) => t.id === "jobs")!.doc;
+  const api = jobs.parts.find((p) => p.id === "api")!;
+  assert.deepEqual(updatePart(jobs, "api", { kind: "worker" }).parts.find((p) => p.id === "api")!.to, api.to);
 });

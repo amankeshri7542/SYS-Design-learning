@@ -131,7 +131,8 @@ export function removePart(doc: SystemDoc, id: string): SystemDoc {
 }
 
 /** Change one part: its name, its count, or its settings (merged). A new name keeps the id, so arrows stay. */
-export function updatePart(doc: SystemDoc, id: string, change: { name?: string; count?: number; set?: Partial<Settings> }): SystemDoc {
+export function updatePart(doc: SystemDoc, id: string, change: { name?: string; kind?: PartKind; count?: number; set?: Partial<Settings> }): SystemDoc {
+  if (change.kind) doc = changeKind(doc, id, change.kind);
   return withParts(
     doc,
     doc.parts.map((p) => {
@@ -140,6 +141,29 @@ export function updatePart(doc: SystemDoc, id: string, change: { name?: string; 
       if (change.name !== undefined) next.name = change.name.slice(0, 40);
       if (change.count !== undefined) next.count = Math.max(1, Math.round(change.count));
       if (change.set) next.set = { ...p.set, ...change.set };
+      return next;
+    }),
+  );
+}
+
+/** Change what a part is. Its settings stay (they are shared by every kind); its copies go if the new kind has none,
+ * and so do the arrows from it or to it that the new kind can't send or take. */
+function changeKind(doc: SystemDoc, id: string, kind: PartKind): SystemDoc {
+  const kindOf = (pid: string) => (pid === id ? kind : doc.parts.find((q) => q.id === pid)?.kind);
+  return withParts(
+    doc,
+    doc.parts.map((p) => {
+      const self = p.id === id;
+      const k = self ? kind : p.kind;
+      const to = (p.to ?? []).filter((t) => {
+        const tk = kindOf(t);
+        return tk !== undefined && canSend(k, tk);
+      });
+      if (!self && to.length === (p.to ?? []).length) return p;
+      const next: PartDoc = { ...p, kind: k };
+      if (self && !["service", "worker", "cache", "cdn"].includes(kind)) delete next.count;
+      if (to.length) next.to = to;
+      else delete next.to;
       return next;
     }),
   );
