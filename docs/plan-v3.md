@@ -1033,6 +1033,15 @@ Gates on 2026-10-25: typecheck, 389 unit tests, build, and the browser suite: 1,
 - **C6:** users read and write 40 keys through a cache in front of a database 20 ms away; Crash the cache takes it down for 0.3 s. Saving later loses about 13 confirmed writes; writing through loses none, and writes take about 140 ms instead of 72. The fix's choice knob also offers write-around. Its terms show hyphenated (write-behind, write-through).
 - **The route test** checks that every planned entry has no page, rather than naming one, as the last planned entries are going live.
 
+**Decisions made while building S8 click counting:**
+
+Gates on 2026-10-25: typecheck, 391 unit tests, build, and the browser suite: 1,192 tests, of which 1,181 passed and 11 were skipped, the 4 frame budgets included. The story was checked by eye at the four sizes with every switch on. Each stage's own design holds its targets for the whole of a 16 s run, and the previous stage's design never holds them as long as the stage needs. With S8 live, all 57 lessons and 9 stories are live and nothing is planned.
+
+- **Four stages, three switches, two targets** (click time ≤ 0.4 s, clicks not counted ≤ 1%), rather than the curriculum's five stages: a small campaign; launch day (600 clicks a second, twice what one table writes) → shard the counts by ad; one ad goes viral (half the clicks melt its shard) → count in windows (one-second windows that wait 1.5 s for clicks up to a second late); a counter crashes for 0.3 s every 4 s (its open counts die with it) → checkpoint the counts. The curriculum's replay and back-pressure stages are left to the lessons that teach them. It rides sharding, stream windows and delivery guarantees.
+- **One station each for the click service and the counter, and for Counts and the first shard,** so each stage's beats point at stations every design has.
+- **Clicks retry** with backoff (100 ms base, three times), so the clicks refused while the counter is down are counted once it is back; a retry keeps its event time.
+- **Three shards, not four,** at `timeScale` 0.2: a landscape phone's stage (459×240) could not give four stacked shards' labels a clear side. With every switch on it has one label on a rail plate, in line with the other new stories (the older ones have 3–8 at that size). A processor's sub-label reserves its own shape (digits as 9s) rather than the longest any window could have, and the counter and router stand far enough apart that their sub-labels clear each other at 1280×720.
+
 ### M11 — Optional: a learning record (S/M, only with the owner's agreement)
 
 Pedagogy §5 describes a privacy-safe, localStorage-only event ring buffer, a `/progress` page with export and clear, and a dev-only `/stats` view to tune predictions and checks. It changes the `CLAUDE.md` rule on progress storage, so it waits for an explicit yes.

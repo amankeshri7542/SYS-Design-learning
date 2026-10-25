@@ -545,7 +545,7 @@ export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
         const overload = n.overload && n.slots ? ["restarting…", `warming up · ${n.slots}/${n.slots} busy`] : [];
         // Connections held open, or accepted against a limit; a cluster member's role and term; a lock's line; a quorum.
         const open = n.hold ? [`${n.hold.max}/${n.hold.max} open`] : n.maxConns !== undefined ? [`${n.maxConns}/${n.maxConns} connections`] : [];
-        const roles = n.cluster ? ["leads · term 99", "asks for votes"] : n.lock ? ["99 held · 99 waiting"] : n.quorum ? [`W=${n.quorum.w} R=${n.quorum.r}`] : n.window ? [windowSub(n.window), "9.5 s windows · waits 9.5 s"] : [];
+        const roles = n.cluster ? ["leads · term 99", "asks for votes"] : n.lock ? ["99 held · 99 waiting"] : n.quorum ? [`W=${n.quorum.w} R=${n.quorum.r}`] : n.window ? [windowSub(n.window).replace(/\d/g, "9")] : [];
         return [...work, down, ...(checked ? ["rejoining…"] : []), ...(canary ? ["rolled back"] : []), ...overload, ...open, ...roles, ...states];
       }
     }
