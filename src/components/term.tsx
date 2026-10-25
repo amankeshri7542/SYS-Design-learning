@@ -6,6 +6,7 @@ import type { Focus } from "@/lib/lessons/beats";
 import { TERM } from "@/lib/lessons/term-mark";
 import type { Term as TermDef } from "@/lib/glossary";
 import { useTouch } from "./hooks";
+import { record } from "@/lib/record";
 import { DefsContext } from "./term-defs";
 
 interface Terms {
@@ -85,6 +86,7 @@ export function TermProvider({ lesson, onShow, children }: { lesson: string; onS
     const def = defs.get(key);
     const el = pop.current;
     if (!def || !el) return;
+    record("term", { key });
     opener.current = from;
     const r = from.getBoundingClientRect();
     // Under the term when there is room, otherwise above it; clamped to the window.

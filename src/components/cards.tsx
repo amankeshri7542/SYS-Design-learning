@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import type { Check, Focus } from "@/lib/lessons/beats";
+import { record } from "@/lib/record";
 import { Mark } from "./beats";
 import { Rich } from "./term";
 
@@ -50,6 +52,7 @@ export function CheckCard({ c, n, onWrong }: { c: Check; n: number; onWrong: (f:
             disabled={done && chose !== i && i !== c.answer}
             onClick={() => {
               setChose(i);
+              record("check", { n, chosen: i, correct: i === c.answer });
               if (i !== c.answer && c.focus) onWrong(c.focus);
             }}
           >
@@ -66,3 +69,60 @@ export function CheckCard({ c, n, onWrong }: { c: Check; n: number; onWrong: (f:
     </section>
   );
 }
+
+const SNAGS = [
+  { id: "numbers", label: "The numbers" },
+  { id: "dots", label: "The dots" },
+  { id: "words", label: "The words" },
+];
+
+/**
+ * How the lesson landed, at the end of the Recap: noted in this browser's learning record only. "Not quite" asks what got
+ * in the way, so the lesson can be tuned where it lost the reader.
+ */
+export function FeelCard() {
+  const [feel, setFeel] = useState<"clear" | "unsure" | null>(null);
+  const [snags, setSnags] = useState<string[]>([]);
+  const choose = (f: "clear" | "unsure") => {
+    setFeel(f);
+    record("feel", { feel: f });
+  };
+  const snag = (id: string) => {
+    const next = snags.includes(id) ? snags.filter((x) => x !== id) : [...snags, id];
+    setSnags(next);
+    record("feel", { feel: "unsure", snags: next.join(",") });
+  };
+  return (
+    <section className="card feel" aria-labelledby="feel-h">
+      <h3 id="feel-h" className="card-eyebrow">
+        Did this one land?
+      </h3>
+      <div className="card-options">
+        <button type="button" className="opt" aria-pressed={feel === "clear"} onClick={() => choose("clear")}>
+          Yes, it&rsquo;s clear
+        </button>
+        <button type="button" className="opt" aria-pressed={feel === "unsure"} onClick={() => choose("unsure")}>
+          Not quite
+        </button>
+      </div>
+      {feel === "unsure" && (
+        <div className="feel-snags" role="group" aria-label="What got in the way">
+          <p className="card-why">What got in the way?</p>
+          <div className="card-options">
+            {SNAGS.map((s) => (
+              <button key={s.id} type="button" className="opt" aria-pressed={snags.includes(s.id)} onClick={() => snag(s.id)}>
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {feel && (
+        <p className="feel-note">
+          Noted in this browser only. See it on your <Link href="/progress">progress</Link> page.
+        </p>
+      )}
+    </section>
+  );
+}
+

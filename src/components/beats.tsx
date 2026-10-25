@@ -6,6 +6,7 @@ import { beatsOf, holdsTraffic, type Lesson } from "@/lib/lessons/types";
 import type { Sim } from "@/lib/sim/engine";
 import type { Pt, Rect, Size } from "@/lib/sim/layout";
 import { formatMetric, measure } from "@/lib/sim/metrics";
+import { record } from "@/lib/record";
 import { freshNote, type Live } from "./live";
 import { Rich } from "./term";
 
@@ -22,6 +23,8 @@ interface State {
   line: string | null;
   /** The claim's sentence, read at its beat. */
   claim: string | null;
+  /** When the question was asked (wall clock): the learning record notes how long the answer took. */
+  askedAt?: number;
 }
 
 /** What the strip and the callout show: the current beat. */
@@ -115,6 +118,7 @@ export function useBeats(lesson: Lesson, step: number) {
       const track = prediction?.track;
       if (fired) {
         s.seqOf.set(fired, ++s.seq);
+        record("beat", { at: `${i}:${fired.beat.id}` });
         if (claim?.at === fired.beat.id) s.claim = fillIn(claim.sentence, { sims, ...ctx, current: i });
         if (prediction && fired.beat.id === prediction.reveal.beat) {
           if (track) {
@@ -131,6 +135,7 @@ export function useBeats(lesson: Lesson, step: number) {
       const brk = figs[i].break;
       if (fired && brk && fired.beat.id === brk.beat && isOnRef.current(brk.action)) r.release();
       const asked = r.waiting === "ask" && was !== "ask";
+      if (asked) s.askedAt = Date.now();
       if (asked && track) {
         s.raw.before = measure(sims[track.world ?? ask], track.metric);
         s.marks.before = formatMetric(track.metric, s.raw.before);
@@ -204,6 +209,7 @@ export function useBeats(lesson: Lesson, step: number) {
 
     const answer = (i: number | null) => {
       s.answer = i;
+      if (prediction) record("predict", i === null ? { skipped: true } : { chosen: i, correct: i === prediction.answer, ms: Date.now() - (s.askedAt ?? Date.now()) });
       runners[ask]?.answer();
       live.play();
       live.refresh();
