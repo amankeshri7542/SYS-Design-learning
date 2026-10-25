@@ -1496,6 +1496,9 @@ test("stream windows: late events are dropped unless the window waits for them, 
   const patient = run(spec(3000), 8000);
   assert.ok(value(eager, m("lateDropped")) > 0.1, `late clicks are dropped (${value(eager, m("lateDropped"))})`);
   assert.equal(value(patient, m("lateDropped")), 0, "a wait longer than any lateness drops none");
+  // Of the clicks answered, those never counted.
+  assert.ok(Math.abs(value(eager, m("uncounted")) - value(eager, m("lateDropped"))) < 0.03, "dropped clicks are uncounted");
+  assert.equal(value(patient, m("uncounted")), 0);
   const lag = (s: Sim) => value(s, m("windowLag"));
   assert.ok(Math.abs(lag(eager) - 1000) < 50, `a window's counts are written as it closes (${lag(eager)})`);
   assert.ok(Math.abs(lag(patient) - lag(eager) - 3000) < 50, `the wait adds to every count's delay (${lag(patient)})`);
@@ -1507,6 +1510,7 @@ test("stream windows: late events are dropped unless the window waits for them, 
     const s = run(spec(3000, checkpoint), 3000);
     s.setUp("p", false);
     s.step(100);
+    assert.equal(value(s, m("lostWrites")) > 0, value(s, m("uncounted")) > 0, "lost counts are uncounted");
     return value(s, m("lostWrites"));
   };
   assert.ok(crash(false) > 100, `open counts die with it (${crash(false)})`);

@@ -255,6 +255,8 @@ export class Sim {
   windowLags: { t: number; ms: number }[] = [];
   /** Writes acknowledged and then lost: a write-behind cache's unsaved keys, or a processor's open counts, at a crash. */
   lostWrites: Win;
+  /** Events a processor had counted and then lost in a crash (also among `lostWrites`). */
+  lostCounts: Win;
   tracing: boolean;
   seq = 0;
   truth = new Map<number, number>();
@@ -304,6 +306,7 @@ export class Sim {
     this.windowed = new Win(this.windowMs);
     this.lateDropped = new Win(this.windowMs);
     this.lostWrites = new Win(this.windowMs);
+    this.lostCounts = new Win(this.windowMs);
     this.retryRng = mulberry32(this.seed ^ 0x9e3779b9);
     this.reconfigure(spec);
   }

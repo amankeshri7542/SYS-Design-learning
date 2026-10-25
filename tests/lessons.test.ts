@@ -102,7 +102,7 @@ test("the route: the dock's next stop follows the path, from its first live stop
   assert.equal(neighbours(COURSE[0].slug).prev, undefined);
   assert.equal(neighbours(COURSE[COURSE.length - 1].slug).next, undefined);
   for (let i = 1; i < COURSE.length; i++) assert.equal(neighbours(COURSE[i - 1].slug).next, COURSE[i]);
-  assert.equal(getLesson("stream-windows"), undefined, "a planned lesson has no page yet");
+  for (const e of CATALOG.filter((x) => x.status === "planned")) assert.equal(getLesson(e.slug), undefined, `${e.slug}: a planned entry has no page yet`);
   // Where to go next: the first stop not yet visited, after the one you were on.
   const visited = new Set(COURSE.slice(0, 3).map((e) => e.slug));
   assert.equal(nextFor(null, new Set()), COURSE[0]);

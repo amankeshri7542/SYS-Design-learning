@@ -80,6 +80,8 @@ const TERMS: Term[] = [
   { key: "penetration", name: "Cache penetration", short: "Requests for things that don't exist: they miss every time and all reach the database.", show: { lesson: "negative-caching", focus: { link: ["cache", "db"] } } },
   { key: "negative-cache", name: "Negative caching", short: "Keeping a “not found” answer for a short while, so the same missing id isn't looked up again.", show: { lesson: "negative-caching", focus: { nodes: ["cache"] } } },
   { key: "existence-check", name: "Existence check", alias: "Bloom filter", short: "A compact list of every id that exists. It answers “no” at once, and “maybe” when unsure.", show: { lesson: "negative-caching", focus: { nodes: ["cache"] } } },
+  { key: "write-behind", name: "Write-behind", alias: "write-back", short: "A cache that confirms a write at once and saves it to the database later, in batches.", show: { lesson: "cache-write-strategies", focus: { nodes: ["c"] } } },
+  { key: "write-through", name: "Write-through", short: "A cache that saves each write to the database before confirming it, and keeps the new value.", show: { lesson: "cache-write-strategies", focus: { nodes: ["c"] } } },
   // Data
   { key: "connection-pool", name: "Connection pool", alias: "pool, PgBouncer", short: "A few connections kept open and lent out to requests, instead of opening one per request.", show: { lesson: "connection-pools", focus: { nodes: ["a1", "a2"] } } },
   { key: "failover", name: "Failover", alias: "promotion, switchover", short: "Making a replica the new primary when the primary dies, so writes can carry on.", show: { lesson: "failover", focus: { nodes: ["r1"] } } },
@@ -111,6 +113,8 @@ const TERMS: Term[] = [
   { key: "consumer-lag", name: "Consumer lag", short: "How far a log's readers are behind its writers: events waiting to be read.", show: { lesson: "partitioned-logs", focus: { nodes: ["q"], dots: "waiting" } } },
   { key: "partition", name: "Partition", alias: "shard of a log", short: "One slice of a log. Events with the same key always land in the same partition, in order.", show: { lesson: "partitioned-logs", focus: { nodes: ["p1", "p2", "p3"] } } },
   { key: "consumer-group", name: "Consumer group", short: "Readers sharing a log's partitions, one reader per partition, rebalancing when one leaves.", show: { lesson: "partitioned-logs", focus: { nodes: ["p2", "c3"] } } },
+  { key: "stream-window", name: "Window", alias: "tumbling window, time bucket", short: "A stretch of time, like each second, whose events are added up together and written once.", show: { lesson: "stream-windows", focus: { nodes: ["counter"] } } },
+  { key: "late-event", name: "Late event", alias: "out-of-order event, watermark", short: "An event that arrives after its window closed. Waiting longer counts it, but delays every total.", show: { lesson: "stream-windows", focus: { metric: "Clicks not counted" } } },
   { key: "saga", name: "Saga", alias: "compensating transaction", short: "A multi-step job where each step has an undo, run in reverse when a later step fails.", show: { lesson: "sagas", focus: { nodes: ["orders"] } } },
   // Resilience
   { key: "token-bucket", name: "Token bucket", alias: "rate limit", short: "Each client earns tokens at a steady rate up to a small store; each request spends one.", show: { lesson: "rate-limiting", focus: { nodes: ["lim"] } } },

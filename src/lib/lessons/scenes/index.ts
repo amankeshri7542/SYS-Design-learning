@@ -20,6 +20,7 @@ export const SCENES: Record<string, Load> = {
   "stale-data": () => import("./stale-data"),
   "cache-stampede": () => import("./cache-stampede"),
   "negative-caching": () => import("./negative-caching"),
+  "cache-write-strategies": () => import("./cache-write-strategies"),
   // Data
   "read-replicas": () => import("./read-replicas"),
   sharding: () => import("./sharding"),
@@ -40,6 +41,7 @@ export const SCENES: Record<string, Load> = {
   outbox: () => import("./outbox"),
   "partitioned-logs": () => import("./partitioned-logs"),
   sagas: () => import("./sagas"),
+  "stream-windows": () => import("./stream-windows"),
   // Resilience
   "rate-limiting": () => import("./rate-limiting"),
   "circuit-breakers": () => import("./circuit-breakers"),
