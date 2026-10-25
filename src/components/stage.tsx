@@ -127,22 +127,23 @@ const ZOOM_CEILING = (lanes: number) => (lanes <= 1 ? 2 : lanes <= 2 ? 1.45 : la
  * Pick the layout for the box. Portrait boxes never squeeze a wide scene into the compact layout (only scenes of at
  * most two lanes and three columns may use it); landscape boxes never stack the scene vertically. The wide desktop
  * layout wins whenever its stations come out at 74% of design size or more; otherwise the biggest stations of the
- * other layouts win (a landscape box may still keep the wide one).
+ * other layouts win (a landscape box may still keep the wide one). With `adapt`, a layout may be restyled to fit
+ * (`fitFrame`); a frame with secondary labels beats one with names only.
  */
-function chooseFrame(scene: Scene, box: Size): Frame {
+function chooseFrame(scene: Scene, box: Size, adapt: boolean): Frame {
   const { lanes, cols } = shapeOf(scene.spec);
   const portrait = box.h >= box.w * 0.85;
   const modes: Mode[] = portrait ? (lanes <= 2 && cols <= 3 ? ["wide", "compact", "tall"] : ["wide", "tall"]) : ["wide", "compact"];
   // Layouts where every label found a clear side come first; then the biggest stations.
-  const frames = modes.map((m) => fitFrame(scene, m, box));
-  const better = (a: Frame, b: Frame) => (b.hits !== a.hits ? b.hits < a.hits : nodeScale(b) > nodeScale(a));
+  const frames = modes.map((m) => fitFrame(scene, m, box, 1, adapt));
+  const better = (a: Frame, b: Frame) => (b.hits !== a.hits ? b.hits < a.hits : b.subs !== a.subs ? b.subs : nodeScale(b) > nodeScale(a));
   const wide = frames[0];
   // Too small (or crowded) for the wide layout: the best of the rest, and on a portrait box never the wide one.
   if (nodeScale(wide) < 0.74 || wide.hits) return (portrait ? frames.slice(1) : frames).reduce((a, b) => (better(a, b) ? b : a));
   // A wide stage with spare height draws its stations larger, as long as nothing crowds and nothing has to shrink.
   let best = wide;
   for (let z = 1.05; z <= ZOOM_CEILING(lanes) + 1e-6; z += 0.05) {
-    const f = fitFrame(scene, "wide", box, z);
+    const f = fitFrame(scene, "wide", box, z, adapt);
     if (f.k < wide.k * 0.98 || f.hits || crowded(scene, f)) break;
     best = f;
   }
@@ -209,6 +210,7 @@ export function Stage({
   follow,
   remember = true,
   explain,
+  adapt = false,
 }: {
   sim: Sim;
   spec: SceneSpec;
@@ -228,6 +230,11 @@ export function Stage({
   remember?: boolean;
   /** Each station's name opens a card about it (lessons and stories; not previews). */
   explain?: Explain;
+  /**
+   * The scene wasn't shaped by hand for every screen (My System's): where its layout can't fit the box, labels may pack
+   * in, the scene may stretch into spare room, or stations may show names only.
+   */
+  adapt?: boolean;
 }) {
   const scene = useMemo(() => (frameSpecs ? combine(frameSpecs) : sceneOf(spec)), [frameSpecs, spec]);
   const edges = useMemo(() => edgesOf(spec), [spec]);
@@ -245,7 +252,7 @@ export function Stage({
     return () => ro.disconnect();
   }, []);
   // The frame depends only on the box and the lesson's combined scene, so it holds still while the scene runs.
-  const frame = useMemo(() => (box ? chooseFrame(scene, box) : null), [scene, box]);
+  const frame = useMemo(() => (box ? chooseFrame(scene, box, adapt) : null), [scene, box, adapt]);
   const layout = useMemo(() => (frame ? layoutIn(spec, frame) : null), [spec, frame]);
   const guesses = useMemo(
     () =>
@@ -1032,8 +1039,8 @@ function StageSvg({
           if (!rt) return null;
           const view = describe(sim, rt, lbViews);
           const detail = fitSub(view.sub, frame.mode);
-          // In the compact phone layout, secondary labels appear only when they carry news.
-          const sub = frame.mode !== "compact" || view.cls || rt.queue.length || n.kind === "cache" || n.kind === "queue" ? detail : "";
+          // In the compact phone layout, secondary labels appear only when they carry news; a frame too dense has none.
+          const sub = !frame.subs ? "" : frame.mode !== "compact" || view.cls || rt.queue.length || n.kind === "cache" || n.kind === "queue" ? detail : "";
           const m = meterOf(rt);
           return (
             <NodeView

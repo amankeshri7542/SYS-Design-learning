@@ -262,6 +262,7 @@ export function SystemPlayer({
           focus={beats.beat?.focus}
           callout={beats.beat ? { id: beats.beat.id, text: beats.beat.text, waiting: false } : null}
           explain={explain}
+          adapt
         />
       }
       panel={

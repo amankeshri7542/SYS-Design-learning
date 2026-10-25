@@ -30,9 +30,9 @@ test.describe("a trace file", () => {
     await page.waitForTimeout(800);
     const shown = await page.evaluate(() => document.body.innerText + JSON.stringify(localStorage));
     for (const s of PERSONAL) expect.soft(shown, `“${s}” shows`).not.toContain(s);
-    // The stage meets the lessons' rules: labels inside and at full size, nothing over a station or on a rail, 40 px
-    // controls on phones. Labels never overlap on desktops; ten stations in three lanes and five columns don't fit a
-    // phone's stage at full text size (the frame shrinks past the labels it placed), so phones skip that check.
+    // The stage meets the lessons' rules: labels inside, at full size and clear of each other, nothing over a station or
+    // on a rail, 40 px controls on phones. Ten stations in three lanes and five columns are too dense for a phone's
+    // stage with secondary labels, so there the stations show names only.
     await page.getByRole("button", { name: "Got it" }).click();
     await page.waitForTimeout(300);
     const m = await measure(page);
@@ -46,7 +46,7 @@ test.describe("a trace file", () => {
     }
     const labels = m.texts.filter((x) => x.kind === "node-label" || x.kind === "node-sub");
     const collisions = labels.flatMap((a, j) => labels.slice(j + 1).filter((b) => a.owner !== b.owner && overlap(a, b)).map((b) => `“${a.text}” × “${b.text}”`));
-    if (!isMobile) expect.soft(collisions, "no two stations' labels overlap").toEqual([]);
+    expect.soft(collisions, "no two stations' labels overlap").toEqual([]);
     expect.soft(m.covered, "nothing floats over a station").toEqual([]);
     expect.soft(m.onRail, "no rail shows through a station label").toEqual([]);
     if (isMobile) expect.soft(m.small, "every control is at least 40×40").toEqual([]);
