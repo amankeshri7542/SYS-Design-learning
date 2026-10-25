@@ -168,6 +168,16 @@ function PartEditor({ doc, p, onChange, onRemoved }: { doc: SystemDoc; p: PartDo
         <span>Name</span>
         <input id={`${id}-name`} type="text" value={p.name} maxLength={40} onChange={(e) => onChange(updatePart(doc, p.id, { name: e.target.value }))} />
       </label>
+      <label className="sys-field sys-kind" htmlFor={`${id}-kind`}>
+        <span>What it is</span>
+        <select id={`${id}-kind`} value={p.kind} onChange={(e) => onChange(updatePart(doc, p.id, { kind: e.target.value as PartKind }))}>
+          {(Object.keys(KINDS) as PartKind[]).map((k) => (
+            <option key={k} value={k}>
+              {KINDS[k].name}: {KINDS[k].says}
+            </option>
+          ))}
+        </select>
+      </label>
       {COUNTED.includes(p.kind) && (
         <Stepper label="Copies" value={p.count ?? 1} min={1} max={64} onChange={(v) => onChange(updatePart(doc, p.id, { count: v }))} />
       )}

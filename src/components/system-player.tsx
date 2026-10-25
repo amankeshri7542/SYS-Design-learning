@@ -46,7 +46,20 @@ function metricsOf(doc: SystemDoc, worlds: Compiled[]): MetricSpec[] {
  * A system someone describes, running: the stage is the hero, the panel edits it, says what breaks if each part dies,
  * and compares a change side by side on the same traffic. It is saved in this browser as it changes.
  */
-export function SystemPlayer({ initial, savedId, onLeave }: { initial: SystemDoc; savedId?: string; onLeave: () => void }) {
+export function SystemPlayer({
+  initial,
+  savedId,
+  notes = [],
+  template = false,
+  onLeave,
+}: {
+  initial: SystemDoc;
+  savedId?: string;
+  notes?: string[];
+  /** A template as it comes: kept only once it is changed. */
+  template?: boolean;
+  onLeave: () => void;
+}) {
   const [doc, setDoc] = useState(initial);
   const [variant, setVariant] = useState<SystemDoc | null>(null);
   const [view, setView] = useState(0);
@@ -57,6 +70,7 @@ export function SystemPlayer({ initial, savedId, onLeave }: { initial: SystemDoc
   const [surge, setSurge] = useState(false);
   const [explaining, setExplaining] = useState(0);
   const [shared, setShared] = useState(false);
+  const [readNotes, setReadNotes] = useState(notes);
 
   // Each world compiled; a doc with errors keeps the last design that compiled on the stage.
   const faults = useMemo(() => ({ slow, surge }), [slow, surge]);
@@ -121,9 +135,10 @@ export function SystemPlayer({ initial, savedId, onLeave }: { initial: SystemDoc
     setSlow((d) => (d.every(has) ? d : d.filter(has)));
   }, [doc]);
 
-  // Saved in this browser as it changes (the doc, not the change being tried).
+  // Saved in this browser as it changes (the doc, not the change being tried); a template, once it is changed.
   const id = useRef(savedId);
   useEffect(() => {
+    if (template && doc === initial) return;
     const t = setTimeout(() => (id.current = saveSystem(doc, id.current)), 600);
     return () => clearTimeout(t);
   }, [doc]);
@@ -324,6 +339,19 @@ export function SystemPlayer({ initial, savedId, onLeave }: { initial: SystemDoc
                     Drop it
                   </button>
                 </div>
+              </div>
+            )}
+            {tab === "design" && readNotes.length > 0 && (
+              <div className="sys-read" role="status">
+                <p className="sys-read-h">How System Lab read it</p>
+                <ul>
+                  {readNotes.map((n) => (
+                    <li key={n}>{n}</li>
+                  ))}
+                </ul>
+                <button type="button" className="btn" onClick={() => setReadNotes([])}>
+                  Got it
+                </button>
               </div>
             )}
             {tab === "design" && (
