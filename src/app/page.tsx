@@ -1,16 +1,13 @@
 import Link from "next/link";
 import { SiteFooter, SiteHeader } from "@/components/brand";
 import { HeroScene } from "@/components/hero";
-import { LineIndex, StartLink } from "@/components/home-start";
+import { Start } from "@/components/home-start";
 import { Journeys } from "@/components/journeys";
 import { ReadScene } from "@/components/read-scene";
 import { RouteMap } from "@/components/route-map";
-import { COURSE, LESSONS, STORIES, fastLane, liveLines } from "@/lib/lessons";
-
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+import { fastLane } from "@/lib/lessons";
 
 export default function Home() {
-  const lines = liveLines();
   const lane = fastLane();
   return (
     <>
@@ -20,20 +17,12 @@ export default function Home() {
           <h1>
             Watch systems work. <span>Then watch them break.</span>
           </h1>
-          <p className="lede">
-            An animated field guide to system design: {plural(LESSONS.length, "lesson")} on {plural(lines.length, "line")}, and{" "}
-            {plural(STORIES.length, "real system")} to build. Each is a live simulation on one screen. See the problem, cause the failure, switch on
-            the fix.
-          </p>
-          <div className="cta">
-            <StartLink />
-            <a className="btn-quiet" href="#route">
-              Pick a station
-            </a>
-          </div>
-          <LineIndex />
+          <p className="lede">Live simulations of real systems. Watch a request travel, break a part, then switch on the fix.</p>
         </div>
         <HeroScene />
+        <div className="masthead-start">
+          <Start />
+        </div>
       </section>
 
       <section id="route" className="wrap-wide route" aria-labelledby="route-h">
@@ -42,7 +31,7 @@ export default function Home() {
             The route
           </h2>
           <p className="section-sub">
-            Lines are topics; zones are levels. Ride the recommended path from {COURSE[0].code}, or jump to any station. A dimmed one is best after another.
+            Each line is a topic, running left to right from beginner to advanced. Start anywhere: a faded station is best after the ones before it.
           </p>
         </div>
         <RouteMap />

@@ -331,7 +331,7 @@ export function LessonPlayer({ lesson, nav }: { lesson: Lesson; nav: PageNav }) 
                 </>
               ) : (
                 <Suspense fallback={null}>
-                  <Recap lesson={lesson} claim={b.claim} onWrong={(f) => b.show(f, 6000)} />
+                  <Recap lesson={lesson} claim={b.claim} rides={nav.rides} onWrong={(f) => b.show(f, 6000)} />
                 </Suspense>
               )}
             </div>
@@ -399,7 +399,13 @@ function NextLabel({ b, breakLabel, next }: { b: ReturnType<ReturnType<typeof us
         <span className="btn-next-label">{breakLabel}</span>
       </>
     );
-  const text = b.waiting === "beat" ? "Continue" : b.waiting === "ask" ? <>Skip<span className="when-wide"> the guess</span></> : !b.done ? "Next" : null;
+  const text =
+    b.waiting === "beat" ? (
+      <>
+        <span className="not-narrow">Continue</span>
+        <span className="at-narrow">Next</span>
+      </>
+    ) : b.waiting === "ask" ? <>Skip<span className="when-wide"> the guess</span></> : !b.done ? "Next" : null;
   return (
     <>
       <span className="btn-next-label">

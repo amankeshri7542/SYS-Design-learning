@@ -2,24 +2,90 @@
 
 import Link from "next/link";
 import { COURSE, lessonsOn, liveLines, nextFor } from "@/lib/lessons";
+import type { LessonMeta } from "@/lib/lessons/types";
 import { ArrowIcon } from "./live";
 import { useVisited } from "./visited";
 
-/** The masthead's button: start at the first stop, or carry on after the last lesson opened. */
-export function StartLink() {
-  const { visited } = useVisited();
-  const last = [...visited].pop() ?? null;
-  const next = visited.size ? (nextFor(last, visited) ?? nextFor(null, visited)) : COURSE[0];
-  if (!next)
+/** The first ride: the path's first five stops, about twenty minutes from a request to finding a server. */
+const RIDE = COURSE.slice(0, 5);
+const RIDE_NAME = "How the web answers you";
+
+/**
+ * Where to start. A first visit (or one still on it) sees the first ride: five named stops on a short line and a
+ * button that names the next one and how long it takes. Once the ride is done, the button carries on along the path,
+ * and the lines show how far along each one is.
+ */
+export function Start() {
+  const { visited, ready } = useVisited();
+  const rideDone = ready && RIDE.every((s) => visited.has(s.slug));
+  if (rideDone) {
+    const last = [...visited].pop() ?? null;
+    const next = nextFor(last, visited) ?? nextFor(null, visited);
     return (
-      <a className="btn-primary" href="#route">
-        Pick one to ride again <ArrowIcon />
-      </a>
+      <>
+        <div className="cta">
+          {next ? (
+            <Link className="btn-primary" href={`/learn/${next.slug}`}>
+              Continue: {next.title}
+              <span className="cta-min">{next.minutes} min</span>
+              <ArrowIcon />
+            </Link>
+          ) : (
+            <a className="btn-primary" href="#route">
+              Pick one to ride again <ArrowIcon />
+            </a>
+          )}
+          <a className="cta-alt" href="#route">
+            or pick any station
+          </a>
+        </div>
+        <LineIndex />
+      </>
     );
+  }
+  const next = RIDE.find((s) => !visited.has(s.slug)) ?? RIDE[0];
+  const started = RIDE.some((s) => visited.has(s.slug));
+  const minutes = RIDE.reduce((sum, s) => sum + s.minutes, 0);
   return (
-    <Link className="btn-primary" href={`/learn/${next.slug}`} title={`${next.code} ${next.title}`}>
-      {visited.size ? "Continue at" : "Start at"} {next.code} <ArrowIcon />
-    </Link>
+    <section className="ride" aria-labelledby="ride-h">
+      <p className="ride-meta">
+        <span className="ride-tag">Ride 1</span> Beginner · {RIDE.length} stops · about {minutes} min
+      </p>
+      <h2 id="ride-h" className="ride-title">
+        {RIDE_NAME}
+      </h2>
+      <ol className="ride-stops">
+        {RIDE.map((s) => (
+          <RideStop key={s.slug} s={s} seen={visited.has(s.slug)} next={s === next} />
+        ))}
+      </ol>
+      <div className="cta">
+        <Link className="btn-primary" href={`/learn/${next.slug}`}>
+          {started ? "Continue" : "Start"}: {next.title}
+          <span className="cta-min">{next.minutes} min</span>
+          <ArrowIcon />
+        </Link>
+        <a className="cta-alt" href="#route">
+          or pick any station
+        </a>
+      </div>
+    </section>
+  );
+}
+
+function RideStop({ s, seen, next }: { s: LessonMeta; seen: boolean; next: boolean }) {
+  return (
+    <li className={`line-${s.line}${seen ? " seen" : ""}${next ? " next" : ""}`}>
+      <Link href={`/learn/${s.slug}`}>
+        <span className="ride-dot" aria-hidden="true" />
+        <span className="ride-code">{s.code}</span>
+        <span className="ride-name">{s.title}</span>
+        <span className="sr-only">
+          , {s.minutes} min{seen ? ", visited" : ""}
+          {next ? ", next" : ""}
+        </span>
+      </Link>
+    </li>
   );
 }
 

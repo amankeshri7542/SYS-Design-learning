@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { LessonPage } from "@/components/lesson-page";
 import { termOf, type Term } from "@/lib/glossary";
-import { COURSE, getLesson, lessonsOn, lineOf, neighbours } from "@/lib/lessons";
+import { COURSE, STORIES, getLesson, lessonsOn, lineOf, neighbours } from "@/lib/lessons";
 import type { PageNav } from "@/lib/lessons/types";
 import { SCENE_DEFS, STORY_DEFS, engineNeeds, partLessons } from "@/lib/lessons/all";
 import { termsIn } from "@/lib/lessons/beats";
@@ -34,6 +34,13 @@ export default async function Page({ params }: Props) {
   const { slug } = await params;
   const meta = getLesson(slug);
   if (!meta) notFound();
-  const nav: PageNav = { meta, line: lineOf(meta.line), stations: lessonsOn(meta.line), ...neighbours(slug), learn: partLessons(slug) };
+  const nav: PageNav = {
+    meta,
+    line: lineOf(meta.line),
+    stations: lessonsOn(meta.line),
+    ...neighbours(slug),
+    learn: partLessons(slug),
+    rides: STORIES.filter((s) => s.requires?.includes(slug)),
+  };
   return <LessonPage nav={nav} why={whyOf(slug)} terms={termsOf(slug)} needs={engineNeeds(slug)} />;
 }

@@ -216,13 +216,26 @@ node scripts/weight.mjs 3300 # against `npx next start -p 3300` on the fresh bui
 | `tests/browser/site.spec.ts`, new `home.spec.ts` | First-visit masthead (ride card, no line index), returning masthead (continue + pips), phone: hero scene's top within the first viewport; journeys: one live scene, list selects; hero part card opens. |
 
 **Acceptance:**
-- [ ] On a 390×844 phone, the hero scene's top edge is inside the first viewport, and the primary button within 1.3 viewports.
-- [ ] A first-time visitor's primary button names the first lesson in words, with minutes; no lesson code is the only label.
-- [ ] Home page height at 1440×900 drops by ≥ 35% (7,635 px today).
-- [ ] No route-map station label overlaps another (a browser test measures label boxes at 1440 and 1280).
-- [ ] Every lesson ridden by a journey links to it from its Recap.
-- [ ] Lesson pages ≤ 200 KB; home ≤ 226 KB (today 225.7).
-- [ ] Stage-fit, motion and frame budgets green.
+- [x] On a 390×844 phone, the hero scene's top edge is inside the first viewport, and the primary button within 1.3 viewports (`home.spec.ts`; a phone held sideways checks the scene only: 390 px is too short for both).
+- [x] A first-time visitor's primary button names the first lesson in words, with minutes ("Start: A request and a response · 4 min").
+- [x] Home page height at 1440×900: 7,635 → 3,244 px (−57%).
+- [x] No route-map station label overlaps another (`home.spec.ts`, desktop sizes).
+- [x] Every lesson ridden by a journey links to it from its Recap ("Ride it in").
+- [x] Lesson pages 188–196.3 KB (from 193–199.7); home 212 KB (from 225.7).
+- [x] Stage-fit, motion and frame budgets green.
+
+**Decisions made while building Phase 1:**
+- **The ride is the path's first five stops** (N1, N3, F1, N4, N5; about 22 minutes), named "How the web answers you". Once all five are visited the masthead switches to "Continue: <next on the path>" and the line index; until then the ride card marks visited stops and the button continues the ride.
+- **"Pick a station" became a plain link** ("or pick any station"): the ride's button is the one thing to press, and the pair no longer wraps at 1280 px.
+- **The hero's stage has a height of its own** (`clamp(300px, 44svh, 460px)`), and the controls and the dot row add to the figure. Squeezing the stage to make room for the dot row had two labels collide at 1280×720.
+- **Phones drop the hero's numbers** (the transport and the dot row stay): the numbers belong to lessons, and without them the ride's button is within reach.
+- **Journeys are tabs down the left in code order** (S0…S8), the selected one running on the right with its stops drawn like the ride's. The page opens on the first journey not ridden. The pill clusters are gone.
+- **Map names wrap greedily to three lines of 16 characters at 13 px**; the two titles that would need four ("L4 vs L7: …", "Sagas: …") show the part before the colon. The Networking blurb was shortened, and blurbs may take four lines.
+- **N1 teaches part cards** with a sixth beat: "Tap Server's name: a card says what it is and how to read it."
+- **The paused-beat button says "Next" below 380 px** rather than a cut-off "Continue"; every control stays.
+- **A live claim waits for its numbers:** a Recap opened before the worlds have measured anything showed "waits — instead of —"; it now leaves the sentence out.
+- **Weight:** the root `not-found.tsx` is sent with every page, and its `Link` put a second copy of `next/link` (3.5 KB) on every lesson page. It now uses plain links (`SiteHeader plain`). `npm run weight` measures it.
+- **Not done:** the hero's stations aren't part of the stage-fit sweep (it covers lessons and journeys' first stages); the map's labels are checked at desktop sizes only (phones use the board).
 
 ### Phase 2: My System, Level 0 (L) — branch `v4/p2-my-system`
 
