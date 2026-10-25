@@ -1,4 +1,4 @@
-import { SiteHeader } from "@/components/brand";
+import { SiteHeader } from "@/components/site";
 
 // Plain links throughout: this page's client code is sent with every page (see `brand.tsx`).
 export default function NotFound() {

@@ -1,56 +1,19 @@
 "use client";
 
-import { Suspense, createContext, lazy, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Focus } from "@/lib/lessons/beats";
-import { TERM } from "@/lib/lessons/term-mark";
 import type { Term as TermDef } from "@/lib/glossary";
 import { useTouch } from "./hooks";
 import { record } from "@/lib/record";
+import { TermsContext } from "./rich";
 import { DefsContext } from "./term-defs";
 
-interface Terms {
-  open: (key: string, from: HTMLElement) => void;
-  /** Terms are buttons in the text. On touch layouts they are words, and `TermChips` carries the buttons. */
-  inline: boolean;
-}
+export { Rich } from "./rich";
 
-const TermsContext = createContext<Terms | null>(null);
+
 
 // A term's definition loads the first time one opens: the page carries only the popover's frame until then.
 const TermCard = lazy(() => import("./term-card"));
-
-/**
- * Text that may mark glossary terms as `[[key|plain words]]` (or `[[key]]`, which reads as the key): the plain words
- * show with a dotted underline, and a tap opens the term's short definition. Outside a `TermProvider` (or for an
- * unknown key) they are plain words.
- */
-export function Rich({ text }: { text: string }) {
-  const terms = useContext(TermsContext);
-  const defs = useContext(DefsContext);
-  const out: ReactNode[] = [];
-  let last = 0;
-  for (const m of text.matchAll(TERM)) {
-    if (m.index > last) out.push(text.slice(last, m.index));
-    const def = defs.get(m[1]);
-    const words = m[2] ?? m[1].replace(/-/g, " ");
-    out.push(
-      terms && def && terms.inline ? (
-        <button key={m.index} type="button" className="term" aria-haspopup="dialog" onClick={(e) => terms.open(def.key, e.currentTarget)}>
-          {words}
-        </button>
-      ) : terms && def ? (
-        <span key={m.index} className="term-word">
-          {words}
-        </span>
-      ) : (
-        words
-      ),
-    );
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) out.push(text.slice(last));
-  return <>{out}</>;
-}
 
 /**
  * Touch layouts: the terms the step has named so far, as buttons big enough to tap (in the text they are plain words,

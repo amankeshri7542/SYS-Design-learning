@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { SiteFooter, SiteHeader } from "@/components/brand";
+import { SiteFooter, SiteHeader } from "@/components/site";
 import { HeroScene } from "@/components/hero";
 import { Start } from "@/components/home-start";
 import { Journeys } from "@/components/journeys";

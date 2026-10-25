@@ -7,10 +7,11 @@ import type { LessonMeta, PageNav, Values } from "@/lib/lessons/types";
 import type { Sim } from "@/lib/sim/engine";
 import { formatMetric, formatTarget, measure } from "@/lib/sim/metrics";
 import { record } from "@/lib/record";
-import { BeatStrip } from "./beats";
+import { BeatStrip } from "./strip";
 import { KeyPopover } from "./key";
 import { ArrowIcon, Clock, Transport, freshNote, useLiveSims } from "./live";
-import { MetricList, useSceneBeats } from "./scene-run";
+import { useSceneBeats } from "./scene-beats";
+import { MetricList } from "./scene-run";
 import { Shell, usePlayerKeys } from "./shell";
 import { Stage } from "./stage";
 

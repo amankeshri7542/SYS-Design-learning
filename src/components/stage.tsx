@@ -36,7 +36,7 @@ import { flowOf } from "@/lib/sim/metrics";
 import type { Glyph, NodeSpec, SceneSpec } from "@/lib/sim/types";
 import type { Focus } from "@/lib/lessons/beats";
 import { DUR, INTRO, TAU as SMOOTH, smooth } from "@/lib/motion";
-import { Callout, type CalloutSpot } from "./beats";
+import { Callout, type CalloutSpot } from "./strip";
 import { Body, slotSpots, type Spot } from "./glyph";
 import type { Explain } from "./part-card";
 import { Batch, FAINT, RINGS, TAU, Trails, drawFx, parkSpot, queueSpot, shape, squeeze as squeezeOf, styleOf, wedge, type FxDraw, type Look, type Palette } from "./stage-draw";

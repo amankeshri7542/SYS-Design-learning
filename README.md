@@ -60,6 +60,10 @@ In a journey you grow the architecture yourself. In the flash sale you add a sea
 
 ![The URL shortener journey: architecture controls, cost, and a target that has to hold](docs/screenshots/capstone.png)
 
+## My system
+
+**[/my-system](https://sys-design-learning.vercel.app/my-system)** puts your own system on the stage. Start from a system like yours (a web app, a shop, background jobs, event-driven orders, video to the world, a crawler, a write-heavy app, a social feed) and change it: parts, copies, how busy it is, what calls what. Crash any part or slow it down, and **What breaks** crashes each part in turn on a copy of your system and says what happens, with the usual fix; **Try the fix** runs it beside yours on the same traffic. **Explain like I'm new** walks the parts in the order a request meets them. It all runs in your browser: systems are kept there, and **Share** copies a link that carries the whole system after its `#`.
+
 ## Your progress
 
 **[/progress](https://sys-design-learning.vercel.app/progress)** shows what you've done: lessons opened and watched to the end, predictions and checks you got right, journeys finished, each line station by station, and the latest things you did. It is kept only in your browser (no account, nothing sent anywhere), and you can download it or clear it. Each lesson's Recap ends by asking whether it landed, and what got in the way if not.

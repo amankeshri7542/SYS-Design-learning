@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SiteFooter, SiteHeader } from "@/components/brand";
+import { SiteFooter, SiteHeader } from "@/components/site";
 import { GLOSSARY } from "@/lib/glossary";
 // A server page: reading every lesson here ships none of them to the browser.
 import { ALL_LESSONS } from "@/lib/lessons/all";

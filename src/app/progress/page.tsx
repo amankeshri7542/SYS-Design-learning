@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { SiteFooter, SiteHeader } from "@/components/brand";
+import { SiteFooter, SiteHeader } from "@/components/site";
 import { ProgressView, type ProgressEntry } from "@/components/progress-view";
 import { COURSE, LINES } from "@/lib/lessons";
 // A server page: counting every lesson's beats here ships none of them to the browser.
