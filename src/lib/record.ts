@@ -10,6 +10,7 @@ export type RecordKind =
   | "check"
   | "metric"
   | "term"
+  | "part"
   | "trace"
   | "knob"
   | "fault"

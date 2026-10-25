@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Check, Focus } from "@/lib/lessons/beats";
+import type { Lesson } from "@/lib/lessons/types";
 import { record } from "@/lib/record";
 import { Mark } from "./beats";
 import { Rich } from "./term";
 
-// The Recap's checks and the reduced-motion list of beats: each page loads them the first time one shows. (The
-// prediction stays with the player: it must be there the moment its beat fires.)
+// The Recap (its checks and how the lesson felt) and the reduced-motion list of beats: each page loads them the first
+// time one shows. (The prediction stays with the player: it must be there the moment its beat fires.)
 
 /** Reduced motion: the step's beats as a list. Next (or Step) brings each one on, on a still frame. */
 export function WatchList({ items }: { items: { id: string; text: string; seen: boolean; now: boolean }[] }) {
@@ -126,3 +127,45 @@ export function FeelCard() {
   );
 }
 
+/** The last tab: the rule, the why, the claim in numbers, the checks, the takeaways, and how the lesson felt. */
+export function Recap({ lesson, claim, onWrong }: { lesson: Lesson; claim: string | null; onWrong: (f: Focus) => void }) {
+  // Read once, as the Recap opens: a sentence whose numbers flicker is hard to read.
+  const [sentence] = useState(claim);
+  const t = lesson.takeaways;
+  return (
+    <>
+      <h2 className="step-title">What to remember</h2>
+      {t.rule && <p className="rule">{t.rule}</p>}
+      <p className="step-text recap-why">{lesson.why}</p>
+      {sentence && (
+        <p className="step-text in-numbers">
+          <span className="card-eyebrow">In numbers</span> <Rich text={sentence} />
+        </p>
+      )}
+      {lesson.checks?.map((c, i) => (
+        <CheckCard key={c.prompt} c={c} n={i + 1} onWrong={onWrong} />
+      ))}
+      <dl className="takeaways">
+        <div>
+          <dt>Use it when</dt>
+          <dd>{t.use}</dd>
+        </div>
+        <div>
+          <dt>The catch</dt>
+          <dd>{t.catch}</dd>
+        </div>
+        <div>
+          <dt>Seen in</dt>
+          <dd>{t.seen}</dd>
+        </div>
+        {t.interview && (
+          <div>
+            <dt>In an interview</dt>
+            <dd>{t.interview}</dd>
+          </div>
+        )}
+      </dl>
+      <FeelCard />
+    </>
+  );
+}

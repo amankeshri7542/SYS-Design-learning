@@ -1,7 +1,6 @@
 "use client";
 
-import Link from "next/link";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, createContext, lazy, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { Focus } from "@/lib/lessons/beats";
 import { TERM } from "@/lib/lessons/term-mark";
 import type { Term as TermDef } from "@/lib/glossary";
@@ -16,6 +15,9 @@ interface Terms {
 }
 
 const TermsContext = createContext<Terms | null>(null);
+
+// A term's definition loads the first time one opens: the page carries only the popover's frame until then.
+const TermCard = lazy(() => import("./term-card"));
 
 /**
  * Text that may mark glossary terms as `[[key|plain words]]` (or `[[key]]`, which reads as the key): the plain words
@@ -121,35 +123,9 @@ export function TermProvider({ lesson, onShow, children }: { lesson: string; onS
         style={at ? { left: at.x, top: at.y } : undefined}
       >
         {term && (
-          <>
-            <div className="term-head">
-              <h2 id="term-name">{term.name}</h2>
-              <button ref={close} type="button" className="btn btn-icon key-close" popoverTarget="term-pop" popoverTargetAction="hide" aria-label="Close">
-                <svg viewBox="0 0 16 16" aria-hidden="true" className="stroke">
-                  <path d="M4 4l8 8M12 4l-8 8" />
-                </svg>
-              </button>
-            </div>
-            {term.alias && <p className="term-alias">Also called {term.alias}</p>}
-            <p className="term-short">{term.short}</p>
-            <div className="term-actions">
-              {show && (
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    pop.current?.hidePopover();
-                    onShow(show);
-                  }}
-                >
-                  Show me
-                </button>
-              )}
-              <Link href="/glossary" className="term-all">
-                Every term
-              </Link>
-            </div>
-          </>
+          <Suspense fallback={null}>
+            <TermCard term={term} show={show} onShow={onShow} close={close} pop={pop} />
+          </Suspense>
         )}
       </div>
     </TermsContext.Provider>

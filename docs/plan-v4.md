@@ -1,0 +1,486 @@
+# System Lab v4 plan: finish, deepen, and map your own system
+
+- **Status:** written 2026-10-25 by Claude Opus 5.5, in the session that finished part cards. Phase 0 built and committed locally on `v3/part-cards`. Each later phase records its build-time decisions under its own heading, as `plan-v3.md` did.
+- **Owner context:** the owner asked for this plan and its build in one session, then left. Every decision below that would normally be a question was made and is marked **(decided)**, with the reasoning, so it can be reversed cheaply. Nothing was pushed or merged; commits are local.
+- **Reads before this one:** `CLAUDE.md`, `docs/plan-v3.md` (its §8 authoring rules still hold), `docs/research/design-audit.md` (the art direction), `docs/research/pedagogy.md` (why beats, prediction and part cards work), `docs/research/curriculum.md` (the backlog this plan draws on).
+
+---
+
+## 1. Problem, goals, non-goals
+
+### Problem
+
+v3 shipped the course: 57 lessons on seven lines, nine journeys, a deterministic engine with six optional modules, one-screen players, beats, predictions, a learning record. Three things now stand between it and "the best interactive way on the web to understand systems":
+
+1. **Small details aren't self-explanatory.** A beginner meets "Shard router · key → 3 nodes" and has to open the Key, which explains dots, not parts. (Part cards, Phase 0, answer this.)
+2. **The first minute reads like a syllabus.** The home page leads with counts ("57 lessons on 7 lines"), a code-speak button ("Start at N1"), a wall of 57 pips, and puts "How to read a scene" 7,600 px down. On a phone the live scene is below the fold. Nine 540 px journey cards follow, each a live scene with a pill cluster.
+3. **It only teaches our systems.** Learners and working engineers can't put *their* architecture on the stage, crash a part of it, and see what happens. Nothing else on the web does this with an honest simulator; it is the owner's big idea and the product's moat.
+
+### Goals
+
+- **A. Finish and deepen the teaching product:** part cards to a shippable bar; a first minute that is a ride, not a wall; curiosity loops (part → lesson → journey); a few net-new concepts only where the engine teaches them honestly.
+- **B. "My System":** describe, import or replay your own system and understand it visually, in four levels: a guided builder (L0), structured imports (L1), trace replay from files (L2), and optional live connectors (L3). L0–L2 work with zero backend.
+- **C. Craft:** keep the Field Guide + transit direction; one composition per first viewport; no card spam, pill clusters or glow; relatable labels; parity at 1440×900, 1280×720, 390×844, 844×390, light and dark, reduced motion.
+
+### Non-goals
+
+- Accounts, a cloud backend, analytics, AI features, or user content shared through a server (unchanged from v3). Level 3 proposes the smallest exception and waits for the owner (§5, Phase 5).
+- A general diagramming tool. "My System" draws what the engine can simulate honestly; it is not Excalidraw, and not Datadog.
+- Free-form drag-and-drop canvases. Structure is edited in the panel; the stage lays itself out (decided, §4 D4).
+- New runtime dependencies. YAML, CSV, OTLP and Zipkin parsing are small hand-written readers for the subsets we accept (decided, §4 D7).
+
+---
+
+## 2. What exists now (audit, 2026-10-25)
+
+| Area | State | Evidence |
+|---|---|---|
+| Engine | Deterministic, fixed tick, seeded per-node streams. Core (`core.ts`) plus six optional modules loaded on demand (`needs.ts`, `loadModules`). Rich `SceneSpec`: 30+ node features from caches to quorums, sagas, stream windows. | `src/lib/sim/types.ts`, `CLAUDE.md` |
+| Players | `LessonPlayer` (problem/fix in lockstep, beats, prediction, armed faults, Recap), `StoryPlayer` (stages, controls, cost, targets). Both on `Shell`. | `player.tsx`, `story-player.tsx` |
+| Stage | SVG stations + canvas dots; three layouts (wide, compact, tall); label-aware frame; callouts; follow one request; motion tokens. | `stage.tsx`, `layout.ts` |
+| Catalog | 57 lessons + 9 journeys live, frozen codes, `PATH`, `FAST_LANE`, prerequisites dim the map. | `catalog.ts` |
+| Home | Masthead + hero scene + line index; route poster (desktop) / board (phone); fast lane; nine journey cards; "How to read a scene". | `page.tsx`, screenshots in §3.2 |
+| Learning record (M11) | localStorage ring of 600 events + tallies; `/progress`; `npm run stats`. | `record.ts`, `progress-view.tsx` |
+| Weight | Lesson pages 193–199.7 KB gzipped JS; 134 KB is React + Next. Home 224 KB. **Turbopack does not drop unused exports**, so a module's every export ships with any page that imports it (measured 2026-10-25: `clearRecord` and `MetricList` were on lesson pages). | `scripts/weight.mjs` pattern below |
+| Part cards (branch `v3/part-cards`) | Built in Phase 0 below. | — |
+| Gates | typecheck; 403 unit tests; build; ~1,240 browser tests on four sizes + two frame-budget projects. | `package.json` |
+
+### What `StoryDef` already proves
+
+A journey is data: `controls` (counts and switches), `cost`, `scene(design, stage)`, `targets`, `metrics`, stages with params. That is most of a "My System" model already: a design is a set of values compiled into a `SceneSpec`, judged against targets under traffic and failures. The builder generalises it from fixed controls to a user-described graph.
+
+---
+
+## 3. Gap analysis
+
+### 3.1 Concepts
+
+Every canonical curriculum's first and second rings are live (curriculum §1.1). Remaining gaps, from `curriculum.md` §3 backlog, filtered by the "is it dots?" test and by what "My System" will make learners ask:
+
+| Priority | Concept | Why now | Engine | Shape |
+|---|---|---|---|---|
+| 1 | **O3 Headroom and N + 1** | "What breaks if X dies" (My System) is exactly this question; beginners need it before they size anything. | crash + counts exist | problem "Exactly enough" / fix "N + 1 at 60%" |
+| 2 | **C8 Hot keys and local caches** | Celebrity keys are the most-asked interview failure; `hot` traffic exists; journeys S6/S8 hint at it. | `hot`, caches, ring | problem one shard on fire / fix per-server L1 |
+| 3 | **R11 Rate limits across many servers** | Every real limiter is distributed; teaches "local counters multiply the limit". | `limit.shared` exists | problem local counters / fix shared counter (extra hop) |
+| 4 | **A10 Scheduled jobs and the midnight burst** | Relatable, beginner-friendly, cheap (client rate functions). | rate functions | problem midnight on every server / fix spread with jitter |
+| 5 | **O4 Tracing a request** | Bridges the course to My System L2: a lesson about the waterfall the replay shows. | follow + flight strip | problem "a number with no story" / fix "a trace" |
+
+Not taught as lessons (not dots, or folded elsewhere): back-of-envelope (becomes the builder's sizing hint), B-tree vs LSM, typeahead, geo indexes, collaborative editing.
+
+### 3.2 UX (roast, by screen)
+
+| # | Finding | Severity | Phase |
+|---|---|---|---|
+| U1 | Phone home: the live scene starts below the fold, behind a 57-pip line index. | P0 | 1 |
+| U2 | "Start at N1": a code a newcomer can't read. No sense of a first ride or its length. | P1 | 1 |
+| U3 | The dot vocabulary (How to read a scene) is 7,600 px down; the hero can't be asked anything. | P1 | 1 |
+| U4 | Nine full-width journey cards (~4,600 px) with lesson pill clusters: card spam. | P1 | 1 |
+| U5 | Route map labels collide in zone 2 ("…WebSockets" runs into "Timeouts and deadline propagation"); line blurbs end in ellipses. | P2 | 1 |
+| U6 | Lesson Recap ends at "Next stop"; it never says where the idea is used in a journey. | P2 | 1 |
+| U7 | 375 px phones truncate the dock's Next to "Conti…". | P2 | 1 |
+| U8 | Station details need the Key (fixed by part cards, Phase 0). | P0 | 0 |
+| U9 | Part cards on small screens could land on the next station, so it took two taps to read another part (found and fixed in Phase 0). | P1 | 0 |
+
+### 3.3 Beginner retention
+
+- **First 60 seconds** must teach the dots and parts without the Key: the hero answers "what is this part?" on tap, and a one-row legend sits under it.
+- **A ride, not a wall:** first-time visitors see Ride 1 (five stops, ~20 min) with the first stop's name and minutes on the button; returning visitors see "Continue" and their line progress.
+- **Curiosity loops:** part card → "Learn more in C1" (Phase 0); Recap → the journey that uses this idea (Phase 1); journey stage → the lesson behind its fix (exists as stops).
+- **Map anxiety:** keep dimming as "best after", never locks; the map stays the second screen, not the first.
+- **Progress without gamification:** the line index with filled pips and the M11 `/progress` page are enough; no streaks, points or confetti.
+
+### 3.4 My System
+
+Nothing exists. Requirements from the owner: four levels; every major system shape representable; dead-simple UI on one screen; "Explain like I'm new"; "What breaks if X dies"; compare designs; reuse the stage language and engine; Level 3 gated.
+
+---
+
+## 4. Architecture decisions
+
+### D1. `SystemDoc` is the user-facing IR; `SceneSpec` stays the execution IR (decided)
+
+- **Options:** (a) import straight into `SceneSpec`; (b) a small serialisable document above it, compiled to `SceneSpec`.
+- **Chosen:** (b). `SceneSpec` carries functions (rate curves, scripts), layout coordinates and engine tuning (slots, service ms, queue limits) that users shouldn't have to know, and it changes with the engine. `SystemDoc` is plain JSON, versioned (`v: 1`), validated with plain-English messages, small enough for a URL, and the single target of every importer (L1) and the trace reducer (L2).
+- **Cost:** a compiler (`compile(doc) → { spec, notes }`) to maintain alongside the engine. The compiler is pure and unit-tested for every template and importer fixture.
+
+### D2. Everything stays in the browser for L0–L2 (decided)
+
+- Builder state lives in component state, saved to `localStorage` (`syslab.v1.systems`, the last 12 systems) and shareable as a link whose fragment holds the compressed doc (`/my-system#s=…`; fragments never reach a server). Compression: `CompressionStream("deflate-raw")` + base64url, with a plain base64url fallback.
+- Imports and traces are read with `File.text()` or a paste box; nothing is uploaded. Traces are reduced to a `SystemDoc` plus a few sampled requests, and the raw file is dropped from memory (PII, §9).
+- This keeps `CLAUDE.md`'s "no cloud, accounts or backend" true through Phase 4.
+
+### D3. One player for user systems, reusing the shell, stage and lockstep (decided)
+
+- `SystemPlayer` (lazy, like the other players) on `Shell`: bar · stage | panel (editor + numbers) · dock. Its stage is the same `Stage` with part cards; its comparison is the same `Compare` table over two lockstep worlds ("Your design" vs "With the change").
+- **Why:** one visual language; frame budgets, stage-fit and reduced motion already proven.
+
+### D4. Structure is edited in the panel; the stage lays itself out (decided)
+
+- **Options:** a drag-and-drop canvas; a structured editor plus automatic layout.
+- **Chosen:** structured. A part list ("Users → Load balancer → App ×3 → Cache → Database") where each part has a kind, a name, a count, two or three plain settings, and "sends to". The stage computes a layered layout (longest path from the users = column; order within a column by the average of the parents' rows, to keep rails from crossing) and fits it with the existing frame code.
+- **Why:** drag-and-drop is hard on phones, hard to make accessible, and invites hairballs. Automatic layout keeps every user system legible at all four sizes and passes stage-fit. Tapping a station opens its part card with the same edits inline, so editing still happens "on the stage".
+
+### D5. Groups, not hairballs (decided)
+
+- A part with a count (App ×3) compiles to that many stations up to 4, and to one station with the summed workers above 4 ("App ×12", one node whose card says it stands for 12). Crashing "one of 12" removes a twelfth of its workers (reconfigure), so the numbers stay honest.
+- At most 14 stations on the stage. Importers and the trace reducer group beyond that (§6.4) and say what they grouped.
+
+### D6. Faults and "What breaks if X dies" are computed by the engine, headless (decided)
+
+- Every part gets generic faults: crash, slow down (service time ×5), and for links, cut. Plus traffic: surge ×3.
+- **Blast radius:** for each part, run a headless copy of the scene for 4 simulated seconds with that part down from 1 s, against the baseline, and report failed share, response time and what queued. Ranked, in sentences: "If **Database** dies, 100% of requests fail for as long as it is down. Single point of failure." Deterministic, a few hundred ms in a worker-free loop, cached per doc hash.
+- **Why:** it is the honest version of the owner's "what breaks if X dies": measured, not guessed.
+
+### D7. Hand-written readers for a narrow set of formats (decided)
+
+- **L1:** System Lab JSON (`SystemDoc`); an arrow DSL (`Users -> LB -> API x3 -> Cache -> Postgres`, one chain per line); CSV edges (`from,to,rps,latency_ms`); docker-compose YAML (services, `depends_on`, `image`) through a small YAML-subset reader (maps, lists, scalars, comments; no anchors or flow collections; errors name the line); Kubernetes-ish service lists in the same subset; OpenAPI 3 JSON or YAML (paths grouped by tag or first segment behind a gateway).
+- **L2:** OTLP JSON (`resourceSpans`), Jaeger JSON (`data[].spans` + `processes`), Zipkin v2 JSON (span arrays).
+- **Why:** no new dependencies (owner rule), and every accepted file is one we test with fixtures. Unsupported input gets a plain-English error naming the line and what we expected.
+
+### D8. Kinds are inferred from names, then confirmed (decided)
+
+- `postgres|mysql|aurora|mongo|dynamo|spanner|cockroach|db|database|store` → database; `redis|memcached|cache` → cache; `kafka|kinesis|pulsar|log` → log; `rabbit|sqs|queue|nats|celery|sidekiq` → queue; `nginx|envoy|haproxy|traefik|alb|elb|lb|balancer|ingress` → balancer; `gateway|kong|apigee` → gateway; `cdn|cloudfront|fastly|akamai|edge` → CDN; `stripe|paypal|adyen|twilio|sendgrid|s3|external` → someone else's service; `worker|consumer|job` → worker; anything else → service. The import screen shows each guess with a one-tap change.
+
+### D9. Level 3 needs an owner decision (proposed, not built)
+
+See Phase 5. In short: prefer a **local agent** (`npx syslab-agent`) that reads the user's own collector and serves a reduced `SystemDoc` on `localhost` with CORS, so no secret ever leaves the user's machine and the site stays static. A Vercel proxy is the fallback and requires changing the rule.
+
+### D10. Page weight is a design input (decided)
+
+- Lesson and story pages stay ≤ 200 KB gzipped JS, measured with `scripts/weight.mjs` (added in Phase 1) on the production build, prefetches and the idle next-stop fetch off.
+- Because unused exports ship, code used by one kind of page lives in a module only that page imports (Phase 0 moved `MetricList` and `useSceneBeats` to `scene-run.tsx`, the term card to `term-card.tsx`).
+- `/my-system` has its own ≤ 200 KB budget; importers and the trace reducer load only when used.
+
+### D11. Branches (decided)
+
+One local branch per phase, each based on the previous: `v3/part-cards` (Phase 0) → `v4/p1-first-ride` → `v4/p2-my-system` → `v4/p3-import` → `v4/p4-replay`. Commits are local until the owner asks to push and open PRs (they merge in order, as the v3 stack did).
+
+---
+
+## 5. Phases
+
+Every phase that changes product code ends with the gate, a screenshot pass at the four sizes in light and dark (and reduced motion where motion changed), a written self-roast, fixes, and the gate again:
+
+```bash
+npm run typecheck && npm test && npm run build
+npm run dev -- --port 3100   # reused by Playwright
+npm run test:browser
+node scripts/weight.mjs 3300 # against `npx next start -p 3300` on the fresh build
+```
+
+### Phase 0: finish part cards (S, done 2026-10-25)
+
+**Goal:** tapping or clicking any station's name explains it in place: what it is, what it does here, what it is doing now, how to read its drawing, and the lesson that teaches it. Fewer trips to the Key; the Key stays as the dot vocabulary.
+
+| Path | Change |
+|---|---|
+| `src/lib/sim/part-words.ts` | new: 60 concepts (name, ≤20 words, lesson); `conceptKey` from features, then name, then kind; `hereOf` (build lines), `setupOf`, `nowOf`, `readOf`. |
+| `src/lib/sim/describe.ts` | new: `describe()` moved out of `stage.tsx` (the stage and the card read the same state, and it is testable). |
+| `src/components/part-card.tsx` | new, lazy: the card; placed beside, under or over the station, or beside or under the stage, wherever it covers the fewest other stations; re-placed when the stage moves; Esc returns focus. |
+| `src/components/stage.tsx` | hit buttons over stations (≥40 px), one Tab stop with arrow keys in flow order, hover after 320 ms, dotted cue under names. |
+| `src/lib/lessons/all.ts`, `app/learn/[slug]/page.tsx`, `types.ts` | `partLessons(slug)` → `PageNav.learn`: the server sends the lessons a page's cards link to, so the catalog never reaches the page. |
+| `src/components/scene-run.tsx`, `term-card.tsx`, `cards.tsx`, `follow-track.ts` | weight: hero/journey-only code and the term card split out; the Recap and the follow tracker lazy. |
+| `src/lib/record.ts`, `progress-view.tsx`, `scripts/stats.ts` | record kind `part` (a card pinned, or read under the pointer for 1.2 s). |
+| `tests/part-words.test.ts`, `tests/browser/part-card.spec.ts` | new (below). |
+
+**Acceptance (all met):**
+- [x] Every station on every page (every scene at each knob's ends and every journey design and stage: >1,000 stations) resolves to a concept with ≤20 words and a live lesson.
+- [x] 27 named edge cases resolve as intended (sticky vs shard router, writer endpoint before failover, D9's fixed leader, origin, regions, shards that are servers, broker, sender/receiver, DNS servers, DLQ, partitions…).
+- [x] Every station's Here / Now / Read it lines are complete sentences at every step after a fault (no `undefined`, `NaN`, raw terms or placeholders).
+- [x] Browser: name opens the card; Esc closes and returns focus; a press elsewhere closes it; another name switches it; hover shows it (mouse); one Tab stop with arrows; the card follows a resize; a journey's stations work; the card stays inside the window and the document never scrolls; at 390×844 and 844×390 the card never covers another station.
+- [x] Weight: D9 (heaviest) 199.7 KB vs 199.6 on `main` with the same script; journey pages ≤195.3.
+- [x] Full browser suite green.
+
+**Decisions made while building Phase 0:**
+- **The card never covers the station it explains, and covers as few others as it can.** First version placed it right of the station; at 1280×720 and on phones it covered the next station, so a second name took two taps. Placement now scores seven spots (beside, under, over the station; under, right or left of the stage) by the area of other stations covered.
+- **A step switch or resize no longer closes the card;** it follows its station and closes only when the station leaves the scene. (The first version closed whenever the layout changed, which included the moment following a request started.)
+- **"Here" keeps a group's line whole** ("Three regions: 30, 8 and 4 requests a second.") and joins two lines about one station (A3's users); a knob that changes the station drops the line rather than show a wrong number.
+- **Hover opens after 320 ms**, not 280, so moving across the stage doesn't flash cards; hover cards are recorded only after 1.2 s.
+- **The lesson link says "Learn more in C1 Caching"**, and the kind line is hidden when the name already says it ("App server" is a server).
+
+### Phase 1: the first ride (M) — branch `v4/p1-first-ride`
+
+**Goal:** a first-time visitor understands the visual language within a minute and starts a short, named ride; a returning learner sees where they are. The page gets shorter and calmer.
+
+| Path | Change |
+|---|---|
+| `src/app/page.tsx`, `src/components/home-start.tsx` | Masthead v2. One-sentence lede without counts. First visit: **Ride 1** card: "How the web answers you", five stops as roundels with titles (the first five of `PATH`), ~minutes, primary button "Start the ride" with the first stop's title and minutes; the line index moves out of the masthead. Returning: "Continue: C2 Content delivery networks · 6 min" and the line index (pips). |
+| `src/components/hero.tsx` | The hero's stations open part cards ("Tap any name"). A one-row legend under the sheet: request, late, answered, failed, turned away, stale (shape + colour, from `legend.tsx`'s marks). |
+| `globals.css` | Phone masthead order: headline, live scene, button, ride card. Desktop: unchanged composition (copy | scene), shorter. |
+| `src/components/journeys.tsx` | **Featured journey + list.** One live scene (the next journey not finished, or S0) beside a compact list of all nine (code, title, one line, stages · minutes). Selecting a row swaps the featured scene in place; "Ride it" goes to the story. No pill clusters: a journey's lessons show as a row of roundels with codes. |
+| `src/components/route-map.tsx` | Fix zone-2 label collisions (wrap long titles to two lines within the column, or stagger); line blurbs not cut mid-word (two lines, then the full sentence in the station's `title`). |
+| `src/components/cards.tsx` (Recap), `PageNav` | "Where it's used": the journeys that ride this lesson, as links ("Ride it in S0 Keep a URL shortener alive"). |
+| `src/components/player.tsx`, `globals.css` | Dock Next at ≤380 px: icon-led label ("Continue" fits, no ellipsis). |
+| `src/lib/lessons/scenes/request-and-response.ts` | N1's first step ends its build lines with a beat inviting a tap on a name ("Tap Server's name to see what it is and how to read it."), so the first lesson teaches part cards. |
+| `scripts/weight.mjs` (from the Phase 0 scratch script), `package.json` `weight` script | The measurement, committed. |
+| `tests/browser/site.spec.ts`, new `home.spec.ts` | First-visit masthead (ride card, no line index), returning masthead (continue + pips), phone: hero scene's top within the first viewport; journeys: one live scene, list selects; hero part card opens. |
+
+**Acceptance:**
+- [ ] On a 390×844 phone, the hero scene's top edge is inside the first viewport, and the primary button within 1.3 viewports.
+- [ ] A first-time visitor's primary button names the first lesson in words, with minutes; no lesson code is the only label.
+- [ ] Home page height at 1440×900 drops by ≥ 35% (7,635 px today).
+- [ ] No route-map station label overlaps another (a browser test measures label boxes at 1440 and 1280).
+- [ ] Every lesson ridden by a journey links to it from its Recap.
+- [ ] Lesson pages ≤ 200 KB; home ≤ 226 KB (today 225.7).
+- [ ] Stage-fit, motion and frame budgets green.
+
+### Phase 2: My System, Level 0 (L) — branch `v4/p2-my-system`
+
+**Goal:** in under a minute, a learner picks a template (or starts blank), sees it running, crashes a part, reads "what breaks if X dies", changes the design and compares — all on one screen, all in the browser.
+
+| Path | Change |
+|---|---|
+| `src/lib/system/doc.ts` | `SystemDoc`, `PartDoc`, kinds, defaults, `validate(doc) → Issue[]` (plain English). |
+| `src/lib/system/compile.ts` | `compile(doc) → { spec, notes, map }`: parts → nodes (counts and groups, D5), links → `to`/`calls`, kind settings → engine fields, traffic → clients, layered layout → `at`, `sloMs`/`timeoutMs` from targets. Deterministic (seed from a hash of the doc). |
+| `src/lib/system/templates.ts` | 12 templates (§6.3), each a `SystemDoc` with a one-line story. |
+| `src/lib/system/blast.ts` | Blast radius (D6): per-part headless runs, ranked sentences; single points of failure. |
+| `src/lib/system/explain.ts` | "Explain like I'm new": beats generated from the graph (the path a read takes, then each part in one line, then the busiest part), using `part-words` concepts. |
+| `src/lib/system/share.ts` | Save/load in `localStorage`; encode/decode the link fragment. |
+| `src/app/my-system/page.tsx` | Static page; template gallery for the first view; `SystemPlayer` lazy. |
+| `src/components/system-player.tsx` | The player (D3): editor panel, stage with part cards that edit, faults in the dock, blast radius, compare. |
+| `src/components/system-editor.tsx` | Part list, add-part menu (plain words), per-part settings, "sends to". |
+| `src/components/brand.tsx`, `page.tsx` | "My system" in the header and a masthead secondary button. |
+| `tests/system.test.ts` | Every template compiles, validates, runs 5 s with every request accounted for and no leaked holds (`invariants.ts`); determinism; blast radius stable; share round-trips. |
+| `tests/browser/my-system.spec.ts` | Template → running in one tap; crash a part; blast report; add a cache; compare; share link reopens the same system; four sizes fit; stage-fit on every template. |
+
+**Acceptance:**
+- [ ] From `/my-system`, one tap on a template shows it running with labelled parts; the document never scrolls on desktop; on phones only the panel does.
+- [ ] Every template passes stage-fit at four sizes and the invariants.
+- [ ] "What breaks if…" names every single point of failure in every template, with measured numbers.
+- [ ] Adding a part, removing one, changing a count, and "sends to" all work with keyboard and touch (≥40 px).
+- [ ] A shared link reopens the identical system in a fresh browser; nothing is sent anywhere.
+- [ ] `/my-system` ≤ 200 KB; lesson pages unchanged.
+
+### Phase 3: Level 1, structured import (M) — branch `v4/p3-import`
+
+| Path | Change |
+|---|---|
+| `src/lib/system/import/{dsl,csv,yaml,compose,openapi,json}.ts` | Readers (D7). Each returns `{ doc, notes, errors }`; errors carry a line number and a fix ("Line 4: `-> ->` has nothing between the arrows."). |
+| `src/lib/system/infer.ts` | Kind inference (D8) and default sizing from given rates and latencies (workers = ceil(rps × ms / 1000 / 0.6), so parts start at ~60% busy). |
+| `src/lib/system/group.ts` | Grouping to ≤14 stations (§6.4), reused by Phase 4. |
+| `src/components/system-import.tsx` | Paste box + file picker + format auto-detect + preview of guesses with one-tap kind changes; lazy. |
+| `tests/import.test.ts` | Fixtures per format, good and broken, with exact messages; round trip import → compile → run. |
+
+**Acceptance:** each format's fixtures import; a 40-service compose file groups to ≤14 stations and says what it grouped; every error names a line; nothing leaves the browser.
+
+### Phase 4: Level 2, trace replay from files (L) — branch `v4/p4-replay`
+
+| Path | Change |
+|---|---|
+| `src/lib/system/trace/{otlp,jaeger,zipkin}.ts` | Readers to one `Span` shape (service, parent, kind, start, end, status, a whitelist of attributes). |
+| `src/lib/system/trace/reduce.ts` | Spans → service graph (parent service → child service edges), per-service rate, self time p50/p95, error share → `SystemDoc` calibrated so the simulation reproduces the measured second; picks sample requests: one typical, the slowest, one failed. |
+| `src/components/replay.tsx` | Replay a request on the user's map: the path lit (focus), one dot moving hop by hop with the trace's real timings (scaled), and the flight strip's wire/wait/work waterfall from the spans. "Replay the second" runs the calibrated simulation. |
+| `src/lib/system/trace/scrub.ts` | PII: only whitelisted attributes are kept; values that look like emails, tokens, IPs or IDs are dropped; the raw file is released after reduction. |
+| `tests/trace.test.ts` | Fixtures for the three formats (synthetic, no real data); reduction stable; grouping; scrub removes PII patterns. |
+
+**Acceptance:** a 200-service trace becomes ≤14 stations with one click to change grouping (by service, by namespace/prefix, by kind); the failed request's waterfall matches its spans to the millisecond; the calibrated second's p95 is within 15% of the trace's.
+
+### Phase 5 (optional): Level 3, live connectors — needs the owner
+
+**Proposed rule change** (to `CLAUDE.md` "Out of scope"), to confirm before any code:
+
+> No cloud, accounts or backend, **except** an optional local agent the user runs themselves (`npx syslab-agent`), which reads their own OpenTelemetry collector or tracing backend and serves only a reduced, scrubbed `SystemDoc` and sampled spans on `http://localhost:4318x` to the System Lab page in their browser. The site itself stays static; no credentials are ever entered into or stored by the site.
+
+- **Option A (recommended): local agent.** Node CLI in this repo (`agent/`), zero deps beyond Node, reads OTLP/Jaeger/Tempo query APIs with the user's own credentials from env vars, applies the same reducer and scrubber as Phase 4, exposes `GET /system` and `GET /samples` with CORS for `https://sys-design-learning.vercel.app` and `http://127.0.0.1:3000` only. The page polls every 5 s and replays. Prefer staging; read-only by construction.
+- **Option B: browser-direct** to a backend that already allows CORS (some Tempo/Jaeger setups). Zero code on our side beyond a URL field; works rarely.
+- **Option C: a Vercel function proxy.** Needs secrets in transit through our infrastructure, rate limits, abuse handling and a privacy policy. Not recommended; only with an explicit owner yes and a security review.
+- Levels 0–2 never depend on any of these.
+
+### Parallel, thin: net-new concepts
+
+In the order of §3.1, each a normal lesson (`npm run new-lesson`), on its own branch after Phase 2: O3 headroom and N + 1 (first, as it feeds "what breaks if"), C8 hot keys, R11 distributed rate limits, A10 scheduled bursts, O4 tracing a request (after Phase 4, as the bridge). Codes continue each line (frozen-code rule); catalog snapshot updated in review.
+
+---
+
+## 6. Data model for user systems
+
+### 6.1 `SystemDoc`
+
+```ts
+interface SystemDoc {
+  v: 1;
+  name: string;                       // "My shop"
+  template?: string;                  // where it started
+  parts: PartDoc[];                   // ≤ 24 before grouping
+  traffic: {
+    rate: number;                     // requests a second at the entry, 1–600
+    writes: number;                   // share 0–1
+    keys: number;                     // distinct items read (cache realism)
+    hot: number;                      // share to one celebrity key, 0–0.6
+    shape: "steady" | "daily" | "spiky";
+  };
+  targets: { p95Ms: number; failed: number }; // default 400 ms, 1%
+}
+
+interface PartDoc {
+  id: string;                         // stable, from the name
+  kind: PartKind;
+  name: string;                       // the station's label
+  count?: number;                     // 1–4 drawn, more grouped (D5)
+  to?: string[];                      // sends to (part ids), in call order
+  set?: Partial<PartSettings>;        // only what differs from the kind's defaults
+}
+
+type PartKind =
+  | "users" | "bots"
+  | "dns" | "cdn" | "balancer" | "gateway" | "limiter" | "waiting-room"
+  | "service" | "worker" | "external"
+  | "cache" | "database" | "queue" | "log" | "topic"
+  | "stream" | "lock" | "push";
+
+interface PartSettings {
+  workers: number; ms: number;        // service/database/worker/external
+  timeoutMs: number; retries: number; // users, service calls
+  capacity: number; ttlMs: number; writeMode: "aside" | "through" | "behind"; // cache
+  replicas: number; lagMs: number; failover: boolean; shards: number; pool: number; // database
+  health: boolean; algo: "round-robin" | "least" | "sticky" | "nearest"; layer: 4 | 7; // balancer
+  rps: number;                        // limiter / waiting room
+  ack: boolean; deadLetter: boolean; ordered: boolean; partitions: number; // queue/log
+  breaker: boolean; bulkhead: boolean; shed: boolean; idempotent: boolean; blocking: boolean; // service
+  region: string;                     // multi-region placement
+}
+```
+
+### 6.2 Compiling to `SceneSpec`
+
+- **Entry:** `users`/`bots` → clients (`rate`, `writes`, `keys`, `skew 1`, `hot`, `timeoutMs`, retries with backoff when `retries > 0`), shape → `wave`/`rush`/constant (`kit.ts`).
+- **Parts:** each kind has a builder mapping settings to engine fields: service → `server` (`slots`, `serviceMs`, `blocking`, `breaker`, `bulkheads`, `shed`, `idempotent`, `callTimeoutMs` from the caller's timeout); database → `db` plus, when `replicas`, a primary + replicas with `lagMs`, and when `failover`, a writer endpoint with `promote`; `shards` → a shard router (`algo: "hash"`) and N `db` nodes; `pool` → `connect.max`; cache → `cache` (`capacity`, `ttlMs`, `writeMode`); queue → `queue` + `ack` (+ DLQ part when `deadLetter`); log with `partitions` → partitioner + partitions with `consumers: "first"`; topic → `topic`; balancer → `lb` (`health`, `algo`, `layer`); gateway → `lb` with `byTag`; limiter → `limiter`; waiting room → `limiter` `shared`; cdn → `cache` with the `edge` glyph, one per region when users have regions; dns → `lb` `algo: "nearest"`; external → `server` with `downMode: "hang"`; stream → server with `window`; lock → server with `lock`; push → server with `hold` and users `subscribe`.
+- **Calls:** a service's `to` becomes `calls.read`/`calls.write` in order (a cache before a database for reads; writes skip the cache unless `writeMode` says otherwise).
+- **Layout:** layered (D4). Column = longest path from an entry; row = barycentre of parents, then spread 14–86. Wide scenes (>6 columns) are allowed; the frame code scales them.
+- **Defaults** come from the lessons' own numbers (servers 4 workers × 100 ms, databases 4 × 100 ms, caches 100 items 20 s TTL, `sloMs` 400, `timeoutMs` 1600, `timeScale` 0.1), so a user system behaves like the course.
+- **Notes:** the compiler explains what it did in plain words ("App ×12 is drawn as one station with 48 workers.").
+
+### 6.3 Templates (cover the major shapes)
+
+| Template | Parts (left to right) | Shapes it covers |
+|---|---|---|
+| Web app | Users → Load balancer → App ×3 → Cache → Database | request/response, LB, cache, DB |
+| Read-heavy with replicas | Users → LB → App ×2 → Primary + 2 replicas (failover) | primary/replica, lag, failover |
+| Shop | Shoppers, Bots → Rate limiter → Gateway → Catalog, Checkout → Payments (external), Orders DB | gateway routing, bulkheads, breakers, external hang |
+| Background jobs | Users → API → Queue (ack, DLQ) → Workers ×3 → Email (external) | queues, acks, DLQ |
+| Event-driven orders | Shop → Orders (outbox) → Topic → Email, Stock, Analytics | pub/sub, outbox |
+| Chat | Users (held connections) → L4 balancer → Push ×2 → Topic, Messages DB | push, L4, heartbeats |
+| Video premiere | Viewers (3 regions) → DNS (nearest) → CDN edges → Origin | CDN, geo routing |
+| Multi-region | Users EU/US → DNS → Region EU, Region US → DB EU ⇄ DB US | regions, replication, CAP |
+| Flash sale | Buyers → Waiting room → Booking → Lock → Seats DB (CAS) | contention, locks |
+| Payments | Shoppers (retries) → Payments (idempotent) → Saga → Card network, Stock, Shipping | idempotency, sagas |
+| News feed | Readers, Posters → Feed (fan-out to Posts ×4 shards) → Timelines cache | fan-out, hot keys |
+| Click counting | Clicks → Click API → Log (partitions) → Counter (windows) → Counts | streams, partitions |
+| Crawler | New links → Frontier queue → Fetchers ×4 → The web (external) + Dead letters | queues, timeouts |
+| Blank | Users → Service | anything |
+
+### 6.4 Simplify and group (imports and traces)
+
+Applied in order until ≤14 stations, each step reported in a note and reversible with one tap:
+1. Merge replicas of one service (same name minus `-1`, `-a`, pod hashes) into a count.
+2. Fold sidecars and infrastructure (`istio-proxy`, `envoy` when beside every service, `otel-collector`, `jaeger`) into their neighbours.
+3. Merge services sharing a namespace/prefix (`payments-api`, `payments-worker` → Payments) when they have the same callers.
+4. Merge leaves of the same kind with one caller (three Redis instances behind one service → Cache ×3).
+5. Collapse low-traffic services (<2% of requests) into "Other services".
+The user can switch grouping: by service, by prefix/namespace, by kind.
+
+---
+
+## 7. UI flows (text wireframes)
+
+### 7.1 Home (Phase 1, first visit, desktop)
+
+```
+┌ ◉ System Lab                      Map  Journeys  My system  Glossary  Progress ┐
+│ Watch systems work.                ┌ Live · Requests flow from Users… ─────┐  │
+│ Then watch them break.             │  ○──◇──▭ ▭ ▭──⚡──⌸   (tap any name)   │  │
+│ An animated field guide: live      │                                        │  │
+│ simulations you can break.         └ ▶ ⏭ ↺ 1×   p95 372 ms · hits 78% ─────┘  │
+│ ┌ Ride 1 · How the web answers you ┐ ● request ● late ● answered ◆ failed …   │
+│ │ (N)─(N)─(F)─(N)─(N)  ~20 min     │                                           │
+│ │ [Start: A request and a response · 4 min →]   [Map your own system]         │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+Phone: headline (two lines) → live scene → legend row → [Start the ride] → ride card → map board.
+
+### 7.2 My System: first view
+
+```
+┌ ◉  My system                                                           Key  ┐
+│  Start from a system like yours                                             │
+│  [Web app ▭▭] [Shop ▭▭] [Background jobs ▭▭] [Chat ▭▭] [Video ▭▭] …          │
+│  (each: a still of its stations, one line: "Users → LB → App ×3 → Cache → DB")│
+│  Or: [Describe it in words]  [Import a file]  [Replay a trace]               │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 7.3 My System: the workspace
+
+```
+┌ bar: ◉  My shop ·  [Explain like I'm new]  [Share]            Key   ⋯ ────────┐
+├ theatre ─────────────────────────────────────┬ panel ─────────────────────────┤
+│ strip: "Requests go Users → LB → App → DB"   │ [Design] [What breaks] [Compare]│
+│                                              │ Design:                         │
+│   ○──◇──▭▭▭──⚡──⌸     (tap a name: card     │  Users      120/s  ▾            │
+│                         with its settings)   │  Load balancer       → App      │
+│                                              │  App ×3   4 workers · 100 ms ▾  │
+│                                              │  Cache    100 items ▾  → DB     │
+│                                              │  Database 4 workers ▾           │
+│                                              │  [+ Add a part]                 │
+│                                              ├ pinned: Response 340 ms ≤ 400 ✓ │
+│                                              │         Failed 0% ≤ 1% ✓        │
+├ dock: ▶ ⏭ ↺ 1×  Follow one  ⚡ Crash ▾  Surge ×3                              ┤
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **What breaks** tab: ranked list ("If Database dies: 100% fail. Single point of failure." [Show me] crashes it on stage for 3 s).
+- **Compare** tab: pick a change ("Add a cache", "One more App", "Replicas for the database", or any edit) → the table becomes Your design | With the change | Change, in lockstep, with the same traffic.
+- **Explain like I'm new:** the strip walks generated beats (§Phase 2 `explain.ts`), each pointing at a station.
+
+### 7.4 Attach (Phase 3) and replay (Phase 4)
+
+```
+┌ Import ───────────────────────────────────────────┐
+│ Paste or drop: [ docker-compose.yml ▾ detected ]  │
+│ ┌──────────────────────────────────────────────┐  │
+│ │ services:                                    │  │
+│ │   web: …                                     │  │
+│ └──────────────────────────────────────────────┘  │
+│ We read 14 services → 9 stations:                 │
+│  web → Service    redis → Cache   [change ▾]      │
+│  payments-api + payments-worker → Payments (merged)│
+│ [Open it]                                         │
+└───────────────────────────────────────────────────┘
+```
+
+Replay: same workspace; the strip says "Replaying the slowest request: 1.8 s"; the flight strip shows the span waterfall; the panel lists Typical · Slowest · Failed requests.
+
+---
+
+## 8. Testing strategy
+
+- **Unit (node:test):** part words (Phase 0); `compile` for every template and importer fixture (spec valid, every node reachable, runs 5 s with `accounted` and no `leakedHolds`); determinism (same doc → same trace hash); blast radius stable and ranked; share round trip; readers with exact error messages; trace reduction and scrub.
+- **Lessons:** the existing claim, fairness and beats tests cover new lessons from the concept track unchanged.
+- **Browser (Playwright, four sizes):** stage-fit runs over every template's compiled scene too (labels inside, ≥12 px, no collisions, nothing covers a station, 40 px targets on phones); builder flows; import flows with fixtures; replay; home first-visit and returning states; no document scroll.
+- **Weight:** `scripts/weight.mjs` on the production build after each phase; lesson and story pages ≤ 200 KB; `/my-system` ≤ 200 KB.
+- **Frames:** the frame-budget project gains the busiest template (news feed at 400/s) once Phase 2 lands.
+- **By eye:** screenshots at 1440×900, 1280×720, 390×844, 844×390, light and dark, reduced motion, recorded in each phase's decisions.
+
+## 9. Risks
+
+| Risk | Mitigation |
+|---|---|
+| Complexity explosion (every engine feature as a setting) | A kind exposes ≤4 settings in plain words; the rest stay engine defaults. Templates show breadth; the editor stays small. |
+| Graph hairballs from imports | Grouping to ≤14 stations with notes and one-tap regrouping (§6.4); layered layout; stage-fit tests on large fixtures. |
+| PII in traces | Parsing in the browser only; attribute whitelist; pattern scrub; raw file released after reduction; share links carry only the reduced doc. |
+| Page weight | Budget per route (D10); importers, readers and blast radius load on demand; `weight.mjs` in the gate. |
+| Dishonest simulation of real systems | The UI says "a model of your system" and shows its assumptions (workers, ms) on every card; calibration from traces states its error. |
+| `CLAUDE.md` scope (no backend) | L0–L2 need none; L3 waits for the owner's written yes on the rule text in Phase 5. |
+| Performance of user scenes | Rates capped at 600/s simulated, stations at 14, `timeScale` lowered for busy scenes; frame-budget test on the busiest template. |
+| Determinism across browsers | The engine is already deterministic; docs hash to seeds; compression has a non-streaming fallback. |
+
+## 10. Definition of done ("satisfactory")
+
+- **A beginner stays and learns:** lands on the home page, taps a part on the live scene, reads what it is, starts Ride 1 by its name, finishes N1 with a part card opened and a prediction made, and the Recap points them to a journey that uses the idea. (Checked by a scripted walk in `home.spec.ts` and by `npm run stats` on recorded sessions: Recap reached on N1 ≥ 60%, parts opened per lesson ≥ 1.)
+- **An intermediate pastes a graph and understands it:** pastes `Users -> LB -> API x3 -> Redis -> Postgres`, sees it running in one tap, reads "If Postgres dies…", adds a replica, and sees the comparison.
+- **An advanced user replays a failure visually:** drops an OTLP JSON export, gets ≤14 stations, opens the failed request, watches it walk their map with the real waterfall, and sees which hop broke.
+
+## 11. Rollback
+
+Each phase is a branch; reverting its merge restores the previous product. No data migrations: new storage keys are additive (`syslab.v1.systems`), and the learning record's format is unchanged (a new event kind `part`).

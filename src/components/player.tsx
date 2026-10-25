@@ -16,11 +16,10 @@ import { Shell, usePlayerKeys } from "./shell";
 import { Stage } from "./stage";
 import { Rich, TermChips, TermProvider } from "./term";
 
-// The Recap's checks and the reduced-motion list load the first time one shows.
+// The Recap and the reduced-motion list load the first time one shows.
 const cards = () => import("./cards");
-const CheckCard = lazy(() => cards().then((m) => ({ default: m.CheckCard })));
+const Recap = lazy(() => cards().then((m) => ({ default: m.Recap })));
 const WatchList = lazy(() => cards().then((m) => ({ default: m.WatchList })));
-const FeelCard = lazy(() => cards().then((m) => ({ default: m.FeelCard })));
 // So does the strip that follows one request.
 const FlightStrip = lazy(() => import("./flight").then((m) => ({ default: m.FlightStrip })));
 
@@ -65,6 +64,7 @@ export function LessonPlayer({ lesson, nav }: { lesson: Lesson; nav: PageNav }) 
   );
   const live = useLiveSims(specs, { warm, hold: beats.hold, onGrid });
   const fig = figs[shown];
+  const explain = useMemo(() => ({ lesson: lesson.slug, learn: nav.learn, figs, step: shown }), [lesson.slug, nav.learn, figs, shown]);
   const sim = live.sims[shown];
   const go = (s: number) => setStep(Math.max(0, Math.min(last, s)));
   // The learning record: each step left for another, and the Recap reached.
@@ -101,11 +101,12 @@ export function LessonPlayer({ lesson, nav }: { lesson: Lesson; nav: PageNav }) 
     if (follow.active) return follow.stop(), live.refresh();
     const client = fig.trace?.client ?? sim.list.find((n) => n.spec.client)?.spec.id;
     if (!client) return;
-    follow.begin(sim, client);
+    const ready = follow.begin(sim, client);
     record("trace");
     follow.holdResult(live.reduced);
-    // Reduced motion: run on to the end of the request's life and show it whole, on one still frame.
-    if (live.reduced) live.advance(() => follow.look(sim), 20000);
+    // Reduced motion: run on to the end of the request's life and show it whole, on one still frame (once the tracker
+    // has loaded, the first time).
+    if (live.reduced) ready.then(() => follow.active && (live.advance(() => follow.look(sim), 20000), live.refresh()));
     else live.play();
     live.refresh();
   };
@@ -235,6 +236,7 @@ export function LessonPlayer({ lesson, nav }: { lesson: Lesson; nav: PageNav }) 
             focus={focus}
             callout={step < last && b.beat ? { id: `${step}:${b.beat.id}`, text: b.beat.text, waiting: b.beat.waiting } : null}
             follow={flight?.id ?? null}
+            explain={explain}
           />
         }
         flight={
@@ -328,7 +330,9 @@ export function LessonPlayer({ lesson, nav }: { lesson: Lesson; nav: PageNav }) 
                   )}
                 </>
               ) : (
-                <Recap lesson={lesson} claim={b.claim} onWrong={(f) => b.show(f, 6000)} />
+                <Suspense fallback={null}>
+                  <Recap lesson={lesson} claim={b.claim} onWrong={(f) => b.show(f, 6000)} />
+                </Suspense>
               )}
             </div>
           </>
@@ -448,50 +452,6 @@ function useTightTabs() {
 }
 
 /** The lesson in one rule, the why, the claim in numbers, a check or two, and where it is used. */
-function Recap({ lesson, claim, onWrong }: { lesson: Lesson; claim: string | null; onWrong: (f: Focus) => void }) {
-  // Read once, as the Recap opens: a sentence whose numbers flicker is hard to read.
-  const [sentence] = useState(claim);
-  const t = lesson.takeaways;
-  return (
-    <>
-      <h2 className="step-title">What to remember</h2>
-      {t.rule && <p className="rule">{t.rule}</p>}
-      <p className="step-text recap-why">{lesson.why}</p>
-      {sentence && (
-        <p className="step-text in-numbers">
-          <span className="card-eyebrow">In numbers</span> <Rich text={sentence} />
-        </p>
-      )}
-      <Suspense fallback={null}>
-        {lesson.checks?.map((c, i) => <CheckCard key={c.prompt} c={c} n={i + 1} onWrong={onWrong} />)}
-      </Suspense>
-      <dl className="takeaways">
-        <div>
-          <dt>Use it when</dt>
-          <dd>{t.use}</dd>
-        </div>
-        <div>
-          <dt>The catch</dt>
-          <dd>{t.catch}</dd>
-        </div>
-        <div>
-          <dt>Seen in</dt>
-          <dd>{t.seen}</dd>
-        </div>
-        {t.interview && (
-          <div>
-            <dt>In an interview</dt>
-            <dd>{t.interview}</dd>
-          </div>
-        )}
-      </dl>
-      <Suspense fallback={null}>
-        <FeelCard />
-      </Suspense>
-    </>
-  );
-}
-
 export function KnobControl({ k, value, name, onChange, spot }: { k: Knob; value: number; name: string; onChange: (v: number) => void; spot?: boolean }) {
   if (isChoice(k)) {
     return (

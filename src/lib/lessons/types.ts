@@ -110,6 +110,8 @@ export interface PageNav {
   stations: LessonMeta[];
   prev?: LessonMeta;
   next?: LessonMeta;
+  /** The lessons its station cards point to, by slug (`partLessons` in `all.ts`). */
+  learn?: Record<string, { code: string; title: string }>;
 }
 
 /** An entry's words (`words.ts`): kept apart from its metadata, so a page carries only its own. */

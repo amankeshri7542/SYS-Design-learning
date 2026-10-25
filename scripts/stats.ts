@@ -23,11 +23,11 @@ if (!files.length) {
   process.exit(1);
 }
 
-type Row = { learners: number; opened: number; predicted: number; right: number; checks: number; checksRight: number; recap: number; stages: number[]; seen: Set<string>; feel: Record<string, number>; metrics: Record<string, number>; terms: Record<string, number> };
+type Row = { learners: number; opened: number; predicted: number; right: number; checks: number; checksRight: number; recap: number; stages: number[]; seen: Set<string>; feel: Record<string, number>; metrics: Record<string, number>; terms: Record<string, number>; parts: Record<string, number> };
 const rows = new Map<string, Row>();
 const row = (slug: string) => {
   let r = rows.get(slug);
-  if (!r) rows.set(slug, (r = { learners: 0, opened: 0, predicted: 0, right: 0, checks: 0, checksRight: 0, recap: 0, stages: [], seen: new Set(), feel: {}, metrics: {}, terms: {} }));
+  if (!r) rows.set(slug, (r = { learners: 0, opened: 0, predicted: 0, right: 0, checks: 0, checksRight: 0, recap: 0, stages: [], seen: new Set(), feel: {}, metrics: {}, terms: {}, parts: {} }));
   return r;
 };
 
@@ -50,6 +50,7 @@ for (const file of files) {
     const r = row(e.lesson);
     if (e.kind === "metric") r.metrics[String(e.data?.label)] = (r.metrics[String(e.data?.label)] ?? 0) + 1;
     if (e.kind === "term") r.terms[String(e.data?.key)] = (r.terms[String(e.data?.key)] ?? 0) + 1;
+    if (e.kind === "part") r.parts[String(e.data?.label)] = (r.parts[String(e.data?.label)] ?? 0) + 1;
   }
 }
 
@@ -76,6 +77,7 @@ for (const l of ALL_LESSONS) {
   console.log(`     beats seen ${pct(r.seen.size, beats)} · reached the Recap ${r.recap} · felt ${top(r.feel) || "—"}`);
   if (Object.keys(r.metrics).length) console.log(`     metrics opened: ${top(r.metrics)}`);
   if (Object.keys(r.terms).length) console.log(`     terms opened: ${top(r.terms)}`);
+  if (Object.keys(r.parts).length) console.log(`     stations opened: ${top(r.parts)}`);
 }
 // Journeys: how many opened each, and how far they got (how many cleared each stage).
 for (const { meta, def } of ALL_STORIES) {

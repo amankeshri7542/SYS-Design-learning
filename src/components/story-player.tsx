@@ -7,9 +7,10 @@ import type { LessonMeta, PageNav, Values } from "@/lib/lessons/types";
 import type { Sim } from "@/lib/sim/engine";
 import { formatMetric, formatTarget, measure } from "@/lib/sim/metrics";
 import { record } from "@/lib/record";
-import { BeatStrip, useSceneBeats } from "./beats";
+import { BeatStrip } from "./beats";
 import { KeyPopover } from "./key";
-import { ArrowIcon, Clock, MetricList, Transport, freshNote, useLiveSims } from "./live";
+import { ArrowIcon, Clock, Transport, freshNote, useLiveSims } from "./live";
+import { MetricList, useSceneBeats } from "./scene-run";
 import { Shell, usePlayerKeys } from "./shell";
 import { Stage } from "./stage";
 
@@ -66,6 +67,7 @@ export function StoryPlayer({ meta, nav, why, def }: { meta: LessonMeta; nav: Pa
   const allDone = cleared.every(Boolean);
   const pct = Math.min(1, held / S.hold);
   const cost = def.cost(arch);
+  const explain = useMemo(() => ({ lesson: meta.slug, learn: nav.learn }), [meta.slug, nav.learn]);
   // The learning record: each stage cleared, once, with the design's price.
   const noted = useRef(new Set<number>());
   useEffect(() => {
@@ -131,6 +133,7 @@ export function StoryPlayer({ meta, nav, why, def }: { meta: LessonMeta; nav: Pa
           drawRef={live.drawRef}
           focus={eventLater ? null : beats.beat?.focus}
           callout={!eventLater && beats.beat ? { id: beats.beat.id, text: beats.beat.text, waiting: false } : null}
+          explain={explain}
         />
       }
       panel={
