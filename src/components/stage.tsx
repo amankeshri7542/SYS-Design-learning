@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { Suspense, lazy, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import type { NodeRt, Req, Sim } from "@/lib/sim/engine";
 import {
   SIZES,
@@ -22,7 +22,6 @@ import {
   railSpan,
   sceneOf,
   subCurve,
-  windowSub,
   type Edge,
   type Frame,
   type Mode,
@@ -32,15 +31,26 @@ import {
   type Side,
   type Size,
 } from "@/lib/sim/layout";
+import { describe, type BreakerState } from "@/lib/sim/describe";
 import { flowOf } from "@/lib/sim/metrics";
 import type { Glyph, NodeSpec, SceneSpec } from "@/lib/sim/types";
 import type { Focus } from "@/lib/lessons/beats";
 import { DUR, INTRO, TAU as SMOOTH, smooth } from "@/lib/motion";
 import { Callout, type CalloutSpot } from "./beats";
 import { Body, slotSpots, type Spot } from "./glyph";
+import type { Explain } from "./part-card";
 import { Batch, FAINT, RINGS, TAU, Trails, drawFx, parkSpot, queueSpot, shape, squeeze as squeezeOf, styleOf, wedge, type FxDraw, type Look, type Palette } from "./stage-draw";
 
 export type DrawFn = (dt: number) => void;
+
+// A station's card, opened from its name: loaded the first time one opens.
+const PartCard = lazy(() => import("./part-card"));
+
+const unionOf = (rs: Rect[]): Rect => {
+  const x = Math.min(...rs.map((r) => r.x));
+  const y = Math.min(...rs.map((r) => r.y));
+  return { x, y, w: Math.max(...rs.map((r) => r.x + r.w)) - x, h: Math.max(...rs.map((r) => r.y + r.h)) - y };
+};
 
 interface Box {
   id: string;
@@ -198,6 +208,7 @@ export function Stage({
   callout,
   follow,
   remember = true,
+  explain,
 }: {
   sim: Sim;
   spec: SceneSpec;
@@ -215,6 +226,8 @@ export function Stage({
   follow?: number | null;
   /** Leave its stations for the next lesson's intro to skip. Off for previews, which no lesson follows. */
   remember?: boolean;
+  /** Each station's name opens a card about it (lessons and stories; not previews). */
+  explain?: Explain;
 }) {
   const scene = useMemo(() => (frameSpecs ? combine(frameSpecs) : sceneOf(spec)), [frameSpecs, spec]);
   const edges = useMemo(() => edgesOf(spec), [spec]);
@@ -687,11 +700,6 @@ export function Stage({
     const ox = (box.w - frame.W * k) / 2;
     const oy = (box.h - frame.H * k) / 2;
     const px = (r: Rect): Rect => ({ x: r.x * k + ox, y: r.y * k + oy, w: r.w * k, h: r.h * k });
-    const union = (rs: Rect[]): Rect => {
-      const x = Math.min(...rs.map((r) => r.x));
-      const y = Math.min(...rs.map((r) => r.y));
-      return { x, y, w: Math.max(...rs.map((r) => r.x + r.w)) - x, h: Math.max(...rs.map((r) => r.y + r.h)) - y };
-    };
     // Rail captions are labels too: a callout never covers one, and one pointing at a rail keeps clear of its caption.
     const captions = new Map<string, Rect>();
     for (const e of edges) {
@@ -706,12 +714,12 @@ export function Stage({
     if (b) {
       const body = { x: b.x - b.w / 2, y: b.y - b.h / 2, w: b.w, h: b.h };
       anchor = body;
-      block = union(b.rects);
+      block = unionOf(b.rects);
       if (f?.dots === "waiting" && b.room > 0) {
         // The line in front of the station: point at where it forms.
         const len = Math.min(b.room, b.w * 1.4);
         anchor = { x: b.x - b.w / 2 - len, y: b.y - b.h * 0.3, w: len, h: b.h * 0.6 };
-        block = union([anchor, ...b.rects]);
+        block = unionOf([anchor, ...b.rects]);
       }
     } else if (f?.link) {
       const [p, q] = f.link.map((id) => boxes.get(id));
@@ -721,7 +729,7 @@ export function Stage({
         const mid = bezier(curve(p, q, frame.mode), 0.5);
         const y = caption ? Math.min(mid.y, caption.y) : mid.y;
         anchor = { x: mid.x - 4, y: y - 4, w: 8, h: 8 };
-        block = caption ? union([anchor, caption]) : anchor;
+        block = caption ? unionOf([anchor, caption]) : anchor;
       }
     }
     if (!anchor || !block) return null;
@@ -735,6 +743,54 @@ export function Stage({
     const obstacles = [...[...boxes.values()].flatMap((x) => x.rects), ...captions.values()].map(px);
     return { anchor: px(anchor), block: px(block), obstacles, rails, box };
   }, [layout, box, focusKey, edges, spec]);
+
+  // Each station's name (with its body) is a button over the stage, at least 40 px square, that opens its card: on a
+  // hover with a mouse, while the pointer stays; pinned by a click or a tap. The card follows its station when the
+  // stage moves (a resize, a step switch), and closes when the station leaves the scene.
+  const hits = useMemo(() => {
+    if (!explain || !layout || !box) return [];
+    const { frame, boxes } = layout;
+    const k = Math.min(box.w / frame.W, box.h / frame.H);
+    const out = spec.nodes.flatMap((n) => {
+      const b = boxes.get(n.id);
+      if (!b) return [];
+      const r = unionOf(b.rects);
+      const w = Math.max(40, r.w * k);
+      const h = Math.max(40, r.h * k);
+      return [{ n, x: r.x * k + (box.w - frame.W * k) / 2 - (w - r.w * k) / 2, y: r.y * k + (box.h - frame.H * k) / 2 - (h - r.h * k) / 2, w, h }];
+    });
+    // Reading order: along the flow, then across it (the arrow keys move between them in this order).
+    return out.sort((a, b) => (Math.abs(a.x - b.x) > 24 ? a.x - b.x : a.y - b.y));
+  }, [explain, layout, box, spec]);
+  const [part, setPart] = useState<{ id: string; pinned: boolean } | null>(null);
+  const hover = useRef(0);
+  const hitEls = useRef(new Map<string, HTMLButtonElement>());
+  useEffect(() => {
+    if (part && !spec.nodes.some((n) => n.id === part.id)) setPart(null);
+  }, [spec, part]);
+  useEffect(() => () => clearTimeout(hover.current), []);
+  const partId = part?.id;
+  const anchor = useCallback(() => (partId ? hitEls.current.get(partId) : undefined), [partId]);
+  const closePart = useCallback(() => setPart(null), []);
+  const holdPart = useCallback(() => clearTimeout(hover.current), []);
+  const leave = useCallback(() => {
+    clearTimeout(hover.current);
+    hover.current = window.setTimeout(() => setPart((p) => (p?.pinned ? p : null)), 200);
+  }, []);
+  // One Tab stop for the stations: arrow keys, Home and End move between them.
+  const [roving, setRoving] = useState<string | null>(null);
+  const tabStop = hits.some((h) => h.n.id === roving) ? roving : hits[0]?.n.id;
+  const onHitKey = (e: React.KeyboardEvent, i: number) => {
+    const to = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: hits.length - 1 }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    const id = hits[(to + hits.length) % hits.length].n.id;
+    setRoving(id);
+    hitEls.current.get(id)?.focus();
+    // A card already open follows the focus to the next station.
+    setPart((p) => (p ? { id, pinned: p.pinned } : p));
+  };
+  const hitAt = hits.find((h) => h.n.id === partId);
 
   return (
     <div
@@ -758,10 +814,55 @@ export function Stage({
           intro={run}
           focus={focusSet}
           sockets={!!focus?.sockets}
+          cue={!!explain}
         />
       ))}
       <canvas ref={canvasRef} className="stage-canvas" aria-hidden="true" />
       {callout && spot && !run && <Callout id={callout.id} text={callout.text} spot={spot} waiting={callout.waiting} />}
+      {hits.map(({ n, x, y, w, h }, i) => (
+        <button
+          key={n.id}
+          ref={(el) => {
+            if (el) hitEls.current.set(n.id, el);
+            else hitEls.current.delete(n.id);
+          }}
+          type="button"
+          className="part-hit"
+          style={{ left: x, top: y, width: w, height: h }}
+          tabIndex={n.id === tabStop ? 0 : -1}
+          aria-label={`What is ${n.label}?`}
+          aria-haspopup="dialog"
+          aria-expanded={part?.id === n.id}
+          onKeyDown={(e) => onHitKey(e, i)}
+          onFocus={() => setRoving(n.id)}
+          onPointerEnter={(e) => {
+            if (e.pointerType !== "mouse" || part?.pinned) return;
+            clearTimeout(hover.current);
+            hover.current = window.setTimeout(() => setPart({ id: n.id, pinned: false }), 320);
+          }}
+          onPointerLeave={(e) => e.pointerType === "mouse" && leave()}
+          onClick={() => {
+            clearTimeout(hover.current);
+            setPart((p) => (p?.pinned && p.id === n.id ? null : { id: n.id, pinned: true }));
+          }}
+        />
+      ))}
+      {part && explain && (
+        <Suspense fallback={null}>
+          <PartCard
+            id={part.id}
+            pinned={part.pinned}
+            anchor={anchor}
+            spot={hitAt ? `${Math.round(hitAt.x)},${Math.round(hitAt.y)},${Math.round(hitAt.w)}` : ""}
+            sim={sim}
+            spec={spec}
+            explain={explain}
+            onClose={closePart}
+            onHold={holdPart}
+            onLeave={leave}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
@@ -795,6 +896,7 @@ function StageSvg({
   intro,
   focus,
   sockets,
+  cue,
 }: {
   sim: Sim;
   spec: SceneSpec;
@@ -806,6 +908,8 @@ function StageSvg({
   focus: Set<string> | null;
   /** Outline the focused stations' sockets (their workers). */
   sockets: boolean;
+  /** Underline each station's name with dots: it opens a card. */
+  cue: boolean;
 }) {
   const { frame, boxes } = layout;
   const k = frame.k;
@@ -954,6 +1058,7 @@ function StageSvg({
               known={known(n)}
               focused={!focus || focus.has(n.id)}
               pointed={sockets && !!focus?.has(n.id)}
+              cue={cue}
               countdown={due.has(n.id) ? `${(due.get(n.id)! / 1000).toFixed(1)} s` : undefined}
             />
           );
@@ -1063,6 +1168,7 @@ const NodeView = memo(function NodeView({
   known,
   focused,
   pointed,
+  cue,
   countdown,
 }: {
   n: NodeSpec;
@@ -1073,7 +1179,7 @@ const NodeView = memo(function NodeView({
   sub: string;
   badge?: string;
   tone?: string;
-  pill?: keyof typeof PILL;
+  pill?: BreakerState;
   role?: string;
   meter?: "cache" | "load";
   level?: number;
@@ -1086,6 +1192,8 @@ const NodeView = memo(function NodeView({
   focused: boolean;
   /** The narration points at this station's sockets. */
   pointed: boolean;
+  /** Underline the name with dots: it opens the station's card. */
+  cue: boolean;
   /** Time until an armed event happens here ("0.6 s"). */
   countdown?: string;
 }) {
@@ -1097,6 +1205,16 @@ const NodeView = memo(function NodeView({
   const spot = labelSpot(b.side, size.w * s, size.h * s, block / k, k);
   const top = spot.top / s;
   const x = spot.x / s;
+  // The name's width, measured (fonts may land late), for its dotted underline.
+  const name = useRef<SVGTextElement>(null);
+  const [nw, setNw] = useState(0);
+  useLayoutEffect(() => {
+    const t = name.current;
+    if (!cue || !t) return;
+    const measure = () => setNw(t.getComputedTextLength());
+    measure();
+    document.fonts?.ready.then(measure);
+  }, [cue, n.label, k, s]);
   return (
     // Outer group glides between positions; inner group plays the entrances and state changes.
     <g className={`node-pos${focused ? "" : " dim"}`} style={{ transform: `translate(${b.x}px, ${b.y}px) scale(${s})`, "--ns": s } as CSSProperties}>
@@ -1111,9 +1229,15 @@ const NodeView = memo(function NodeView({
           // A sign over the track: the rail it could not avoid passes under the label.
           <rect className="label-plate" x={(b.plate.x - b.x) / s - 3 * u} y={(b.plate.y - b.y) / s - 2 * u} width={b.plate.w / s + 6 * u} height={b.plate.h / s + 4 * u} rx={4 * u} />
         )}
-        <text className="node-label" x={x} y={top + TEXT.label * u} textAnchor={spot.anchor}>
+        <text ref={name} className="node-label" x={x} y={top + TEXT.label * u} textAnchor={spot.anchor}>
           {n.label}
         </text>
+        {cue && nw > 0 && (
+          <path
+            className="node-cue"
+            d={`M${spot.anchor === "start" ? x : spot.anchor === "end" ? x - nw : x - nw / 2} ${top + (TEXT.label + 3) * u}h${nw}`}
+          />
+        )}
         {sub && (
           <text className="node-sub" x={x} y={top + (TEXT.label * TEXT.line + TEXT.sub) * u} textAnchor={spot.anchor}>
             {sub}
@@ -1155,7 +1279,7 @@ function GhostNode({ n, b, k, s }: { n: NodeSpec; b: Box; k: number; s: number }
  * A circuit breaker's state as a fixed-width pill: the word for the state, and a marker that slides along the pill's
  * foot between its three places (closed, testing, open), so the state machine reads as movement, not a swapped word.
  */
-function BreakerPill({ state, x, y, k, s }: { state: keyof typeof PILL; x: number; y: number; k: number; s: number }) {
+function BreakerPill({ state, x, y, k, s }: { state: BreakerState; x: number; y: number; k: number; s: number }) {
   const p = PILL[state];
   const b = badgeBox(PILL.half.word.length, k, s);
   const u = 1 / (k * s);
@@ -1227,84 +1351,3 @@ function Meter({ kind, level, tone, w, h, db }: { kind: "cache" | "load"; level:
   );
 }
 
-/**
- * A node's state class, its secondary label (the long wording; `fitSub` shortens it for narrow layouts), its state
- * badge, and for a circuit breaker its state.
- */
-function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: string; badge?: { text: string; tone: string }; pill?: keyof typeof PILL } {
-  const s = n.spec;
-  if (!n.on) return { cls: "off", sub: "standby" };
-  if (n.bootUntil) return { cls: "booting", sub: "starting…" };
-  if (!n.ready) return { cls: "draining", sub: "draining" };
-  const benched = lbs.some((lb) => sim.flat(lb.spec.to).includes(s.id) && lb.health.get(s.id)?.ok === false);
-  if (!n.up) {
-    const sub = s.sink ? "paused · jobs wait" : n.restartAt ? "restarting…" : s.downMode === "hang" ? "not responding" : benched ? "down · taken out" : "down";
-    return { cls: "down", sub, badge: { text: "DOWN", tone: "bad" } };
-  }
-  if (benched) return { cls: "benched", sub: "rejoining…" };
-  if (lbs.some((lb) => lb.rolledBack.has(s.id))) return { cls: "benched", sub: "rolled back" };
-  let sub = "";
-  const slots = s.slots ?? 0;
-  const busy = n.work.length + n.held.length;
-  switch (s.kind) {
-    case "client": {
-      const r = s.client?.rate;
-      const rate = typeof r === "function" ? r(sim.t) : (r ?? 0);
-      if (s.client?.window) sub = `${n.flying}/${sim.windowOf(n)} in flight`;
-      else if (s.client?.poll) sub = `ask every ${s.client.poll} ms`;
-      else if (s.client?.subscribe) sub = `${n.subOf.size} connected`;
-      else sub = s.connect ? `${Math.round(rate)} req/s · ${n.conns.length} open` : `${Math.round(rate)} req/s`;
-      break;
-    }
-    case "lb":
-      if (s.promote) sub = "to the primary";
-      else if (s.glyph === "router" && sim.flat(s.to).length === 1) sub = "shares one line";
-      else if (s.layer === 4) sub = "per connection";
-      else if (s.autoscale) sub = `target ${Math.round(s.autoscale.target * 100)}% busy`;
-      else if (s.algo === "hash") sub = `key → ${sim.flat(s.to).length} nodes`;
-      else if (s.algo === "ring") sub = "ring of 64 points each";
-      else if (s.algo === "nearest") sub = "nearest healthy";
-      else if (s.algo === "weighted") sub = "by weight";
-      else if (s.health) sub = "checking health";
-      else sub = s.algo === "least" ? "least busy" : s.algo === "random" ? "random" : "round robin";
-      break;
-    case "limiter":
-      sub = s.limit?.shared ? `lets in ${s.limit.rps}/s` : `${s.limit?.rps}/s per client`;
-      break;
-    case "cache":
-      sub = s.writeMode === "behind" && n.dirty.size ? `${n.cache.size}/${s.capacity ?? 0} · ${n.dirty.size} unsaved` : `${n.cache.size}/${s.capacity ?? 0} items`;
-      break;
-    case "queue":
-      // Jobs out with workers and not yet acked, or producers held back by back-pressure, are news too.
-      sub = `${n.queue.length} waiting${n.inflight.size ? ` · ${n.inflight.size} out` : n.waiting.length ? ` · ${n.waiting.length} held` : ""}`;
-      break;
-    case "topic":
-      sub = `${sim.flat(s.to).length} subscribers`;
-      break;
-    default:
-      if (s.cluster) sub = n.raft.role === "leader" ? `leads · term ${n.raft.term}` : n.raft.role === "candidate" ? "asks for votes" : `term ${n.raft.term}`;
-      else if (s.lock) sub = `${n.locks.size} held · ${[...n.waiters.values()].reduce((a, w) => a + w.length, 0)} waiting`;
-      else if (s.quorum) sub = `W=${s.quorum.w} R=${s.quorum.r}`;
-      else if (s.window) sub = windowSub(s.window);
-      else if (s.hold) sub = `${n.subs.length}/${s.hold.max} open`;
-      else if (s.maxConns !== undefined && !n.queue.length) sub = `${n.accepted}/${s.maxConns} connections`;
-      else if (!slots) sub = n.queue.length ? `stalled · ${n.queue.length} waiting` : "stalled";
-      else if (n.queue.length) sub = `${n.queue.length} waiting`;
-      else {
-        // Just back from a crash under load: fewer workers until it has warmed up.
-        const can = sim.slotsOf(n);
-        sub = can < slots ? `warming up · ${busy}/${can} busy` : `${busy}/${slots} busy`;
-      }
-  }
-  const pill = s.breaker ? n.breaker.state : undefined;
-  // Shedding holds its badge a moment past each refusal, so it doesn't flicker as the line crosses the mark.
-  const shedding = s.shed && sim.t - n.shedAt < 300;
-  // A sender told its receiver has no room waits for word that it has.
-  const waiting = s.client?.window && n.peerWindow === 0;
-  const badge = s.kind === "db" && s.leader && sim.partitioned ? { text: "CUT OFF", tone: "bad" } : shedding ? { text: "SHEDDING", tone: "warn" } : waiting ? { text: "WAIT", tone: "warn" } : undefined;
-  // A station with no workers at all is stalled: news, even before a line forms.
-  const stalled = (s.kind === "server" || s.kind === "db") && !slots && !s.sink;
-  // A dead-letter queue keeps the jobs given up on: a red rim, the colour of failure.
-  const dlq = s.kind === "queue" && sim.list.some((q) => q.spec.ack?.deadLetter === s.id);
-  return { cls: n.hot ? "hot" : stalled ? "stalled" : dlq ? "dlq" : "", sub, badge, pill };
-}

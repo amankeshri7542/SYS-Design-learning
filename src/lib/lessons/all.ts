@@ -3,11 +3,12 @@
 // at a time through `scenes/` and `stories/`. `npm run new-lesson` adds a line here; tests/lessons.test.ts checks it
 // matches the lazy maps.
 
-import { LESSONS, STORIES } from "./index";
+import { LESSONS, STORIES, getLesson } from "./index";
 import { whyOf } from "./words";
 import type { StoryDef } from "./story";
 import { defaultsOf, isChoice, withScene, type Lesson, type LessonMeta, type LessonScene, type Values } from "./types";
 import { needsOf, type ModuleName } from "../sim/engine/needs";
+import { conceptOf } from "../sim/part-words";
 import type { SceneSpec } from "../sim/types";
 import autoscaling from "./scenes/autoscaling";
 import cacheStampede from "./scenes/cache-stampede";
@@ -178,4 +179,17 @@ export function specsOf(slug: string): SceneSpec[] {
 /** The engine's optional modules a page needs: every module any of its scenes uses. */
 export function engineNeeds(slug: string): ModuleName[] {
   return [...new Set(specsOf(slug).flatMap(needsOf))].sort();
+}
+
+/** The lessons a page's station cards point to: each station's concept's lesson, when it is live and another page. */
+export function partLessons(slug: string): Record<string, { code: string; title: string }> {
+  const out: Record<string, { code: string; title: string }> = {};
+  for (const spec of specsOf(slug)) {
+    for (const n of spec.nodes) {
+      const to = conceptOf(n, spec).learn;
+      const e = to && to !== slug && !out[to] ? getLesson(to) : undefined;
+      if (e) out[e.slug] = { code: e.code, title: e.title };
+    }
+  }
+  return out;
 }

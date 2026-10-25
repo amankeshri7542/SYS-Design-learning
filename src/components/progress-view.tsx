@@ -49,6 +49,8 @@ function said(e: RecordEvent, name: string): string | null {
       return `Looked up “${String(d.key).replaceAll("-", " ")}” in ${name}`;
     case "metric":
       return `Asked what “${d.label}” means in ${name}`;
+    case "part":
+      return `Read the card for ${d.label} in ${name}`;
     default:
       return null;
   }

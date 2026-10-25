@@ -2,9 +2,10 @@
 
 import { useMemo } from "react";
 import { HERO } from "@/lib/lessons/hero";
-import { BeatStrip, useSceneBeats, type BeatView } from "./beats";
+import { BeatStrip, type BeatView } from "./beats";
 import { useMode } from "./hooks";
-import { MetricList, Transport, useLiveSims } from "./live";
+import { Transport, useLiveSims } from "./live";
+import { MetricList, useSceneBeats } from "./scene-run";
 import { Stage } from "./stage";
 
 const BEATS = HERO.beats ?? [];

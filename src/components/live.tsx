@@ -243,7 +243,7 @@ export function Clock({ live }: { live: Live }) {
 }
 
 /** "target ≤ 400 ms" under a response-time label, or any metric that has a target of its own. */
-function Target({ m, sloMs }: { m: MetricSpec; sloMs: number }) {
+export function Target({ m, sloMs }: { m: MetricSpec; sloMs: number }) {
   const t = formatTarget(m, sloMs);
   return t ? <small className="target">{t}</small> : null;
 }
@@ -268,7 +268,7 @@ function useCues() {
 }
 
 /** Smooths a stream of values so numbers glide instead of flickering at 11 updates a second. */
-function useSmoothed() {
+export function useSmoothed() {
   const prev = useRef<Map<string, number>>(new Map());
   return (key: string, v: number | null, m: MetricSpec) => {
     if (v === null) {
@@ -285,7 +285,7 @@ function useSmoothed() {
   };
 }
 
-function useHistory(sim: Sim, metrics: MetricSpec[], values: (number | null)[]) {
+export function useHistory(sim: Sim, metrics: MetricSpec[], values: (number | null)[]) {
   const history = useRef<Record<string, number[]>>({});
   const lastPush = useRef(-1);
   useEffect(() => {
@@ -304,28 +304,6 @@ function useHistory(sim: Sim, metrics: MetricSpec[], values: (number | null)[]) 
   return history.current;
 }
 
-/** Compact list of live metrics with sparklines (hero and capstone). */
-export function MetricList({ metrics, sim }: { metrics: MetricSpec[]; sim: Sim }) {
-  const smooth = useSmoothed();
-  const values = metrics.map((m) => smooth(m.label, measure(sim, m), m));
-  const history = useHistory(sim, metrics, values);
-  return (
-    <dl className="mlist">
-      {metrics.map((m, i) => (
-        <div key={m.label} className={`mrow tone-${toneOf(m, values[i], sim.spec.sloMs)}`}>
-          <dt title={m.hint}>
-            {m.label}
-            <Target m={m} sloMs={sim.spec.sloMs} />
-          </dt>
-          <dd className="num">{formatMetric(m, values[i])}</dd>
-          <dd className="mspark">
-            <Spark data={history[m.label] ?? []} />
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
 
 export interface Column {
   label: string;
@@ -529,7 +507,7 @@ export function MetricSummary({ metric, columns, verdict, onOpen }: { metric: Me
   );
 }
 
-function Spark({ data }: { data: number[] }) {
+export function Spark({ data }: { data: number[] }) {
   if (data.length < 2) return <svg className="spark" viewBox="0 0 60 18" aria-hidden="true" />;
   const max = Math.max(...data, 1e-9) * 1.1;
   const pts = data.map((d, i) => `${((i / (HISTORY - 1)) * 60).toFixed(1)},${(17 - (d / max) * 15).toFixed(1)}`).join(" ");
