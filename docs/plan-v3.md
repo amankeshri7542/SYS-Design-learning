@@ -768,6 +768,17 @@ Networking PR gates on 2026-10-24: typecheck, 189 unit tests, build, and the bro
 - **Callouts keep clear of rail captions**, and one pointing at a captioned rail ends its leader at the top of the caption. **Balancers say how they pick:** "nearest healthy", "by weight".
 - **Edges added:** N1 before F1, N8 before R2. The home page's start button now points at N1, the first live stop on the path.
 
+**Decisions made while building F5, F6, C5 and D1:**
+
+Gates on 2026-10-24: typecheck, 207 unit tests, build, and the browser suite: 616 tests, of which 605 passed and 11 were skipped, the 4 frame budgets included. F5, F6, C5 and D1 were checked by eye at the four sizes, light and dark.
+
+- **Three lesson PRs, not one per line.** Networking has six M6 lessons; Foundations, Caching and Data have four between them; Resilience and Operating have five. Each PR keeps to the plan's 4–6 lessons.
+- **F5 needed a hook: `NodeSpec.sessions`.** A server keeps its users' sessions in memory; a user whose session is on another server, or was lost in a crash, is signed out once (an error) and signed in from then on. The sticky balancer hashes user ids (`hash`), so a crash re-spreads most users, and server 2's return moves its users back again. The fix's session store is 4 ms away, in the same data centre.
+- **C5 needed a hook: `ClientSpec.absentKeys`,** the size of the pool missing ids are drawn from (one draw, so traffic is unchanged). C5 has three steps: no defence, remember "not found" (which works only while the bot repeats its 40 ids: a knob), then an existence check that stops missing ids either way.
+- **F6 warms up for 12 s** (`warmMs`) so its 20 s availability window already holds about 720 answers when the learner crashes the server. The claim test now runs a scene's warm-up before averaging, as the player does; the one other lesson with an armed fault and a warm-up (D4) still passes. The error budget row draws its remaining share as a gauge, the same ink rule as the time rows. The availability gauge the plan named is this row.
+- **D1 prices reads and writes with `serviceBy`:** a scan costs 0.6 ms per 1,000 rows, an index 1 + ¼·log₂(rows) ms, and a write 4 ms, or 10 ms with the index to update. "Double the table" rebuilds the scene with twice the rows.
+- **Edge added:** D1 before D2.
+
 ### M7 — Engine B2a (messages and delivery) and 7 lessons (L)
 
 **Goal:** a message can be acknowledged, resent, deduplicated, redelivered, dead-lettered, held back by a full consumer, published reliably with an outbox, and ordered per key in a partitioned log.

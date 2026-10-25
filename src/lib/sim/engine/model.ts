@@ -156,6 +156,8 @@ export interface NodeRt {
   rolledBack: Set<string>;
   /** When it last turned a request away by shedding (output only: the stage's SHEDDING badge). */
   shedAt: number;
+  /** Sessions it holds in memory (`client:key`), lost when it crashes. */
+  sessions: Set<string>;
 }
 
 export interface Note {

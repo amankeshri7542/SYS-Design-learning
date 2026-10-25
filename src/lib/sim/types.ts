@@ -68,6 +68,8 @@ export interface ClientSpec {
   tag?: string;
   /** Share of requests for keys that don't exist: they always miss a cache, unless it remembers "not found". */
   absent?: number;
+  /** How many different missing keys those requests draw from (default a million, so they almost never repeat). */
+  absentKeys?: number;
 }
 
 export interface NodeSpec {
@@ -137,6 +139,11 @@ export interface NodeSpec {
   rollback?: { target: string; errorsAbove: number };
   /** Shown as a badge ("v2"). */
   version?: string;
+  /**
+   * Server: keeps each user's session in its own memory. A user who signed in on another server, or before this one
+   * restarted, is signed out: that request fails, and the next one finds the session here.
+   */
+  sessions?: boolean;
   /**
    * Crash when the line or the load stays past a mark for `forMs`; come back after `restartMs` with a cold ramp:
    * workers return over `warmMs`.

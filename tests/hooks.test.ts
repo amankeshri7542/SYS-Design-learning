@@ -448,3 +448,41 @@ test("property: what goes on downstream never changes the traffic that arrives",
   assert.ok(base.length > 300);
   for (const tweak of [{ shed: 6 }, { order: "lifo" as const }, { slots: 2 }, { least: true }]) assert.deepEqual(trace(everything(tweak)), base, JSON.stringify(tweak));
 });
+
+// ------------------------------------------------------------------------------------------------ added with the M6 lessons
+
+test("sessions in a server's memory: users moved to another server, or back after a crash, are signed out once", () => {
+  const spec = (sessions: boolean) =>
+    scene([
+      client("u", 60, "lb", { keys: 30 }),
+      lb("lb", ["a", "b", "c"], { algo: "hash", health: { everyMs: 50, failAfter: 2, passAfter: 2, timeoutMs: 200 } }),
+      server("a", { sessions }),
+      server("b", { sessions }),
+      server("c", { sessions }),
+    ], { windowMs: 1e9 });
+  const signedOut = (sessions: boolean) => {
+    const sim = new Sim(spec(sessions));
+    sim.step(1500);
+    const before = sim.done.filter((d) => d.result === "error").length;
+    sim.setUp("b", false);
+    sim.step(1500);
+    sim.setUp("b", true);
+    sim.step(1500);
+    return { before, after: sim.done.filter((d) => d.result === "error").length - before };
+  };
+  const kept = signedOut(true);
+  assert.equal(kept.before, 0, "the first visit signs users in");
+  // Each of b's users fails once when moved, and once more when sent back to b, which lost their sessions.
+  assert.ok(kept.after > signedOut(false).after + 10, `${kept.after} signed out, against ${signedOut(false).after} errors without sessions`);
+});
+
+test("absent keys from a small pool repeat, so remembering 'not found' spares the database", () => {
+  const build = (absentKeys?: number) =>
+    scene([
+      client("bot", 60, "c", { absent: 1, absentKeys }),
+      { id: "c", kind: "cache", label: "c", at: [50, 50], to: ["db"], capacity: 500, negativeTtlMs: 60_000 },
+      { id: "db", kind: "db", label: "db", at: [90, 50], slots: 8, serviceMs: 20 },
+    ]);
+  const served = (absentKeys?: number) => run(build(absentKeys), 5000).nodes.get("db")!.served;
+  assert.ok(served(50) < served() / 3, `${served(50)} lookups with 50 missing ids, ${served()} with a million`);
+});

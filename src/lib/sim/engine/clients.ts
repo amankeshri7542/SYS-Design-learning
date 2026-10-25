@@ -32,7 +32,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
         const cost = c.heavy && n.rng() < c.heavy.share ? c.heavy.cost : 1;
         // A request for a key that doesn't exist: a read of a key no one ever writes. Drawn only when the scene asks.
         const absent = !!c.absent && n.rng() < c.absent;
-        const k = absent ? 1_000_000 + Math.floor(n.rng() * 1_000_000) : key;
+        const k = absent ? 1_000_000 + Math.floor(n.rng() * (c.absentKeys ?? 1_000_000)) : key;
         // Held clients keep their clock and their draws, and send nothing: whenever the traffic starts, it is the
         // same traffic from then on.
         if (!this.holding) this.spawn(n, k, absent ? "read" : op, t, 0, absent ? 1 : cost, { absent });
