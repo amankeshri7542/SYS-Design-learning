@@ -50,7 +50,6 @@ const work: Partial<Sim> & ThisType<Sim> = {
         if (this.existence(n, r)) return;
         return this.admit(n, r);
       default:
-        if (r.op === "sub" && n.spec.hold) return this.holdSub(n, r);
         if (n.spec.sessions && !this.signedIn(n, r)) return this.respond(r, "error");
         if (n.spec.idempotent && this.repeat(n, r)) return;
         if (r.deliveryOf && this.nodes.get(r.stack[0]?.id)?.spec.ack?.mode === "receive") this.sendAck(n, r);
@@ -371,6 +370,8 @@ const work: Partial<Sim> & ThisType<Sim> = {
     if (n.spec.failRate && n.rng() < n.spec.failRate) return this.fail(n, r);
     if (n.spec.kind === "lb") return this.route(n, r);
     if (n.spec.kind === "db") return this.dbDone(n, r);
+    // Taking a connection in costs a worker's time (a handshake, signing the user in); then it is held open.
+    if (r.op === "sub" && n.spec.hold) return this.holdSub(n, r);
     // A feed keeps the latest news item it hears of, and a server holding connections pushes each one down all of them;
     // an item handed on by a topic needs no answer. A read of a feed is answered with its latest item.
     if (r.news && (n.spec.feed || n.spec.hold)) {

@@ -1062,3 +1062,33 @@ test("property: every request is accounted for and nothing leaks, with every con
     "batch 2b",
   );
 });
+
+test("polling: each user asks once per interval, on its own schedule, and the polls are not arrivals", () => {
+  const spec = scene([client("users", 0, "feed", { keys: 50, poll: 500 }), client("news", 2, "feed", { news: true, writes: 1 }, [0, 90]), server("feed", { slots: 8, serviceMs: 2, feed: true })], {
+    links: { "users>feed": 20, "news>feed": 5 },
+    windowMs: 1e9,
+  });
+  const sim = new Sim(spec, { trace: true });
+  sim.step(5000);
+  const polls = sim.done.filter((d) => d.op === "read").length;
+  assert.ok(Math.abs(polls - 50 * (5000 / 500)) < 60, `about ${50 * 10} polls: ${polls}`);
+  assert.ok(sim.trace.every((s) => s.client === "news"), "only the news desk's items are traffic");
+  assert.ok(value(sim, m("pushLag")) < 600, "news waits at most one interval, and a trip");
+});
+
+test("taking a connection in costs a worker: a reconnect storm swamps the server that is left", () => {
+  const spec = (serviceMs: number) =>
+    scene(
+      [client("users", 0, "lb", { keys: 120, subscribe: { holdMs: 1e9, reconnectMs: 0 } }), lb("lb", ["a", "b"], { health: { everyMs: 50, failAfter: 1, passAfter: 1, timeoutMs: 100 } }), server("a", { hold: { max: 500 }, serviceMs }), server("b", { hold: { max: 500 }, serviceMs })],
+      { links: { "users>lb": 20, "lb>a": 5, "lb>b": 5 } },
+    );
+  // Connections server b holds 300 ms after a crash sends a's sixty users to it at once.
+  const storm = (serviceMs: number) => {
+    const sim = run(spec(serviceMs), 3000);
+    sim.setUp("a", false);
+    sim.step(300);
+    return value(sim, m("connections", { nodes: ["b"] }));
+  };
+  assert.ok(storm(40) < 100, `taken in one worker at a time, 40 ms each, they wait their turn (${storm(40)} back)`);
+  assert.ok(storm(1) >= 115, "taken in cheaply, they are all back at once");
+});

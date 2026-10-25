@@ -50,6 +50,9 @@ import handshakesAndKeepAlive from "./scenes/handshakes-and-keep-alive";
 import windowsAndFlowControl from "./scenes/windows-and-flow-control";
 import congestionControl from "./scenes/congestion-control";
 import headOfLineBlocking from "./scenes/head-of-line-blocking";
+import pushVsPoll from "./scenes/push-vs-poll";
+import l4VsL7 from "./scenes/l4-vs-l7";
+import heartbeats from "./scenes/heartbeats";
 import capstone from "./stories/capstone";
 import webCrawler from "./stories/web-crawler";
 
@@ -98,6 +101,9 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
   "windows-and-flow-control": windowsAndFlowControl,
   "congestion-control": congestionControl,
   "head-of-line-blocking": headOfLineBlocking,
+  "push-vs-poll": pushVsPoll,
+  "l4-vs-l7": l4VsL7,
+  heartbeats,
 };
 
 export const STORY_DEFS: Record<string, StoryDef> = { capstone, "web-crawler": webCrawler };

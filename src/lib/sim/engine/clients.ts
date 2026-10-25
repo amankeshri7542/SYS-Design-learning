@@ -19,7 +19,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     for (const n of this.list) {
       const c = n.spec.client;
       if (!c) continue;
-      if (c.subscribe && !n.opened && !this.holding) this.opens(n);
+      if ((c.subscribe || c.poll) && !n.opened && !this.holding) this.opens(n);
       let guard = 0;
       while (n.nextArrival <= t && guard++ < 50) {
         const rate = this.rate(n);
@@ -55,7 +55,12 @@ const clients: Partial<Sim> & ThisType<Sim> = {
         this.resubs = this.resubs.filter((p) => p.at > t);
         for (const p of due) {
           const n = this.nodes.get(p.client);
-          if (n && !n.subOf.has(p.user)) this.subscribe(n, p.user);
+          if (!n) continue;
+          // A poll goes now, and the next is due one interval on, whatever this one meets.
+          if (p.poll) {
+            this.spawn(n, p.user, "read", t, 0, 1, { untraced: true });
+            this.resubs.push({ at: t + (n.spec.client?.poll ?? 1000), client: p.client, user: p.user, poll: true });
+          } else if (!n.subOf.has(p.user)) this.subscribe(n, p.user);
         }
       }
     }
@@ -94,7 +99,7 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     else if (timeout) r.deadline = this.t + timeout;
     this.attempts.add(this.t);
     if (attempt === 0) this.logical.add(this.t);
-    if (attempt === 0 && this.tracing) this.trace.push({ t: this.t, client: n.spec.id, key, op, cost });
+    if (attempt === 0 && this.tracing && !extra.untraced) this.trace.push({ t: this.t, client: n.spec.id, key, op, cost });
     const target = n.spec.to?.[0];
     if (!target) return;
     if (n.spec.connect || c.window) this.dial(n, r, this.resolve(n, target));

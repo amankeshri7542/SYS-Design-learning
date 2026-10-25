@@ -116,6 +116,12 @@ export interface ClientSpec {
    * within `timeoutMs`, gives up on the connection and opens a new one.
    */
   subscribe?: { holdMs: number; reconnectMs?: number; heartbeat?: { everyMs: number; missAfter: number; timeoutMs: number } };
+  /**
+   * Each of its `keys` users asks for news every this many ms (polling), on a schedule of its own, instead of sending
+   * requests at `rate`. Like a held connection, a poll is a user keeping up, not new traffic: it is left out of the
+   * arrival trace.
+   */
+  poll?: number;
 }
 
 export interface NodeSpec {
