@@ -162,6 +162,20 @@ test("every scene builds and runs at every knob extreme without throwing", () =>
   }
 });
 
+test("a scene whose links lose messages gives everyone who waits for one a time to stop waiting", () => {
+  for (const f of lessons.flatMap((l) => l.figures)) {
+    const corners = [defaultsOf(f), ...(f.knobs ?? []).flatMap((k) => ("options" in k ? k.options.map((o) => o.value) : [k.min, k.max]).map((v) => ({ ...defaultsOf(f), [k.id]: v })))];
+    for (const v of corners) {
+      const spec = f.build(v);
+      if (!Object.values(spec.links ?? {}).some((l) => typeof l === "object" && (l.loss ?? 0) > 0)) continue;
+      for (const n of spec.nodes) {
+        if (n.client) assert.ok((n.client.timeoutMs ?? spec.timeoutMs ?? 0) > 0, `${f.title}: ${n.id} gives up on a lost request`);
+        if (n.blocking) assert.ok(n.callTimeoutMs || n.deadlines === "honour", `${f.title}: ${n.id} stops holding a worker for a lost call`);
+      }
+    }
+  }
+});
+
 test("a fault offered in several steps is one fault: the same label always has the same id", () => {
   for (const l of lessons) {
     const ids = new Map<string, string>();

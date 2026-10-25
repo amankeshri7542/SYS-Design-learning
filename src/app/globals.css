@@ -1162,6 +1162,13 @@ svg.stroke {
   stroke-width: 1.6;
 }
 
+.dot .cross {
+  fill: none;
+  stroke: var(--dot-err);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
 .dot .socket-demo {
   fill: var(--socket);
   stroke: var(--dot-req);
