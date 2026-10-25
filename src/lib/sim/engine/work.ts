@@ -127,11 +127,18 @@ const work: Partial<Sim> & ThisType<Sim> = {
     // Refused at a full line: it falls from the line's tail.
     const full = n.queue.length >= (n.spec.queueMax ?? Infinity);
     this.effect("drop", n.spec.id, full ? n.queue.length : undefined);
-    if (r.detached) {
+    if (r.detached && !this.waitedOn(r)) {
+      if (r.deliveryOf && r.acked) this.lostJobs.add(this.t);
       r.phase = "gone";
       return;
     }
     this.respond(r, "error");
+  },
+
+  /** A detached message (no one sent it expecting an answer) that a blocking server is nonetheless holding a worker for. */
+  waitedOn(r: Req) {
+    const caller = r.stack[r.stack.length - 2];
+    return !!caller && !!this.nodes.get(caller.id)?.held.includes(r);
   },
 
   admit(n: NodeRt, r: Req) {
@@ -157,7 +164,7 @@ const work: Partial<Sim> & ThisType<Sim> = {
   /** Turned away on purpose, at once: a slate square, not a failure. */
   refuse(n: NodeRt, r: Req) {
     this.effect("reject", n.spec.id);
-    if (r.detached) {
+    if (r.detached && !this.waitedOn(r)) {
       r.phase = "gone";
       return;
     }
@@ -353,10 +360,10 @@ const work: Partial<Sim> & ThisType<Sim> = {
     n.served++;
     // A bad deploy: some share of the work fails.
     if (n.spec.failRate && n.rng() < n.spec.failRate) return this.fail(n, r);
-    // A poison job fails every worker that tries it.
-    if (r.poison && n.spec.sink) return this.fail(n, r);
     if (n.spec.kind === "db") return this.dbDone(n, r);
     const calls = (n.spec.calls?.[r.op === "write" ? "write" : "read"] ?? n.spec.to ?? []).slice();
+    // A poison job fails wherever it is finally handled: a worker, or the last server on its way (a dead website).
+    if (r.poison && (n.spec.sink || !calls.length)) return this.fail(n, r);
     if (!calls.length) {
       this.remember(n, r, "ok");
       if (n.spec.sink) {
@@ -413,6 +420,14 @@ const work: Partial<Sim> & ThisType<Sim> = {
     }
     if (r.relay) {
       if (r.result !== "error") n.outbox = n.outbox.filter((e) => e.id !== r.logicalId);
+      r.phase = "gone";
+      return;
+    }
+    // A worker that calls on (a fetcher) acks by answering: its copy coming back answered is the ack. One acked on
+    // receipt and coming back failed is a job lost.
+    if (n.spec.kind === "queue" && r.deliveryOf) {
+      if (r.result !== "error") n.inflight.delete(r.deliveryOf);
+      else if (r.acked) this.lostJobs.add(this.t);
       r.phase = "gone";
       return;
     }

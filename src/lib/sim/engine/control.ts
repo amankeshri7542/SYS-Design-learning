@@ -220,6 +220,8 @@ const control: Partial<Sim> & ThisType<Sim> = {
       abandoned: r.abandoned,
       logicalId: r.logicalId,
       detached: r.detached,
+      deliveryOf: r.deliveryOf,
+      acked: r.acked,
       stack: r.stack.slice(0, depth + 1).map((f) => ({ ...f, calls: [] })),
       at: n.spec.id,
     });

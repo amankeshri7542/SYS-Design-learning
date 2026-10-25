@@ -662,3 +662,36 @@ test("property: every request is accounted for and nothing leaks, with every mes
     "batch 2a",
   );
 });
+
+test("a fetcher acks its job by answering; a dead site's job comes back; a crash loses only what was acked on receipt", () => {
+  const spec = (mode: "receive" | "finish", poison?: number, workMs = 10) =>
+    scene([
+      client("u", 30, "q", { poison }),
+      queue("q", ["f1", "f2"], { ack: { mode, visibilityMs: 900 } }),
+      server("f1", { slots: 4, serviceMs: workMs, blocking: true, calls: { read: ["web"], write: ["web"] }, callTimeoutMs: 2000 }),
+      server("f2", { slots: 4, serviceMs: workMs, blocking: true, calls: { read: ["web"], write: ["web"] }, callTimeoutMs: 2000 }),
+      server("web", { slots: 64, serviceMs: 150 }),
+    ], { windowMs: 1e9 });
+  const healthy = run(spec("finish"), 4000);
+  assert.equal(value(healthy, m("redelivered")), 0, "every answer acks its job: nothing is handed out again");
+  assert.ok(healthy.nodes.get("q")!.inflight.size <= 10, "jobs out are only those being fetched");
+  assert.ok(value(run(spec("finish", 0.1), 4000), m("redelivered")) > 0, "a dead site fails its job, which comes back");
+  // The fetcher waiting on a dead site hears the failure at once, rather than holding a worker until its call times out.
+  const dead = new Sim(spec("finish", 0.3));
+  for (let t = 0; t < 3000; t += 50) {
+    dead.step(50);
+    assert.deepEqual(leakedHolds(dead), []);
+  }
+  const crash = (mode: "receive" | "finish", workMs?: number) => {
+    const sim = new Sim(spec(mode, undefined, workMs));
+    sim.step(1500);
+    sim.setUp("f1", false);
+    sim.step(2000);
+    return sim;
+  };
+  assert.ok(value(crash("receive"), m("lostJobs")) > 0, "acked on receipt, the crashed fetcher's pages are lost");
+  // Those it was still working on (not waiting on the site) are lost too.
+  assert.ok(value(crash("receive", 200), m("lostJobs")) > value(crash("receive"), m("lostJobs")));
+  assert.equal(value(crash("finish"), m("lostJobs")), 0);
+  assert.ok(value(crash("finish"), m("redelivered")) > 0, "acked when done, they are handed out again");
+});

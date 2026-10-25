@@ -47,6 +47,7 @@ import deadLetterQueues from "./scenes/dead-letter-queues";
 import outbox from "./scenes/outbox";
 import partitionedLogs from "./scenes/partitioned-logs";
 import capstone from "./stories/capstone";
+import webCrawler from "./stories/web-crawler";
 
 export const SCENE_DEFS: Record<string, LessonScene> = {
   "latency-and-throughput": latencyAndThroughput,
@@ -91,7 +92,7 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
   "partitioned-logs": partitionedLogs,
 };
 
-export const STORY_DEFS: Record<string, StoryDef> = { capstone };
+export const STORY_DEFS: Record<string, StoryDef> = { capstone, "web-crawler": webCrawler };
 
 /** Every live lesson, whole, in path order. */
 export const ALL_LESSONS: Lesson[] = LESSONS.map((m) => withScene(m, SCENE_DEFS[m.slug]));

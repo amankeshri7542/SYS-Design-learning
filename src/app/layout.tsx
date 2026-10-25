@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Atkinson_Hyperlegible_Next, Newsreader, Overpass, Overpass_Mono } from "next/font/google";
+import { Hydrated } from "@/components/hydrated";
 import "./globals.css";
 
 // All four faces are variable fonts: one file each covers every weight.
@@ -35,6 +36,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           Skip to content
         </a>
         <main id="main">{children}</main>
+        <Hydrated />
       </body>
     </html>
   );
