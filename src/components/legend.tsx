@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { DotKind } from "@/lib/lessons/beats";
 
-const DOTS: { kind: DotKind; shape: string; cls: string; name: string; text: string }[] = [
+export const DOTS: { kind: DotKind; shape: string; cls: string; name: string; text: string }[] = [
   { kind: "req", shape: "circle", cls: "req", name: "Request", text: "On its way, or waiting its turn." },
   { kind: "late", shape: "circle", cls: "slow", name: "Running late", text: "Past the latency target and still going." },
   { kind: "ok", shape: "circle", cls: "ok", name: "Answered", text: "Heading back to the user with a good result." },
@@ -99,19 +99,5 @@ export function KeyPopover({ dots }: { dots?: DotKind[] }) {
         )}
       </div>
     </>
-  );
-}
-
-/** Compact strip of the dot vocabulary for the home page. */
-export function DotStrip() {
-  return (
-    <ul className="dot-strip" aria-label="What the dots mean">
-      {DOTS.filter((d) => d.kind !== "job" && d.kind !== "probe").map((d) => (
-        <li key={d.name}>
-          <Dot shape={d.shape} cls={d.cls} />
-          {d.name}
-        </li>
-      ))}
-    </ul>
   );
 }

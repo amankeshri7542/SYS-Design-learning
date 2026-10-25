@@ -66,7 +66,7 @@ export interface FigureDef {
   trace?: TraceSpec;
 }
 
-export type LineId = "foundations" | "caching" | "data" | "async" | "resilience" | "capstone";
+export type LineId = "networking" | "foundations" | "caching" | "data" | "async" | "resilience" | "operating" | "stories";
 
 export interface Line {
   id: LineId;
@@ -77,25 +77,49 @@ export interface Line {
 
 export type Level = "beginner" | "intermediate" | "advanced";
 
-export interface Lesson {
+/**
+ * A catalog entry (`catalog.ts`): what the home page, the route map and a page's metadata need, and none of its scenes.
+ * Planned entries are the course still to be built: they hold their final code and their place on the path, but no
+ * page exists for them yet.
+ */
+export interface LessonMeta {
+  /** The stable key: URLs and the visited list use it. */
   slug: string;
+  /** The display code. Frozen once assigned: `tests/catalog.snapshot.json` shows any change in review. */
   code: string;
   line: LineId;
   title: string;
   why: string;
-  level?: Level;
-  /** Minutes the lesson takes, end to end. */
-  minutes?: number;
+  level: Level;
+  /** Minutes it takes, end to end: 3–12 for a lesson, 15–25 for a story. */
+  minutes: number;
+  /** What people search for: the concept's other names, and the products in its "Seen in". */
+  tags: string[];
+  /** Slugs best seen first. A live entry lists only live ones. The map dims a station until they are visited. */
+  requires?: string[];
+  kind: "lesson" | "story";
+  status: "live" | "planned";
+  /** Old slugs that redirect here (`next.config.ts`). */
+  aliases?: string[];
+}
+
+/** A lesson's scenes and narration: the default export of `scenes/<slug>.ts`. */
+export interface LessonScene {
   /** A question the learner has felt, ≤16 words, using no term the lesson teaches. */
-  hook?: string;
+  hook: string;
   /** The dot kinds the lesson shows: its local key. */
-  dots?: DotKind[];
+  dots: DotKind[];
   figures: FigureDef[];
   /** One or two questions on the Recap. */
-  checks?: Check[];
+  checks: Check[];
   /** `rule`: the lesson in ≤8 memorable words. `interview`: one line to say in an interview (advanced lessons). */
-  takeaways: { use: string; catch: string; seen: string; rule?: string; interview?: string };
+  takeaways: { use: string; catch: string; seen: string; rule: string; interview?: string };
 }
+
+/** A lesson whole: its catalog entry and its scenes. */
+export type Lesson = LessonMeta & LessonScene;
+
+export const withScene = (meta: LessonMeta, scene: LessonScene): Lesson => ({ ...meta, ...scene });
 
 export function isChoice(k: Knob): k is ChoiceKnob {
   return "options" in k;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { getLesson } from "../src/lib/lessons";
+import { lessonOf } from "../src/lib/lessons/all";
 import { BeatRunner, GRID, fillIn, placeholdersIn, plainText, sequenceOf, stepGrid, termsIn, unresolved, wordCount, type Beat } from "../src/lib/lessons/beats";
 import { beatsOf, buildSteps, defaultsOf, holdsTraffic } from "../src/lib/lessons/types";
 import { walk } from "../src/lib/lessons/walk";
@@ -21,7 +21,7 @@ const scene = (extra: Partial<SceneSpec> = {}): SceneSpec => ({
 
 /** Run a lesson's first step frame by frame at a given frame length, firing beats on the grid as the player does. */
 function play(slug: string, frameMs: number, until = 6000) {
-  const lesson = getLesson(slug)!;
+  const lesson = lessonOf(slug)!;
   const f = lesson.figures[0];
   const sims = buildSteps(lesson.figures, lesson.figures.map(defaultsOf)).map((s) => new Sim(s));
   if (holdsTraffic(lesson.figures)) for (const s of sims) s.hold();
@@ -169,7 +169,7 @@ test("build lines come first, a part at a time, and the traffic starts once they
 });
 
 test("numbers fill in from the named world and node; unknown ones are reported", () => {
-  const lesson = getLesson("caching")!;
+  const lesson = lessonOf("caching")!;
   const sims = buildSteps(lesson.figures, lesson.figures.map(defaultsOf)).map((s) => new Sim(s));
   for (const s of sims) s.step(3000);
   const ctx = { sims, tones: ["problem", "fix"], metrics: lesson.figures.flatMap((f) => f.metrics), current: 1 };
@@ -187,7 +187,7 @@ test("a reader's words: terms read as their plain words, numbers as one word", (
 });
 
 test("A3: retrying at once never recovers from one short stall; backoff with a budget does", () => {
-  const lesson = getLesson("retries-and-backoff")!;
+  const lesson = lessonOf("retries-and-backoff")!;
   const [problem, fix] = buildSteps(lesson.figures, lesson.figures.map(defaultsOf)).map((s) => new Sim(s));
   for (const s of [problem, fix]) s.step(1500);
   for (const s of [problem, fix]) s.fire("The service stalls");
@@ -203,7 +203,7 @@ test("A3: retrying at once never recovers from one short stall; backoff with a b
 
 test("the reference walks: every beat fires and every prediction is true", () => {
   for (const slug of ["latency-and-throughput", "caching", "retries-and-backoff"]) {
-    const w = walk(getLesson(slug)!);
+    const w = walk(lessonOf(slug)!);
     assert.deepEqual(w.missing, [], `${slug}: every beat fires`);
     assert.equal(w.prediction?.holds, true, `${slug}: the prediction's answer is what happens`);
   }

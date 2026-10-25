@@ -8,16 +8,22 @@ Live at **[sys-design-learning.vercel.app](https://sys-design-learning.vercel.ap
 
 ## The route
 
-There are 18 lessons on five "lines", ending in a capstone:
+The course is a transit map. Lines are topics, and three fare zones are the levels: beginner, intermediate and advanced. There are 18 lessons live on five lines, plus one journey, a real system you build stage by stage:
 
 | Line | Stations |
 |---|---|
-| **F · Foundations** | Latency & throughput · Scaling up vs out · Load balancing · Health checks |
-| **C · Caching** | Caching · CDN · Expiry & stale data · Cache stampede |
-| **D · Data** | Read replicas · Sharding · Consistent hashing · Consistency vs availability |
-| **A · Async** | Message queues · Publish/subscribe · Retries & backoff |
-| **R · Resilience** | Rate limiting · Circuit breakers · Autoscaling |
-| **★ Capstone** | Keep a URL shortener alive through four traffic stages |
+| **F · Foundations** | F1 Latency & throughput · F2 Scaling up vs out · F3 Load balancing · F4 Health checks |
+| **C · Caching** | C1 Caching · C2 CDN · C3 Expiry & stale data · C4 Cache stampede |
+| **D · Data** | D2 Read replicas · D3 Sharding · D4 Consistent hashing · D7 Consistency vs availability |
+| **A · Async** | A1 Message queues · A2 Publish/subscribe · A3 Retries & backoff |
+| **R · Resilience** | R1 Rate limiting · R2 Circuit breakers · R3 Autoscaling |
+| **★ Journeys** | S0 Keep a URL shortener alive through four traffic stages |
+
+The catalog plans 57 lessons on seven lines (Networking and Operating join) and nine journeys. Each has its final code already, so a line shows gaps (D1, D5, D6…) until its missing lessons are built; see [docs/plan-v3.md](docs/plan-v3.md). One recommended path interleaves the lines, and every lesson's **Next stop** follows it.
+
+The home page draws the map with the zones as bands. Hover or focus a station to see its card with the lesson running; a dimmed station is best seen after another. On a phone the map becomes a board you can filter by level and search by any name a concept goes by ("thundering herd", "429", "Kafka").
+
+![The route map: lines as rows, levels as zone bands, and a station's card with its lesson running](docs/screenshots/route-map.png)
 
 Every lesson fits on one screen, so you never scroll to find the simulation and then scroll back to read about it:
 
@@ -34,7 +40,7 @@ Every lesson fits on one screen, so you never scroll to find the simulation and 
 
 <img src="docs/screenshots/mobile-rate-limiting.png" alt="The rate-limiting lesson on a phone" width="300">
 
-In the capstone you grow the architecture yourself. You add servers, a cache, replicas and a rate limiter, and each stage unlocks once you hold the latency and error target.
+In a journey you grow the architecture yourself. In the URL shortener you add servers, a cache, replicas and a rate limiter, and each stage unlocks once you hold the latency and error target. Every journey runs on the same story player; a new one is data.
 
 ![Capstone: architecture controls, cost, and a target that has to hold](docs/screenshots/capstone.png)
 
@@ -71,8 +77,10 @@ npm test               # engine invariants + every lesson's claim, in numbers
 npm run build
 npx playwright install chromium
 npm run test:browser   # desktop + mobile: pages render, scenes animate, controls work
-npm run tune           # print each figure's metrics over a simulated run
+npm run tune           # print each figure's metrics over a simulated run (--beats, --json, --line=, --level=)
 ```
+
+To start a planned lesson: `npm run new-lesson -- <slug>` writes its skeleton and registers it; the tests fail until it is written.
 
 `npm test` asserts that, for every lesson, the fix beats the problem on its headline metric. A tuning change that would make an animation teach something false fails the build.
 
@@ -80,24 +88,27 @@ npm run tune           # print each figure's metrics over a simulated run
 
 ```text
 src/
-  app/                    Next.js App Router: home, /learn/[slug] (static), 404
+  app/                    Next.js App Router: home, /learn/[slug] (static), /glossary, 404
   components/
     shell.tsx             the one-screen layout (bar · stage | panel · dock) and the beat strip
+    lesson-page.tsx       loads one lesson's scenes (or one story) per page, and the next stop's when idle
     player.tsx            the lesson player
-    capstone.tsx          the stage-by-stage capstone, in the same shell
+    story-player.tsx      the stage-by-stage player every journey runs on, in the same shell
     stage.tsx             SVG nodes underneath, a canvas of moving requests on top;
                           picks a wide, compact (phone) or tall layout to fit its box
     stage-draw.ts         the canvas: requests batched by look, trails, queue pressure, effects
     live.tsx              useLiveSims (lockstep worlds + animation loop), Compare, MetricSummary, Transport
-    glyph.tsx, legend.tsx node shapes, icons, the dot key
-    hero.tsx, brand.tsx   home page scene, header and footer
-    route-map.tsx         the transit map (SVG on desktop, a strip list on phones)
+    beats.tsx, follow.tsx the narration: beats, callouts, cards; following one request
+    route-map.tsx         the transit map (zones as bands, station cards) and the phone board
+    journeys.tsx, read-scene.tsx, home-start.tsx, hero.tsx   the rest of the home page
   lib/
     sim/engine.ts         deterministic, tick-based flow simulator
     sim/metrics.ts        sliding-window p95, error, hit, utilisation, and more
     sim/layout.ts         layout coordinates → wide, compact or tall viewBox
-    lessons/*.ts          lessons as pure build(values) → SceneSpec functions
-tests/                    node:test engine + lesson tests; Playwright browser tests
+    lessons/catalog.ts    every lesson and journey, built or planned: codes, levels, the path
+    lessons/scenes/       one file per lesson: pure build(values) → SceneSpec, and its beats
+    lessons/stories/      one file per journey: a StoryDef
+tests/                    node:test engine, lesson and catalog tests; Playwright browser tests
 ```
 
 - **The engine.** The engine (`src/lib/sim`) is deterministic: a seeded PRNG drives a fixed 2 ms tick, with no I/O.

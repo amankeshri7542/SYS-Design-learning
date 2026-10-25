@@ -1,52 +1,128 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { LESSONS, getLesson, neighbours } from "../src/lib/lessons";
-import { STAGES, START, TARGET, capstoneScene, type Arch } from "../src/lib/lessons/capstone";
+import { CATALOG, COURSE, FAST_LANE, LINES, PATH, STORIES, entryOf, getLesson, isReady, lessonsOn, neighbours, nextFor } from "../src/lib/lessons";
+import { ALL_LESSONS, ALL_STORIES, SCENE_DEFS, STORY_DEFS, lessonOf } from "../src/lib/lessons/all";
 import { HERO } from "../src/lib/lessons/hero";
+import { SCENES } from "../src/lib/lessons/scenes";
+import { STORY_MODULES } from "../src/lib/lessons/stories";
+import { holds, type StoryDef } from "../src/lib/lessons/story";
 import { GLOSSARY, termOf } from "../src/lib/glossary";
 import { termsIn, unresolved, wordCount, type Focus } from "../src/lib/lessons/beats";
-import { beatsOf, buildSteps, defaultsOf, headlineOf, type FigureDef, type Lesson } from "../src/lib/lessons/types";
-import { walk } from "../src/lib/lessons/walk";
+import { beatsOf, buildSteps, defaultsOf, headlineOf, type FigureDef, type Lesson, type Values } from "../src/lib/lessons/types";
+import { claimOf, stepFiring, walk } from "../src/lib/lessons/walk";
 import { Sim } from "../src/lib/sim/engine";
-import { betterIs, measure, type MetricSpec } from "../src/lib/sim/metrics";
+import { betterIs, measure } from "../src/lib/sim/metrics";
 import type { SceneSpec } from "../src/lib/sim/types";
 
-/**
- * Step a scene by `ms`, firing its armed script as a learner's break would: the first armed event at its own `at`
- * (the rest of that run follows by itself).
- */
-function stepFiring(sim: Sim, ms: number) {
-  const first = sim.spec.script?.events.find((e) => e.armed);
-  const end = sim.t + ms;
-  if (first && sim.t < first.at && first.at <= end) {
-    sim.step(first.at - sim.t);
-    sim.fire(first.label);
-  }
-  sim.step(end - sim.t);
-}
-
-/** Average a metric over a run, after the scene's warm-up. */
-function average(spec: SceneSpec, metric: MetricSpec, ms = 7000) {
-  const sim = new Sim(spec);
-  const values: number[] = [];
-  for (let t = 0; t < ms; t += 100) {
-    stepFiring(sim, 100);
-    if (t < 800) continue;
-    const v = measure(sim, metric);
-    if (v !== null) values.push(v);
-  }
-  return values.reduce((a, b) => a + b, 0) / values.length;
-}
-
-const lessons = LESSONS.filter((l) => l.line !== "capstone");
+const lessons = ALL_LESSONS;
 const TONES = ["problem,fix", "problem,explore", "tradeoff,tradeoff", "problem,fix,fix", "problem,fix,tradeoff"];
+const LEVEL = { beginner: 0, intermediate: 1, advanced: 2 } as const;
 
-test("slugs and codes are unique, and the course runs from a first lesson to the capstone", () => {
-  assert.ok(lessons.length > 0);
-  assert.equal(new Set(LESSONS.map((l) => l.slug)).size, LESSONS.length);
-  assert.equal(new Set(LESSONS.map((l) => l.code)).size, LESSONS.length);
-  assert.equal(neighbours(LESSONS[0].slug).prev, undefined);
-  assert.equal(neighbours("capstone").next, undefined);
+// ------------------------------------------------------------------------------------------------ the catalog
+
+test("catalog: slugs and codes are unique, and every code is the one frozen in tests/catalog.snapshot.json", () => {
+  assert.equal(new Set(CATALOG.map((e) => e.slug)).size, CATALOG.length);
+  assert.equal(new Set(CATALOG.map((e) => e.code)).size, CATALOG.length);
+  const frozen = JSON.parse(readFileSync(new URL("./catalog.snapshot.json", import.meta.url), "utf8")) as Record<string, string>;
+  assert.deepEqual(Object.fromEntries(CATALOG.map((e) => [e.slug, e.code])), frozen, "a code changed: codes are frozen once assigned (plan A6)");
+});
+
+test("catalog: each line numbers its stations in level order, with its own letter", () => {
+  for (const line of LINES) {
+    const on = CATALOG.filter((e) => e.line === line.id);
+    on.forEach((e, i) => {
+      const prefix = line.id === "stories" ? "S" : line.letter;
+      assert.match(e.code, new RegExp(`^${prefix}\\d+$`), `${e.slug}: ${e.code} belongs to the ${line.name} line`);
+      if (i === 0) return;
+      const before = on[i - 1];
+      assert.ok(Number(e.code.slice(1)) > Number(before.code.slice(1)), `${line.name}: ${before.code} comes before ${e.code}`);
+      if (line.id !== "stories") assert.ok(LEVEL[e.level] >= LEVEL[before.level], `${line.name}: ${e.code} is not easier than ${before.code}`);
+    });
+  }
+  assert.equal(new Set(LINES.map((l) => l.letter)).size, LINES.length, "line letters are unique");
+});
+
+test("catalog: every entry has a level, minutes in range, a tag, a short why, and a line that exists", () => {
+  for (const e of CATALOG) {
+    assert.ok(LINES.some((l) => l.id === e.line), `${e.slug}: line ${e.line}`);
+    assert.ok(e.level in LEVEL, `${e.slug}: level`);
+    const [lo, hi] = e.kind === "story" ? [15, 25] : [3, 12];
+    assert.ok(e.minutes >= lo && e.minutes <= hi, `${e.slug}: ${e.minutes} minutes`);
+    assert.ok(e.tags.length >= 1, `${e.slug}: at least one tag`);
+    assert.ok(e.why.length < 220, `${e.slug}: why is short`);
+    assert.equal(e.kind === "story", e.line === "stories", `${e.slug}: stories, and only stories, are journeys`);
+  }
+});
+
+test("catalog: the path lists every entry exactly once", () => {
+  assert.equal(new Set(PATH).size, PATH.length, "no slug twice");
+  assert.deepEqual([...PATH].sort(), CATALOG.map((e) => e.slug).sort());
+  assert.deepEqual(
+    COURSE.map((e) => e.slug),
+    PATH.filter((s) => entryOf(s)!.status === "live"),
+    "the live course follows the path",
+  );
+  for (const s of FAST_LANE) assert.ok(entryOf(s), `fast lane: ${s} is in the catalog`);
+});
+
+test("catalog: prerequisites exist, come earlier on the path, form no cycle, and a live entry needs only live ones", () => {
+  const at = new Map(PATH.map((s, i) => [s, i]));
+  for (const e of CATALOG) {
+    for (const r of e.requires ?? []) {
+      const p = entryOf(r);
+      assert.ok(p, `${e.slug} requires ${r}, which is in the catalog`);
+      assert.ok(at.get(r)! < at.get(e.slug)!, `${e.slug} requires ${r}, which comes earlier on the path`);
+      if (e.status === "live") assert.equal(p!.status, "live", `${e.slug} is live, so ${r} must be too (or the map dims it for good)`);
+    }
+  }
+  // Earlier-on-the-path already rules out a cycle; check it directly anyway.
+  const seen = new Set<string>();
+  const visit = (s: string, trail: string[]) => {
+    assert.ok(!trail.includes(s), `cycle: ${[...trail, s].join(" → ")}`);
+    if (seen.has(s)) return;
+    seen.add(s);
+    for (const r of entryOf(s)!.requires ?? []) visit(r, [...trail, s]);
+  };
+  for (const e of CATALOG) visit(e.slug, []);
+});
+
+test("catalog: the lazy maps and the all-at-once map hold every live lesson and story, and nothing else", async () => {
+  const live = (kind: "lesson" | "story") => COURSE.filter((e) => e.kind === kind).map((e) => e.slug).sort();
+  assert.deepEqual(Object.keys(SCENES).sort(), live("lesson"));
+  assert.deepEqual(Object.keys(SCENE_DEFS).sort(), live("lesson"));
+  assert.deepEqual(Object.keys(STORY_MODULES).sort(), live("story"));
+  assert.deepEqual(Object.keys(STORY_DEFS).sort(), live("story"));
+  // Each lazy import is the module the tests run.
+  for (const [slug, load] of Object.entries(SCENES)) assert.equal((await load()).default, SCENE_DEFS[slug], `${slug}: SCENES loads its scene file`);
+  for (const [slug, load] of Object.entries(STORY_MODULES)) assert.equal((await load()).default, STORY_DEFS[slug], `${slug}: STORY_MODULES loads its story`);
+});
+
+test("the route: the dock's next stop follows the path, from its first live stop to its last", () => {
+  assert.equal(neighbours(COURSE[0].slug).prev, undefined);
+  assert.equal(neighbours(COURSE[COURSE.length - 1].slug).next, undefined);
+  for (let i = 1; i < COURSE.length; i++) assert.equal(neighbours(COURSE[i - 1].slug).next, COURSE[i]);
+  assert.equal(getLesson("request-and-response"), undefined, "a planned lesson has no page yet");
+  // Where to go next: the first stop not yet visited, after the one you were on.
+  const visited = new Set(COURSE.slice(0, 3).map((e) => e.slug));
+  assert.equal(nextFor(null, new Set()), COURSE[0]);
+  assert.equal(nextFor(null, visited), COURSE[3]);
+  assert.equal(nextFor(COURSE[1].slug, new Set([COURSE[2].slug])), COURSE[3]);
+  assert.equal(nextFor(null, new Set(COURSE.map((e) => e.slug))), undefined);
+  // A station is dimmed until what it needs has been visited.
+  const needy = COURSE.find((e) => e.requires?.length)!;
+  assert.equal(isReady(needy.slug, new Set()), false);
+  assert.equal(isReady(needy.slug, new Set(needy.requires)), true);
+  for (const line of LINES) for (const e of lessonsOn(line.id)) assert.equal(e.status, "live");
+});
+
+test("every story rides at least three lessons, its stops are live, and its stages have names and briefs", () => {
+  for (const meta of STORIES) {
+    assert.ok((meta.requires ?? []).length >= 3, `${meta.slug}: rides at least three lessons`);
+    const def = STORY_DEFS[meta.slug];
+    assert.ok(def.stages.length >= 3, `${meta.slug}: at least three stages`);
+    for (const c of def.controls) assert.ok(c.id in def.start, `${meta.slug}: ${c.id} starts somewhere`);
+  }
 });
 
 test("every lesson has a one-line why, a problem then a fix (or a trade-off pair), and short takeaways", () => {
@@ -65,7 +141,7 @@ test("every lesson has a one-line why, a problem then a fix (or a trade-off pair
 });
 
 test("every scene builds and runs at every knob extreme without throwing", () => {
-  const figures: FigureDef[] = [HERO, ...LESSONS.flatMap((l) => l.figures)];
+  const figures: FigureDef[] = [HERO, { ...HERO, build: () => HERO.build({ compact: 1 }) }, ...lessons.flatMap((l) => l.figures)];
   for (const f of figures) {
     const corners = [defaultsOf(f)];
     for (const k of f.knobs ?? []) {
@@ -125,20 +201,16 @@ for (const lesson of lessons) {
 }
 
 // The teaching claim of each lesson: the second step measurably beats the first on its headline metric.
-for (const lesson of LESSONS) {
-  const [problem, fix] = lesson.figures;
+for (const lesson of lessons) {
+  const [, fix] = lesson.figures;
   if (!fix || fix.tone === "explore") continue;
   test(`${lesson.code} ${lesson.title}: the fix beats the problem`, () => {
     const label = headlineOf(lesson.figures);
     const metric = fix.metrics.find((m) => m.label === label);
     assert.ok(metric, `${lesson.slug}: the headline “${label}” is one of the fix's metrics`);
     assert.notEqual(betterIs(metric), "neutral", `${lesson.slug}: the headline has a better direction`);
-    const [without, withFix] = buildSteps([problem, fix], [defaultsOf(problem), defaultsOf(fix)]);
-    const ms = lesson.slug === "consistent-hashing" || lesson.slug === "consistency-vs-availability" ? 9000 : 7000;
-    const a = average(withFix, metric, ms);
-    const b = average(without, metric, ms);
-    const gain = betterIs(metric) === "low" ? (b - a) / Math.max(b, 1e-9) : (a - b) / Math.max(a, 1e-9);
-    assert.ok(gain > 0.08, `${metric.label}: fix ${a.toFixed(3)} vs without ${b.toFixed(3)}`);
+    const claim = claimOf(lesson)!;
+    assert.ok(claim.gain > 0.08, `${metric.label}: fix ${claim.fix.toFixed(3)} vs without ${claim.problem.toFixed(3)}`);
   });
 }
 
@@ -256,41 +328,56 @@ for (const lesson of lessons) {
   });
 }
 
-test("the hero's looping beats and each capstone stage's opening beats point at stations that exist", () => {
-  const hero = HERO.build({});
-  const ids = new Set(hero.nodes.map((n) => n.id));
+test("the hero's looping beats point at stations that exist, in the full scene and the phone's", () => {
   assert.equal(HERO.beats?.length, 3);
   assert.ok(words(HERO.caption) <= 25, "the hero's caption is 25 words or fewer");
-  for (const b of HERO.beats ?? []) {
-    assert.ok(words(b.text) <= 16, `hero: ${b.id}`);
-    for (const n of b.focus?.nodes ?? []) assert.ok(ids.has(n), `hero: ${b.id} points at ${n}`);
-    if ("note" in b.when) assert.ok(hero.script?.events.some((e) => e.label === (b.when as { note: string }).note), `hero: ${b.id}'s event is in the loop`);
-  }
-  STAGES.forEach((stage, i) => {
-    assert.equal(stage.beats.length, 2, `stage ${i + 1} opens with two beats`);
-    const nodes = new Set(capstoneScene(START, stage).nodes.map((n) => n.id));
-    for (const b of stage.beats) {
-      assert.ok(words(b.text) <= 16, `stage ${i + 1}: ${b.id}`);
-      for (const n of b.focus?.nodes ?? []) assert.ok(nodes.has(n), `stage ${i + 1}: ${b.id} points at ${n}`);
+  for (const compact of [0, 1]) {
+    const hero = HERO.build({ compact });
+    const ids = new Set(hero.nodes.map((n) => n.id));
+    for (const b of HERO.beats ?? []) {
+      assert.ok(words(b.text) <= 16, `hero: ${b.id}`);
+      for (const n of b.focus?.nodes ?? []) assert.ok(ids.has(n), `hero (compact ${compact}): ${b.id} points at ${n}`);
+      if ("note" in b.when) assert.ok(hero.script?.events.some((e) => e.label === (b.when as { note: string }).note), `hero: ${b.id}'s event is in the loop`);
     }
-  });
+  }
 });
 
+for (const { meta, def } of ALL_STORIES) {
+  test(`${meta.code} ${meta.title}: each stage opens with two beats that point at stations it has`, () => {
+    def.stages.forEach((stage, i) => {
+      assert.equal(stage.beats.length, 2, `stage ${i + 1} opens with two beats`);
+      const nodes = new Set(def.scene(def.start, stage).nodes.map((n) => n.id));
+      for (const b of stage.beats) {
+        assert.ok(words(b.text) <= 16, `stage ${i + 1}: ${b.id}`);
+        for (const n of b.focus?.nodes ?? []) assert.ok(nodes.has(n), `stage ${i + 1}: ${b.id} points at ${n}`);
+      }
+    });
+  });
+
+  test(`${meta.code} ${meta.title}: each stage needs the next idea, and the design it was made for clears it`, () => {
+    const need = (i: number) => def.stages[i].hold * 1000 * (def.scene(def.start, def.stages[i]).timeScale ?? 0.1);
+    def.stages.forEach((stage, i) => {
+      assert.ok(bestStreak(def, stage.solution, i) >= need(i), `stage ${i + 1} is clearable`);
+      if (i > 0) assert.ok(bestStreak(def, def.stages[i - 1].solution, i) < need(i), `stage ${i + 1} needs a change`);
+    });
+  });
+}
+
 test("every glossary term is named by a lesson, and its Show me points at something in that lesson", () => {
-  const named = new Set(LESSONS.flatMap((l) => l.figures.flatMap((f) => beatsOf(f).flatMap((b) => termsIn(b.text)))));
+  const named = new Set(lessons.flatMap((l) => l.figures.flatMap((f) => beatsOf(f).flatMap((b) => termsIn(b.text)))));
   for (const t of GLOSSARY.values()) {
     if (t.key !== "p95") assert.ok(named.has(t.key), `${t.key} is named somewhere`);
     assert.ok(words(t.short) <= 20, `${t.key}: short definition`);
     if (!t.show) continue;
-    const l = getLesson(t.show.lesson);
+    const l = lessonOf(t.show.lesson);
     assert.ok(l, `${t.key}: shown in ${t.show.lesson}`);
     const nodes = new Set(buildSteps(l!.figures, l!.figures.map(defaultsOf)).flatMap((s) => s.nodes.map((n) => n.id)));
     for (const n of [...(t.show.focus.nodes ?? []), ...(t.show.focus.link ?? [])]) assert.ok(nodes.has(n), `${t.key}: shows ${n}`);
   }
 });
 
-test("D3: a hash ring moves far fewer keys than hash % N", () => {
-  const l = getLesson("consistent-hashing")!;
+test("D4: a hash ring moves far fewer keys than hash % N", () => {
+  const l = lessonOf("consistent-hashing")!;
   const moved = (f: FigureDef) => {
     const sim = new Sim(f.build(defaultsOf(f)));
     stepFiring(sim, 2400);
@@ -300,32 +387,16 @@ test("D3: a hash ring moves far fewer keys than hash % N", () => {
   assert.ok(moved(l.figures[1]) < 0.35);
 });
 
-/** Longest run of simulated ms where the capstone target holds. */
-function bestStreak(a: Arch, stage: number) {
-  const sim = new Sim(capstoneScene(a, STAGES[stage]));
+/** Longest run of simulated ms in which a story's design holds its target at a stage. */
+function bestStreak(def: StoryDef, design: Values, stage: number) {
+  const sim = new Sim(def.scene(design, def.stages[stage]));
   let streak = 0;
   let best = 0;
   for (let t = 0; t < 8000; t += 50) {
     sim.step(50);
     if (t < 600) continue;
-    const p = measure(sim, { id: "p95", label: "", tag: "user" });
-    const e = measure(sim, { id: "errors", label: "", tag: "user" }) ?? 0;
-    if (p !== null && p <= TARGET.p95 && e <= TARGET.errors) best = Math.max(best, (streak += 50));
+    if (holds(def.targets, (m) => measure(sim, m))) best = Math.max(best, (streak += 50));
     else streak = 0;
   }
   return best;
 }
-
-test("capstone: each stage needs the next idea, and the intended design clears it", () => {
-  const need = (stage: number) => STAGES[stage].hold * 1000 * 0.1;
-  const designs: Arch[] = [
-    START,
-    { ...START, cache: true },
-    { ...START, cache: true, servers: 2 },
-    { ...START, cache: true, servers: 3, limiter: true },
-  ];
-  designs.forEach((d, stage) => {
-    assert.ok(bestStreak(d, stage) >= need(stage), `stage ${stage + 1} is clearable`);
-    if (stage > 0) assert.ok(bestStreak(designs[stage - 1], stage) < need(stage), `stage ${stage + 1} needs a change`);
-  });
-});

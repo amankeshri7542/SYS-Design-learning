@@ -9,19 +9,25 @@ An animated system-design course. It's built with Next.js 16 App Router, React 1
 - `npm run dev`: start the dev server on 127.0.0.1:3000. The Playwright tests start their own on port 3100.
 - `npm run typecheck && npm test && npm run build`: the required gates.
 - `npm run test:browser`: Playwright on four projects (desktop, desktop-short, mobile, phone-landscape), then two frame-budget projects (frames-desktop, frames-mobile) that run after them, alone, with the CPU slowed 4×. Run `npx playwright install chromium` once first.
-- `npm run tune [slug] [ms]`: print each figure's metrics. Use it when changing lesson numbers.
+- `npm run tune -- [slug] [ms] [--line=<id>] [--level=<level>] [--beats] [--json]`: print each figure's metrics (and with `--beats`, when each beat fires). Use it when changing lesson numbers; compare `--json` before and after an engine change.
+- `npm run new-lesson -- <slug>`: turn a planned catalog entry into a lesson skeleton, registered everywhere it must be.
 
 ## Where things live
 
 - `src/lib/sim/engine.ts`: the deterministic simulator. All randomness comes from seeded per-node streams.
   - Keep arrivals independent of downstream behaviour, so a problem scene and its fix see the same traffic.
   - What the stage draws is output only: effects (`fx`: a cache's fill and evict, a node running hot, a drop with its queue slot) and per-link traffic (`links`, read through `flowOf`). Reading or clearing it never changes a run; `tests/motion.test.ts` checks that.
-- `src/lib/lessons/*.ts`: lessons, as pure `build(values) => SceneSpec`, with their narration as data (`parts`, `beats`, `predict`, `break`, `checks`).
-  - `tests/lessons.test.ts` asserts the fix beats the problem on its headline metric (`headlineOf`: `FigureDef.headline.metric`, by default the fix's first metric), firing armed faults at their `at` as a learner's break would.
+- `src/lib/lessons/catalog.ts`: every lesson and story, built or planned, as metadata only (slug, frozen code, line, level, minutes, tags, `requires`, kind, status), plus `LINES`, the recommended `PATH` and the interview `FAST_LANE`. `index.ts` is the registry over it (`COURSE`, `LESSONS`, `STORIES`, `neighbours`, `nextFor`, `isReady`…): metadata, safe anywhere.
+  - `scenes/<slug>.ts`: one lesson's scenes, as pure `build(values) => SceneSpec`, with their narration as data (`parts`, `beats`, `predict`, `break`, `checks`). Pages load them one at a time through `scenes/index.ts` (`SCENES`, `loadScene`).
+  - `stories/<slug>.ts`: a story as a `StoryDef` (`story.ts`): controls, prices, scene builder, stages with the design each was made for, and the target. `stories/index.ts` loads them. One `StoryPlayer` runs them all.
+  - `all.ts` loads every lesson and story at once, for tests, scripts and server pages. Never import it from a client component.
+  - `tests/lessons.test.ts` asserts the fix beats the problem on its headline metric (`claimOf` in `walk.ts`; `headlineOf`: `FigureDef.headline.metric`, by default the fix's first metric), firing armed faults at their `at` as a learner's break would.
 - `src/lib/lessons/beats.ts`: the beats runtime. `BeatRunner` fires a step's beats in order on a 10 ms grid of simulated time (`stepGrid`), so they fire at the same moments at any speed. Triggers read only the simulation.
   - `src/lib/lessons/walk.ts` walks a lesson as a learner would; the tests use it to prove every beat fires and every prediction holds. `npm run tune -- <slug> --beats` prints the timeline.
 - `src/components/beats.tsx`: `useBeats` (the player's runners and Next), the strip, callouts, and the Predict, Check and What-to-watch cards. `follow.tsx`: follow one request. `term.tsx` and `src/lib/glossary.ts`: glossary terms.
-- `src/components/shell.tsx`: the one-screen layout shared by lessons and the capstone.
+- `src/components/lesson-page.tsx`: a lesson page loads its scenes (or story) with `use`, behind the shell as a fallback, and fetches the next stop's code when idle. `player.tsx` and `story-player.tsx` are the two players.
+- `src/app/page.tsx`: the home page. `route-map.tsx` draws the catalog as a transit map (lines as rows, levels as zone bands, journeys on the last row, a station's card on hover or focus via `station-preview.tsx`) and, on narrow screens, as a board with a level filter and search. `journeys.tsx`, `read-scene.tsx` (the seven marks) and `home-start.tsx` (the start button and line index) fill the rest.
+- `src/components/shell.tsx`: the one-screen layout shared by lessons and stories.
   - `Shell` lays out bar · theatre | panel · dock. The theatre is one sheet: the `BeatStrip` row, then the stage. The panel is a reading part (`.panel-scroll`) over the pinned comparison table (`.panel-pin`). Phones add a summary row of the headline number, and their panel scrolls as one.
   - Nothing floats over the stage. The Key is a popover from the bar (`legend.tsx`); scripted event notes go on the beat strip.
   - The document never scrolls; only the panel does, and only if it must.
@@ -47,7 +53,10 @@ An animated system-design course. It's built with Next.js 16 App Router, React 1
   - Numbers in beats are placeholders (`{p95:fix}`, `{util:db:problem}`, `{queue:app}`) filled in as the beat fires; never hard-code a number the scene measures.
   - Terms: `[[key|plain words]]`, defined in `src/lib/glossary.ts`. A term is first used where it is marked, in the beat that names it (`term`); nothing uses it before.
   - One prediction per lesson, before the break, with 2–3 options; the engine must agree with its answer (`holds`).
-  - Faults the learner causes are armed (`ScriptEvent.armed`, `kit.ts`'s `armed`/`fault`): they never loop, and `sim.fire` plays them in every world at once. Only the hero and the capstone keep looping scripts.
+  - Faults the learner causes are armed (`ScriptEvent.armed`, `kit.ts`'s `armed`/`fault`): they never loop, and `sim.fire` plays them in every world at once. Only the hero and the stories keep looping scripts.
+- **The catalog.** Slugs are the identity (URLs, the visited list) and never change; a moved slug keeps the old one in `aliases`, which `next.config.ts` redirects. Codes were assigned once, in level order per line, and are frozen in `tests/catalog.snapshot.json`; a line shows gaps until its planned lessons go live.
+  - A live entry's `requires` lists live entries only (the map dims a station until they are visited); add an edge once both ends are live. Every `requires` comes earlier on `PATH`. A story's `requires` are the lessons it rides, in ride order: its stops on the map and its journey card.
+  - A new lesson starts with `npm run new-lesson -- <slug>`; the tests fail until it is written, and check that `SCENES`, `STORY_MODULES` and `all.ts` cover exactly the live entries.
 - **Fairness.** A problem and its fix (or both sides of a trade-off) share `sloMs`, `timeoutMs`, `timeScale` and `windowMs`, and must produce identical first-attempt arrival traces (`new Sim(spec, { trace: true })`). The fairness test in `tests/lessons.test.ts` checks both. Explore figures change the traffic on purpose and are exempt.
 - **Change column.** Only a `problem,fix` lesson gets better/worse verdicts. Explore and trade-off steps show a plain signed difference, and metrics with `better: "neutral"` (servers in use) never get a verdict. Response-time rows show their target.
 - **Visual language.** Never reuse a dot colour for a new meaning. The mapping is fixed: cobalt for a request, amber for late, green for answered, violet for stale, slate for turned away, red for failed. Shape carries the state as well as colour.

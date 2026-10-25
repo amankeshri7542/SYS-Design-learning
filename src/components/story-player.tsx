@@ -2,35 +2,35 @@
 
 import Link from "next/link";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { CAPSTONE } from "@/lib/lessons";
-import { CAP_METRICS, START, STAGES, TARGET, capstoneScene, monthlyCost, type Arch } from "@/lib/lessons/capstone";
+import { neighbours } from "@/lib/lessons";
+import { holds, type Control, type StoryDef, type Target } from "@/lib/lessons/story";
+import type { LessonMeta, Values } from "@/lib/lessons/types";
 import type { Sim } from "@/lib/sim/engine";
-import { formatMetric, measure } from "@/lib/sim/metrics";
+import { formatMetric, formatTarget, measure } from "@/lib/sim/metrics";
+import { BeatStrip, useSceneBeats } from "./beats";
 import { KeyPopover } from "./legend";
 import { ArrowIcon, Clock, MetricList, Transport, freshNote, useLiveSims } from "./live";
-import { MarkVisited } from "./route-map";
-import { BeatStrip, useSceneBeats } from "./beats";
 import { Shell, usePlayerKeys } from "./shell";
 import { Stage } from "./stage";
 
-const P95 = CAP_METRICS[0];
-const ERR = CAP_METRICS[1];
-
-/** Four stages of growth on one screen. Change the architecture until the target holds, then move on. */
-export function CapstonePlayer() {
+/**
+ * A story on one screen: stage after stage of growth. Change the architecture until the target holds for the stage's
+ * hold time, then move on. The cheapest design that holds wins.
+ */
+export function StoryPlayer({ meta, def }: { meta: LessonMeta; def: StoryDef }) {
+  const { stages, targets } = def;
   const [stage, setStage] = useState(0);
-  const [arch, setArch] = useState<Arch>(START);
-  const [cleared, setCleared] = useState<boolean[]>(() => STAGES.map(() => false));
+  const [arch, setArch] = useState<Values>(def.start);
+  const [cleared, setCleared] = useState<boolean[]>(() => stages.map(() => false));
   const [held, setHeld] = useState(0);
   const holdRef = useRef(0);
-  const S = STAGES[stage];
-  const specs = useMemo(() => [capstoneScene(arch, S)], [arch, S]);
+  const S = stages[stage];
+  const specs = useMemo(() => [def.scene(arch, S)], [def, arch, S]);
+  const { prev, next } = neighbours(meta.slug);
 
   const onFrame = useCallback(
     ([sim]: Sim[], dt: number) => {
-      const p = measure(sim, P95);
-      const e = measure(sim, ERR);
-      const ok = sim.t > 400 && p !== null && p <= TARGET.p95 && (e ?? 0) <= TARGET.errors;
+      const ok = sim.t > 400 && holds(targets, (m) => measure(sim, m));
       holdRef.current = ok ? holdRef.current + dt : 0;
       const sec = holdRef.current / 1000;
       if (sec >= S.hold) {
@@ -39,7 +39,7 @@ export function CapstonePlayer() {
       }
       setHeld((h) => (Math.abs(h - sec) > 0.1 || (sec === 0 && h !== 0) ? sec : h));
     },
-    [S, stage],
+    [S, stage, targets],
   );
 
   // Each stage opens with two beats: what changed, and the box to watch.
@@ -47,12 +47,12 @@ export function CapstonePlayer() {
   const live = useLiveSims(specs, { onFrame, onGrid: beats.onGrid });
   usePlayerKeys(live);
   const sim = live.sims[0];
-  // A scripted event (server 1 crashing) newer than the beat takes the strip.
+  // A scripted event (a server crashing) newer than the beat takes the strip.
   const last = sim.notes[sim.notes.length - 1];
   const eventLater = !!freshNote(sim) && !!last && (beats.at === null || last.t > beats.at);
 
-  const change = (next: Partial<Arch>) => {
-    setArch((a) => ({ ...a, ...next }));
+  const change = (id: string, v: number) => {
+    setArch((a) => ({ ...a, [id]: v }));
     holdRef.current = 0;
     setHeld(0);
   };
@@ -62,35 +62,41 @@ export function CapstonePlayer() {
     setHeld(0);
   };
 
-  const p95 = measure(sim, P95);
-  const err = measure(sim, ERR);
   const done = cleared[stage];
   const allDone = cleared.every(Boolean);
   const pct = Math.min(1, held / S.hold);
-  const rate = S.users + S.bot;
+  const cost = def.cost(arch);
 
   return (
     <Shell
-      className="line-capstone capstone"
+      className="line-stories story"
       simTime={sim.t}
       rootRef={live.rootRef as React.Ref<HTMLDivElement>}
       bar={
         <>
-          <MarkVisited slug={CAPSTONE.slug} />
-          <nav className="bar-line" aria-label="Capstone">
-            <Link href="/#route" className="roundel-sm" aria-label="Route map" title="Route map">
+          <nav className="bar-line" aria-label="Journeys">
+            <Link href="/#journeys" className="roundel-sm" aria-label="Journeys" title="Journeys">
               ★
             </Link>
           </nav>
-          <h1 className="bar-title" title={CAPSTONE.why}>
-            <span className="bar-code">Capstone</span>
-            <span className="bar-name">{CAPSTONE.title}</span>
+          <h1 className="bar-title" title={meta.why}>
+            <span className="bar-code">{meta.code}</span>
+            <span className="bar-name">{meta.title}</span>
           </h1>
           <KeyPopover />
           <span className="bar-arrows">
-            <Link href="/learn/autoscaling" className="icon-link" aria-label="Previous lesson: Autoscaling" title="R3 Autoscaling">
-              <ArrowIcon dir="left" />
-            </Link>
+            {prev ? (
+              <Link href={`/learn/${prev.slug}`} className="icon-link" aria-label={`Previous lesson: ${prev.title}`} title={`${prev.code} ${prev.title}`}>
+                <ArrowIcon dir="left" />
+              </Link>
+            ) : (
+              <span />
+            )}
+            {next && (
+              <Link href={`/learn/${next.slug}`} className="icon-link" aria-label={`Next lesson: ${next.title}`} title={`${next.code} ${next.title}`}>
+                <ArrowIcon />
+              </Link>
+            )}
           </span>
         </>
       }
@@ -101,7 +107,8 @@ export function CapstonePlayer() {
           announce={eventLater ? undefined : (beats.beat?.text.replace(/\[\[[\w-]+\|?([^\]]*)\]\]/g, "$1") ?? "")}
           lead={
             <span key={stage} className="beat-tone tone-explore">
-              Stage {stage + 1} · {rate} a second
+              Stage {stage + 1}
+              {def.lead && ` · ${def.lead(S)}`}
             </span>
           }
           clock={<Clock live={live} />}
@@ -113,7 +120,7 @@ export function CapstonePlayer() {
           spec={specs[0]}
           mode={live.mode}
           reduced={live.reduced}
-          label={`URL shortener, stage ${stage + 1}: ${S.name}`}
+          label={`${meta.title}, stage ${stage + 1}: ${S.name}`}
           drawRef={live.drawRef}
           focus={eventLater ? null : beats.beat?.focus}
           callout={!eventLater && beats.beat ? { id: beats.beat.id, text: beats.beat.text, waiting: false } : null}
@@ -122,8 +129,8 @@ export function CapstonePlayer() {
       panel={
         <>
           <div className="panel-head">
-            <ol className="tabs cap-stages" aria-label="Stages">
-              {STAGES.map((s, i) => {
+            <ol className="tabs story-stages" aria-label="Stages">
+              {stages.map((s, i) => {
                 const locked = i > 0 && !cleared[i - 1];
                 return (
                   <li key={s.name}>
@@ -147,37 +154,32 @@ export function CapstonePlayer() {
           </div>
           <div className="step" key={stage}>
             <h2 className="step-title">{S.name}</h2>
-            {stage === 0 && <p className="step-text">{CAPSTONE.why}</p>}
+            {stage === 0 && <p className="step-text">{meta.why}</p>}
             <p className="step-text">{S.brief}</p>
-            <details className="cap-hint">
+            <details className="story-hint">
               <summary>Hint</summary>
               <p>{S.hint}</p>
             </details>
           </div>
-          <div className="cap-build" role="group" aria-label="Architecture">
-            <Stepper label="App servers" value={arch.servers} min={1} max={4} onChange={(v) => change({ servers: v })} />
-            <Toggle label="Cache" on={arch.cache} onChange={(v) => change({ cache: v })} />
-            <Stepper label="Read replicas" value={arch.replicas} min={0} max={2} onChange={(v) => change({ replicas: v })} />
-            <Toggle label="Rate limiter" on={arch.limiter} onChange={(v) => change({ limiter: v })} />
-            <p className="cap-cost">
+          <div className="story-build" role="group" aria-label="Architecture">
+            {def.controls.map((c) => (
+              <ControlView key={c.id} c={c} value={arch[c.id]} onChange={(v) => change(c.id, v)} />
+            ))}
+            <p className="story-cost">
               <span>Running cost</span>
-              <strong>${monthlyCost(arch)}/mo</strong>
+              <strong>${cost}/mo</strong>
             </p>
           </div>
-          <MetricList metrics={CAP_METRICS.slice(2)} sim={sim} />
-          {allDone && (
-            <p className="cap-win">
-              You kept it alive through all four stages for ${monthlyCost(arch)} a month. Can you find a cheaper design that still holds
-              stage 4?
-            </p>
-          )}
+          <MetricList metrics={def.metrics} sim={sim} />
+          {allDone && <p className="story-win">{def.win(cost)}</p>}
         </>
       }
       pinned={
-        <div className={`cap-status${done ? " done" : ""}`}>
-          <div className="cap-target" role="group" aria-label={`Target, held for ${S.hold} s`}>
-            <TargetCell label="Response time" value={p95} shown={formatMetric(P95, p95)} target={`target ≤ ${TARGET.p95} ms`} ok={p95 !== null && p95 <= TARGET.p95} />
-            <TargetCell label="Failed" value={err} shown={formatMetric(ERR, err)} target={`target ≤ ${Math.round(TARGET.errors * 100)}%`} ok={err !== null && err <= TARGET.errors} />
+        <div className={`story-status${done ? " done" : ""}`}>
+          <div className="story-target" role="group" aria-label={`Target, held for ${S.hold} s`}>
+            {targets.map((t) => (
+              <TargetCell key={t.label} t={t} sim={sim} />
+            ))}
           </div>
           <div className="hold-row">
             <div className="hold" aria-hidden="true">
@@ -195,11 +197,11 @@ export function CapstonePlayer() {
           <Transport live={live} />
           <Clock live={live} />
           <span className="dock-fill" />
-          {done && stage < STAGES.length - 1 ? (
+          {done && stage < stages.length - 1 ? (
             <button type="button" className="btn-primary btn-next" onClick={() => go(stage + 1)}>
               <span className="btn-next-label">
                 <span className="when-wide">Next: </span>
-                {STAGES[stage + 1].name}
+                {stages[stage + 1].name}
               </span>
               <ArrowIcon />
             </button>
@@ -212,17 +214,24 @@ export function CapstonePlayer() {
   );
 }
 
-/** One half of the target: the live value beside what it must stay under. Neutral until there is data. */
-function TargetCell({ label, value, shown, target, ok }: { label: string; value: number | null; shown: string; target: string; ok: boolean }) {
+/** One half of the target: the live value beside the line it must stay under. Neutral until there is data. */
+function TargetCell({ t, sim }: { t: Target; sim: Sim }) {
+  const value = measure(sim, t.metric);
+  const ok = value !== null && value <= t.max;
   const state = value === null ? "wait" : ok ? "pass" : "fail";
   return (
-    <div className={`cap-cell ${state}`}>
-      <span className="cap-cell-label">{label}</span>
-      <strong className="num">{shown}</strong>
-      <small className="target">{target}</small>
+    <div className={`story-cell ${state}`}>
+      <span className="story-cell-label">{t.label}</span>
+      <strong className="num">{formatMetric(t.metric, value)}</strong>
+      <small className="target">{formatTarget({ ...t.metric, target: t.max }, sim.spec.sloMs)}</small>
       <span className="sr-only">{state === "wait" ? "no data yet" : ok ? "on target" : "off target"}</span>
     </div>
   );
+}
+
+function ControlView({ c, value, onChange }: { c: Control; value: number; onChange: (v: number) => void }) {
+  if (c.kind === "switch") return <Toggle label={c.label} on={value > 0} onChange={(on) => onChange(on ? 1 : 0)} />;
+  return <Stepper label={c.label} value={value} min={c.min} max={c.max} onChange={onChange} />;
 }
 
 function Stepper({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (v: number) => void }) {

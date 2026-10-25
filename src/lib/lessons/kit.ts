@@ -221,6 +221,15 @@ export const fault = (id: string, label: string, undo: string, start: string, en
   isOn,
 });
 
+/** A looping outage, for a scene that runs on its own (the home page's hero): `name` crashes at `at` and is back at `back`. */
+export const outage = (id: string, name: string, at: number, back: number, loop: number) => ({
+  loopMs: loop,
+  events: [
+    { at, label: `${name} crashed`, run: (s: Sim) => s.setUp(id, false) },
+    { at: back, label: `${name} is back`, run: (s: Sim) => s.setUp(id, true) },
+  ],
+});
+
 /** An armed crash of `node`: down when fired, back `lastsMs` later. */
 export const armedCrash = (node: string, at: number, lastsMs: number, start: string, end: string) =>
   armed({ node, at, lastsMs, start, end }, { start: (s) => s.setUp(node, false), end: (s) => s.setUp(node, true) });

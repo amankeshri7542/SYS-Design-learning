@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { CapstonePlayer } from "@/components/capstone";
-import { LessonPlayer } from "@/components/player";
-import { LESSONS, getLesson } from "@/lib/lessons";
+import { LessonPage } from "@/components/lesson-page";
+import { COURSE, getLesson } from "@/lib/lessons";
 
 type Props = { params: Promise<{ slug: string }> };
 
 export const dynamicParams = false;
 
+/** Every live lesson and story. Planned ones have no page until they are built. */
 export function generateStaticParams() {
-  return LESSONS.map((l) => ({ slug: l.slug }));
+  return COURSE.map((l) => ({ slug: l.slug }));
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -18,9 +18,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: `${lesson.code} ${lesson.title}`, description: lesson.why };
 }
 
-export default async function LessonPage({ params }: Props) {
+/** A lesson or a story: the page picks its player by the catalog entry's kind, and loads only that one's code. */
+export default async function Page({ params }: Props) {
   const { slug } = await params;
-  const lesson = getLesson(slug);
-  if (!lesson) notFound();
-  return slug === "capstone" ? <CapstonePlayer /> : <LessonPlayer slug={slug} />;
+  if (!getLesson(slug)) notFound();
+  return <LessonPage slug={slug} />;
 }

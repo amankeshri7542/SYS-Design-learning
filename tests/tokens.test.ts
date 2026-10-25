@@ -58,7 +58,7 @@ function check(t: Map<string, string>, theme: string, fg: string, bg: string, mi
 
 const SURFACES = ["paper", "surface", "stage", "card"];
 const TEXT = ["ink", "ink-2", "muted", "t-ok", "t-warn", "t-bad", "t-stale", "t-req"];
-const LINES = ["networking", "foundations", "caching", "data", "async", "resilience", "operating", "capstone"];
+const LINES = ["networking", "foundations", "caching", "data", "async", "resilience", "operating", "stories"];
 const DOTS = ["dot-req", "dot-slow", "dot-ok", "dot-stale", "dot-turned", "dot-err"];
 
 test("the night edition redefines every colour the day edition sets", () => {
@@ -94,7 +94,7 @@ for (const [theme, t] of THEMES) {
   test(`${theme}: the new lines look clearly different from every dot and every other line`, () => {
     for (const line of ["networking", "operating"]) {
       const c = t.get(`l-${line}`)!;
-      const others = [...DOTS, ...LINES.filter((l) => l !== line && l !== "capstone").map((l) => `l-${l}`)];
+      const others = [...DOTS, ...LINES.filter((l) => l !== line && l !== "stories").map((l) => `l-${l}`)];
       for (const o of others) {
         const d = deltaE(c, t.get(o)!);
         assert.ok(d >= 25, `${theme}: --l-${line} vs --${o} differ by ΔE ${d.toFixed(0)}, needs 25`);

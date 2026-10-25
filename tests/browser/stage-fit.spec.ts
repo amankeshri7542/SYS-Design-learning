@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { LESSONS } from "../../src/lib/lessons";
+import { COURSE } from "../../src/lib/lessons";
+import { lessonOf } from "../../src/lib/lessons/all";
 import { buildSteps, defaultsOf, type Lesson } from "../../src/lib/lessons/types";
 
 // Every lesson, every step, on every project: stage text is legible and inside the stage, labels never collide,
@@ -9,7 +10,7 @@ import { buildSteps, defaultsOf, type Lesson } from "../../src/lib/lessons/types
 test.use({ reducedMotion: "reduce" });
 
 /** Lanes (most stations at one step along the flow) and columns (steps along the flow) across all of a lesson's steps. */
-function shapeOf(lesson: Lesson) {
+function shapeOf(lesson: Pick<Lesson, "figures">) {
   const specs = buildSteps(lesson.figures, lesson.figures.map(defaultsOf));
   const per = new Map<number, number>();
   for (const n of new Map(specs.flatMap((s) => s.nodes.map((m) => [`${m.id}@${m.at}`, m] as const))).values()) per.set(n.at[0], (per.get(n.at[0]) ?? 0) + 1);
@@ -94,7 +95,9 @@ const measure = (page: Page) =>
 
 const overlap = (a: Box, b: Box) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 0.5;
 
-for (const lesson of LESSONS) {
+// Every live page: a lesson's steps, or a story's first stage.
+for (const entry of COURSE) {
+  const lesson = lessonOf(entry.slug) ?? { ...entry, figures: [] as Lesson["figures"] };
   const steps = lesson.figures.length ? lesson.figures.map((f) => f.short) : [null];
   steps.forEach((step, i) => {
     test(`${lesson.code} ${lesson.slug}${step ? ` · ${step}` : ""}: stage text is legible, inside the stage and clear of other labels`, async ({ page, isMobile }, info) => {
