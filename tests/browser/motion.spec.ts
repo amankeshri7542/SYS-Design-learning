@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 // Motion that teaches has to land every frame, follow one timing family, and stay out of the way of reduced motion.
 

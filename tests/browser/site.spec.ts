@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 import { COURSE, LESSONS, neighbours } from "../../src/lib/lessons";
 import { ALL_LESSONS, ALL_STORIES } from "../../src/lib/lessons/all";
 import { buildSteps, defaultsOf, headlineOf, type Lesson } from "../../src/lib/lessons/types";
