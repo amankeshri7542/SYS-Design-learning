@@ -1008,10 +1008,10 @@ Gates on 2026-10-25: typecheck, 378 unit tests (5 new in `tests/hooks.test.ts`, 
 | `README.md`, `CLAUDE.md` | modified | Describe v3: levels, lines, journeys, beats, follow, the engine batches, and the authoring rules in §8. |
 
 **Acceptance:**
-- [ ] Lighthouse accessibility ≥ 95 on the home page and three lessons.
-- [ ] No lesson page ships more than 200 KB of gzipped JavaScript.
-- [ ] A run on a mid-range phone records no frame over 34 ms on the busiest scene.
-- [ ] All 57 lessons and 9 stories pass every gate.
+- [x] Lighthouse accessibility ≥ 95 on the home page and three lessons (100 on the home page and four lesson and story pages).
+- [ ] No lesson page ships more than 200 KB of gzipped JavaScript. Not met: lesson and story pages ship 202–206 KB (from 234–244 before the final pass); see below.
+- [x] A run on a mid-range phone records no frame over 34 ms on the busiest scene (a Pixel 7 profile with the CPU slowed 4×: worst frame 16.8 ms).
+- [x] All 57 lessons and 9 stories pass every gate.
 
 **Decisions made while building the M10 engine PR:**
 
@@ -1041,6 +1041,21 @@ Gates on 2026-10-25: typecheck, 391 unit tests, build, and the browser suite: 1,
 - **One station each for the click service and the counter, and for Counts and the first shard,** so each stage's beats point at stations every design has.
 - **Clicks retry** with backoff (100 ms base, three times), so the clicks refused while the counter is down are counted once it is back; a retry keeps its event time.
 - **Three shards, not four,** at `timeScale` 0.2: a landscape phone's stage (459×240) could not give four stacked shards' labels a clear side. With every switch on it has one label on a rail plate, in line with the other new stories (the older ones have 3–8 at that size). A processor's sub-label reserves its own shape (digits as 9s) rather than the longest any window could have, and the counter and router stand far enough apart that their sub-labels clear each other at 1280×720.
+
+**Decisions made in the final pass:**
+
+Gates on 2026-10-25: typecheck, 391 unit tests, build, the browser suite (1,192 tests, of which 1,181 passed and 11 were skipped, the 4 frame budgets included), Lighthouse 13.5 accessibility, and frame budgets on the busiest new scenes.
+
+- **JavaScript per page,** measured on the production build with Next's link prefetches and the next stop's idle fetch switched off (`gzip -9` of each script a page loads): lesson and story pages 202–206 KB, the home page 221 KB, from 234–244 and 244. React DOM and Next's router and runtime are about 134 KB of it, the course's own code about 70.
+  - **The glossary stays on the server:** a lesson's static page finds the terms its text marks and sends only those (`TermDefs`); 7 KB.
+  - **Each entry's why and tags moved to `words.ts`:** a lesson page gets its own why from its server page; the home page imports the words; 5 KB.
+  - **Both players are lazy,** so a story page no longer carries the lesson player; and the page's own chunk no longer imports the beats runtime (the term pattern moved to `term-mark.ts`, `withScene` is inlined there), which had put the beats and metrics modules on the page twice.
+  - **Not done, so the 200 KB target is missed by up to 6 KB:** loading the engine's optional modules (connections, real time, coordination, storage: 4.3 KB) only for the scenes that use them needs every core call into them guarded first, and the rest would mean a lighter renderer. Both are follow-ups, not quick wins.
+- **Accessibility:** Lighthouse scores 100 on the home page, C1, A8, N1 and S3. Its one finding: the home page's line index links were named by an `aria-label` that didn't start with the words they show; their extra words are now visually hidden text after the visible name.
+- **Frames:** with the CPU slowed 4×, desktop and a Pixel 7 profile, A8 (300 clicks a second at `timeScale` 0.25), the news feed at 500 feeds a second and the flash sale at full load (every switch on and off) all keep the worst frame at 16.8 ms and the app's work under 1.5 ms a frame. The frame-budget tests still cover rate limiting and the built-out capstone.
+- **The home page's line index** puts each line's pips under its name, so Networking's 16 no longer run into the column beside it.
+- **README and screenshots** describe v3: the seven lines and nine journeys, how a lesson teaches, the engine's modules. The screenshots were retaken.
+- **Not built:** the optional visual snapshot job (`tests/browser/visual.spec.ts`); the stage-fit, motion and frame-budget suites cover what it would check.
 
 ### M11 — Optional: a learning record (S/M, only with the owner's agreement)
 

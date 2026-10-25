@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { LessonPage } from "@/components/lesson-page";
+import { termOf, type Term } from "@/lib/glossary";
 import { COURSE, getLesson } from "@/lib/lessons";
+import { SCENE_DEFS, STORY_DEFS } from "@/lib/lessons/all";
+import { termsIn } from "@/lib/lessons/beats";
+import { whyOf } from "@/lib/lessons/words";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -15,12 +19,18 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const lesson = getLesson((await params).slug);
   if (!lesson) return {};
-  return { title: `${lesson.code} ${lesson.title}`, description: lesson.why };
+  return { title: `${lesson.code} ${lesson.title}`, description: whyOf(lesson.slug) };
+}
+
+/** The glossary terms a lesson's text marks, anywhere in it: the page sends only these, not the whole glossary. */
+function termsOf(slug: string): Term[] {
+  const keys = new Set(termsIn(JSON.stringify(SCENE_DEFS[slug] ?? STORY_DEFS[slug] ?? {})));
+  return [...keys].map((k) => termOf(k)).filter((t): t is Term => !!t);
 }
 
 /** A lesson or a story: the page picks its player by the catalog entry's kind, and loads only that one's code. */
 export default async function Page({ params }: Props) {
   const { slug } = await params;
   if (!getLesson(slug)) notFound();
-  return <LessonPage slug={slug} />;
+  return <LessonPage slug={slug} why={whyOf(slug)} terms={termsOf(slug)} />;
 }

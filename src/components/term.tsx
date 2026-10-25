@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { TERM, type Focus } from "@/lib/lessons/beats";
-import { termOf, type Term as TermDef } from "@/lib/glossary";
+import type { Focus } from "@/lib/lessons/beats";
+import { TERM } from "@/lib/lessons/term-mark";
+import type { Term as TermDef } from "@/lib/glossary";
 import { useTouch } from "./hooks";
+import { DefsContext } from "./term-defs";
 
 interface Terms {
   open: (key: string, from: HTMLElement) => void;
@@ -21,11 +23,12 @@ const TermsContext = createContext<Terms | null>(null);
  */
 export function Rich({ text }: { text: string }) {
   const terms = useContext(TermsContext);
+  const defs = useContext(DefsContext);
   const out: ReactNode[] = [];
   let last = 0;
   for (const m of text.matchAll(TERM)) {
     if (m.index > last) out.push(text.slice(last, m.index));
-    const def = termOf(m[1]);
+    const def = defs.get(m[1]);
     const words = m[2] ?? m[1].replace(/-/g, " ");
     out.push(
       terms && def && terms.inline ? (
@@ -52,12 +55,13 @@ export function Rich({ text }: { text: string }) {
  */
 export function TermChips({ keys }: { keys: string[] }) {
   const terms = useContext(TermsContext);
+  const defs = useContext(DefsContext);
   if (!terms || terms.inline || !keys.length) return null;
   return (
     <div className="term-chips" role="group" aria-label="Words in this step">
       {keys.map((k) => (
         <button key={k} type="button" className="btn term-chip" aria-haspopup="dialog" onClick={(e) => terms.open(k, e.currentTarget)}>
-          {termOf(k)?.name ?? k}
+          {defs.get(k)?.name ?? k}
         </button>
       ))}
     </div>
@@ -75,9 +79,10 @@ export function TermProvider({ lesson, onShow, children }: { lesson: string; onS
   const [at, setAt] = useState<{ x: number; y: number; below: boolean } | null>(null);
   const opener = useRef<HTMLElement | null>(null);
   const touch = useTouch();
+  const defs = useContext(DefsContext);
 
   const open = (key: string, from: HTMLElement) => {
-    const def = termOf(key);
+    const def = defs.get(key);
     const el = pop.current;
     if (!def || !el) return;
     opener.current = from;

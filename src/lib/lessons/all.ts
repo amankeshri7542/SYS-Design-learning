@@ -4,6 +4,7 @@
 // matches the lazy maps.
 
 import { LESSONS, STORIES } from "./index";
+import { whyOf } from "./words";
 import type { StoryDef } from "./story";
 import { withScene, type Lesson, type LessonMeta, type LessonScene } from "./types";
 import autoscaling from "./scenes/autoscaling";
@@ -136,7 +137,7 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
 export const STORY_DEFS: Record<string, StoryDef> = { capstone, "web-crawler": webCrawler, "video-premiere": videoPremiere, chat, "flash-sale": flashSale, "ride-matching": rideMatching, "news-feed": newsFeed, payments, "click-counting": clickCounting };
 
 /** Every live lesson, whole, in path order. */
-export const ALL_LESSONS: Lesson[] = LESSONS.map((m) => withScene(m, SCENE_DEFS[m.slug]));
+export const ALL_LESSONS: Lesson[] = LESSONS.map((m) => withScene(m, SCENE_DEFS[m.slug], whyOf(m.slug)));
 
 /** Every live story with its definition, in path order. */
 export const ALL_STORIES: { meta: LessonMeta; def: StoryDef }[] = STORIES.map((meta) => ({ meta, def: STORY_DEFS[meta.slug] }));

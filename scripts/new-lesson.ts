@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CATALOG, LINES } from "../src/lib/lessons/catalog";
+import { whyOf } from "../src/lib/lessons/words";
 
 const root = join(__dirname, "..");
 const slug = process.argv[2];
@@ -34,7 +35,7 @@ writeFileSync(
   `import { M, knob, scene, server, users } from "../kit";
 import type { LessonScene, Values } from "../types";
 
-// ${entry.code} ${entry.title}: ${entry.why}
+// ${entry.code} ${entry.title}: ${whyOf(entry.slug)}
 // Write it to docs/plan-v3.md §8 and its row in docs/research/curriculum.md §3. Every TODO is a test that fails.
 
 const lesson: LessonScene = {

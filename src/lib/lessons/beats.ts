@@ -5,6 +5,7 @@
 import type { Sim } from "../sim/engine";
 import { formatMetric, measure, type MetricId, type MetricSpec } from "../sim/metrics";
 import type { FxKind } from "../sim/types";
+import { TERM } from "./term-mark";
 
 /** The dot kinds a scene shows: its local key. Shapes and colours are fixed (CLAUDE.md). */
 export type DotKind = "req" | "late" | "ok" | "stale" | "turned" | "failed" | "gaveup" | "copy" | "job" | "probe" | "lost" | "ack" | "push" | "hand";
@@ -394,8 +395,7 @@ export function unresolved(text: string, ctx: Pick<FillContext, "tones" | "curre
     .map((p) => p.raw);
 }
 
-/** `[[key|plain words]]` and `[[key]]`: glossary terms in a text. */
-export const TERM = /\[\[([\w-]+)(?:\|([^\]]+))?\]\]/g;
+export { TERM } from "./term-mark";
 
 /** Every glossary term a text marks, in order. */
 export function termsIn(text: string): string[] {
