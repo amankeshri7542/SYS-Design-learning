@@ -44,6 +44,9 @@ export const SCENES: Record<string, Load> = {
   "pipelining-and-batching": () => import("./pipelining-and-batching"),
   "nearest-region-and-failover": () => import("./nearest-region-and-failover"),
   dns: () => import("./dns"),
+  acknowledgements: () => import("./acknowledgements"),
+  "delivery-guarantees": () => import("./delivery-guarantees"),
+  backpressure: () => import("./backpressure"),
   // Operating
   "canary-rollouts": () => import("./canary-rollouts"),
   "graceful-shutdown": () => import("./graceful-shutdown"),

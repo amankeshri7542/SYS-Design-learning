@@ -39,6 +39,9 @@ import bulkheads from "./scenes/bulkheads";
 import cascadingFailures from "./scenes/cascading-failures";
 import canaryRollouts from "./scenes/canary-rollouts";
 import gracefulShutdown from "./scenes/graceful-shutdown";
+import acknowledgements from "./scenes/acknowledgements";
+import deliveryGuarantees from "./scenes/delivery-guarantees";
+import backpressure from "./scenes/backpressure";
 import capstone from "./stories/capstone";
 
 export const SCENE_DEFS: Record<string, LessonScene> = {
@@ -75,6 +78,9 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
   "cascading-failures": cascadingFailures,
   "canary-rollouts": canaryRollouts,
   "graceful-shutdown": gracefulShutdown,
+  acknowledgements,
+  "delivery-guarantees": deliveryGuarantees,
+  backpressure,
 };
 
 export const STORY_DEFS: Record<string, StoryDef> = { capstone };

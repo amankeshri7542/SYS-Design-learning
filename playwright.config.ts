@@ -7,6 +7,8 @@ export default defineConfig({
   testDir: "./tests/browser",
   outputDir: "./test-results/artifacts",
   timeout: 45_000,
+  // Three workers share one dev server that compiles pages as they're asked for: give assertions room under load.
+  expect: { timeout: 10_000 },
   fullyParallel: true,
   workers: 3,
   reporter: [["list"]],

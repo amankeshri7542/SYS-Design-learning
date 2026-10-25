@@ -72,6 +72,15 @@ export const cache = (id: string, at: At, origin: Call, o: Opts = {}): NodeSpec 
   ...o,
 });
 
+export const queue = (id: string, at: At, consumers: Call[], o: Opts = {}): NodeSpec => ({
+  id,
+  kind: "queue",
+  label: "Queue",
+  at,
+  to: consumers,
+  ...o,
+});
+
 export const balancer = (id: string, at: At, targets: Call[], o: Opts = {}): NodeSpec => ({
   id,
   kind: "lb",
