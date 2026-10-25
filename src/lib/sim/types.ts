@@ -13,8 +13,11 @@ export type Kind =
 /** Visual identity. Defaults to the kind; overrides give a node a different glyph. */
 export type Glyph = Kind | "edge" | "router" | "worker" | "bot";
 
-/** `sub`: a user keeping a connection open for news; `push`: a news item sent down one. */
-export type Op = "read" | "write" | "probe" | "repl" | "ack" | "sub" | "push";
+/**
+ * `sub`: a user keeping a connection open for news; `push`: a news item sent down one. `beat` and `vote`: a cluster's
+ * leader heartbeat and an election's request for votes.
+ */
+export type Op = "read" | "write" | "probe" | "repl" | "ack" | "sub" | "push" | "beat" | "vote";
 
 /** How a request ended, from the client's point of view. */
 export type Result = "ok" | "stale" | "fallback" | "rejected" | "error";
@@ -259,6 +262,39 @@ export interface NodeSpec {
   promote?: boolean;
   /** Cache: comes back up already holding this many of the hottest keys (warmed before it serves). */
   prewarm?: number;
+  /**
+   * Server: send each request to every target at once (a shard each; a pool picks a member) and answer once `need` of
+   * them have answered well (default: all). Fails once too many have failed for `need` to be reached.
+   */
+  fanout?: { to: Call[]; need?: number };
+  /**
+   * Server with `fanout`: a target that hasn't answered within this many ms gets a twin (the next member of its pool, or
+   * another worker); the first answer wins, and the other is cancelled.
+   */
+  hedgeMs?: number;
+  /**
+   * Coordinator: a write gets the next number and goes to every replica, answered once `w` have stored it; a read asks
+   * `r` replicas (in turn) and answers with the freshest copy among them, stale if even that is behind.
+   */
+  quorum?: { replicas: string[]; w: number; r: number };
+  /**
+   * Database in a group that elects one leader: a member that hears nothing from a leader for its election timeout
+   * (drawn from `electionMs`) asks the others for votes, and a majority makes it leader for a new term; the leader beats
+   * every `heartbeatMs`. Only the leader takes writes (others pass them on), and it answers one once a majority has it.
+   * `majority: false` is the naive version: a member that hears nothing just leads, and commits on its own.
+   */
+  cluster?: { group: string[]; heartbeatMs: number; electionMs: [number, number]; majority?: boolean };
+  /** Server: books its key in `db`: reads it first, writes it only if it was free, and turns the request away if not. */
+  reserve?: { db: string };
+  /** Database: refuses a write whose key has changed since it was read (compare-and-set): the second of two is turned away. */
+  cas?: boolean;
+  /** Lock: one request per key at a time goes on to `to`; the rest wait in line. A holder past `leaseMs` loses the lock. */
+  lock?: { leaseMs: number };
+  /**
+   * Server: its calls are the steps of a saga. When a step fails, the steps already done are undone in reverse, each by
+   * the call at the same place in `undo`, and the request ends turned away (cancelled) rather than failed halfway.
+   */
+  saga?: { undo: Call[] };
 }
 
 export interface ScriptEvent {
@@ -334,7 +370,11 @@ export type FxKind =
   /** A connection was closed under its requests (its server went down, or a sender gave up on it). */
   | "hangup"
   /** A replica was promoted to primary. */
-  | "promote";
+  | "promote"
+  /** A cluster member won an election and leads. */
+  | "elect"
+  /** A booking that would have taken an already-taken key (a double booking), or a write refused for it. */
+  | "conflict";
 
 export interface Fx {
   t: number;

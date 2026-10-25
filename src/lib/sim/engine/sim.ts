@@ -1,6 +1,6 @@
 import { hashStr, mulberry32, zipfCdf } from "../rng";
 import type { Call, Fx, FxKind, LinkSpec, NodeSpec, Op, Result, SceneSpec, ScriptEvent } from "../types";
-import { TICK, Win, type Conn, type Done, type Frame, type NodeRt, type Note, type Req, type Spawn } from "./model";
+import { TICK, Win, type Conn, type Done, type Frame, type Gather, type NodeRt, type Note, type Req, type Spawn } from "./model";
 import { SAMPLE_KEYS, sameTargets } from "./ring";
 
 /**
@@ -128,6 +128,30 @@ export interface Sim {
   replicaOf(n: NodeRt): string | undefined;
   promote(lb: NodeRt, id: string): void;
   toPrimary(n: NodeRt, r: Req): void;
+
+  // coordination.ts
+  scatter(n: NodeRt, r: Req, targets: (string | string[])[], need: number, op: Req["op"], free?: boolean): void;
+  check(n: NodeRt, g: Gather): void;
+  lead(n: NodeRt): void;
+  raftSend(n: NodeRt, to: string, op: Req["op"]): void;
+  commit(n: NodeRt, r: Req): void;
+  wake(n: NodeRt, key: number): void;
+  sendPart(n: NodeRt, g: Gather, i: number): void;
+  gathered(n: NodeRt, c: Req): void;
+  finishGather(n: NodeRt, g: Gather, ok: boolean): void;
+  hedge(n: NodeRt): void;
+  quorumDone(n: NodeRt, r: Req): void;
+  raftTick(n: NodeRt): void;
+  raftMessage(n: NodeRt, r: Req): void;
+  raftReply(n: NodeRt, r: Req): void;
+  leaderOf(n: NodeRt): NodeRt | undefined;
+  clusterWrite(n: NodeRt, r: Req): boolean;
+  acquire(n: NodeRt, r: Req): void;
+  grant(n: NodeRt, r: Req): void;
+  unlock(n: NodeRt, r: Req): void;
+  expireLocks(n: NodeRt): void;
+  reserveBack(n: NodeRt, r: Req): void;
+  sagaBack(n: NodeRt, r: Req): boolean;
 }
 
 /**
@@ -204,6 +228,17 @@ export class Sim {
   repoint = new Map<string, string | undefined>();
   /** Writes that failed while waiting for their copies: never acknowledged, so never counted lost (by write number). */
   unacked = new Set<number>();
+  /** Requests waiting at a server for the parts it sent out (`fanout`, quorums, a leader's commits), by the request's id. */
+  gathers = new Map<number, Gather>();
+  /** Parts sent out, and the twins sent after a slow one (`hedgeMs`). */
+  parts: Win;
+  hedges: Win;
+  /** Bookings that took a key someone else already had, and saga-less orders left half-done after a step failed. */
+  doubleBookings: Win;
+  inconsistent: Win;
+  /** Cluster health, sampled every 10 ms: samples taken, and those with no leader any member would follow. */
+  leaderSamples: Win;
+  leaderless: Win;
   tracing: boolean;
   seq = 0;
   truth = new Map<number, number>();
@@ -244,6 +279,12 @@ export class Sim {
     this.empty = new Win(this.windowMs);
     this.falseAlarms = new Win(this.windowMs);
     this.lostAcked = new Win(this.windowMs);
+    this.parts = new Win(this.windowMs);
+    this.hedges = new Win(this.windowMs);
+    this.doubleBookings = new Win(this.windowMs);
+    this.inconsistent = new Win(this.windowMs);
+    this.leaderSamples = new Win(this.windowMs);
+    this.leaderless = new Win(this.windowMs);
     this.retryRng = mulberry32(this.seed ^ 0x9e3779b9);
     this.reconfigure(spec);
   }
@@ -370,6 +411,8 @@ export class Sim {
       downAt: -1e9,
       zeroAt: -1,
       opened: "",
+      raft: { role: "follower", term: 0, votedFor: "", votes: new Set(), lastBeat: this.t, timeout: 0, leader: "", nextBeat: 0 },
+      locks: new Map(),
     };
     if (spec.client) {
       const r = this.rate(rt);
@@ -413,7 +456,7 @@ export class Sim {
       // Its subscribers' connections close: they open new ones. A hung server keeps them open, and silent.
       if (n.spec.downMode !== "hang") for (const r of n.subs.splice(0)) this.respond(r, "error");
       // A primary that replicates on purpose loses the copies still on their way, and the writes waiting for them fail.
-      if (n.spec.replication) {
+      if (n.spec.replication || n.spec.cluster) {
         for (const q of this.reqs) if (q.op === "repl" && q.phase === "travel" && q.dir === 1 && q.from === id && !q.lostAt) q.lostAt = this.t + TICK;
         for (const r of n.waiting.splice(0)) {
           this.unacked.add(r.seq);
@@ -440,6 +483,8 @@ export class Sim {
     } else {
       for (const r of n.parked) this.unpark(r);
       n.parked = [];
+      // A cluster member comes back as a follower, and waits to hear who leads.
+      if (n.spec.cluster) Object.assign(n.raft, { role: "follower", leader: "", lastBeat: this.t });
       // A cache warmed before it serves comes back holding the hottest keys.
       if (n.spec.prewarm && (n.spec.capacity ?? 0) > 0)
         for (let k = 0; k < Math.min(n.spec.prewarm, n.spec.capacity!); k++)
@@ -654,6 +699,12 @@ export class Sim {
       beat: false,
       rto: 0,
       outAt: 0,
+      parentId: 0,
+      slot: -1,
+      expect: -1,
+      reserving: 0,
+      undoing: false,
+      term: 0,
     };
     this.reqs.push(r);
     return r;

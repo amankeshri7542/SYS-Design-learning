@@ -26,6 +26,18 @@ const data: Partial<Sim> & ThisType<Sim> = {
 
   dbDone(n: NodeRt, r: Req) {
     if (r.op === "write") {
+      // A booking writes only the version it read: a key taken in between is a double booking, or (compare-and-set) refused.
+      if (r.expect >= 0 && (n.data.get(r.key) ?? 0) !== r.expect) {
+        this.effect("conflict", n.spec.id);
+        if (n.spec.cas) return this.respond(r, "rejected");
+        this.doubleBookings.add(this.t);
+      }
+      // A cluster leader commits a write once a majority of the group has it (itself included).
+      if (n.spec.cluster && n.spec.cluster.majority !== false) {
+        r.seq = ++this.seq;
+        const others = n.spec.cluster.group.filter((id) => id !== n.spec.id);
+        return this.scatter(n, r, others, Math.floor(n.spec.cluster.group.length / 2), "repl", true);
+      }
       // An idempotent database applies a write once per logical message, and replays its result for a repeat.
       const note = n.spec.idempotent ? n.done.get(this.noteOf(r)) : undefined;
       if (note) {
@@ -85,9 +97,11 @@ const data: Partial<Sim> & ThisType<Sim> = {
   },
 
   applyRepl(n: NodeRt, r: Req) {
+    // A part of a quorum write or a commit: a member that is down can't store it.
+    if (r.parentId && !n.up) return this.respond(r, "error");
     if ((n.data.get(r.key) ?? 0) < r.seq) n.data.set(r.key, r.seq);
     // A copy its primary is waiting for goes back to confirm it.
-    if (r.syncFor) return this.respond(r, "ok");
+    if (r.syncFor || r.parentId) return this.respond(r, "ok");
     r.phase = "gone";
   },
 
