@@ -102,7 +102,7 @@ test("home: on narrow screens the board filters by level and finds a lesson by a
   // Every live entry at that level: lessons, and stories (on their own line).
   await expect(shown).toHaveCount(COURSE.filter((e) => e.level === "advanced").length);
   await board.getByRole("radio", { name: "All" }).check();
-  await board.getByRole("searchbox", { name: "Find a lesson" }).fill("thundering herd");
+  await board.getByRole("searchbox", { name: "Find a lesson" }).fill("dogpile");
   await expect(shown).toHaveCount(1);
   await expect(shown.first()).toHaveAttribute("href", "/learn/cache-stampede");
   await board.getByRole("searchbox", { name: "Find a lesson" }).fill("zzz");

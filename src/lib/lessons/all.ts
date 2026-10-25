@@ -53,6 +53,9 @@ import headOfLineBlocking from "./scenes/head-of-line-blocking";
 import pushVsPoll from "./scenes/push-vs-poll";
 import l4VsL7 from "./scenes/l4-vs-l7";
 import heartbeats from "./scenes/heartbeats";
+import connectionPools from "./scenes/connection-pools";
+import failover from "./scenes/failover";
+import coldCachesAndHerds from "./scenes/cold-caches-and-herds";
 import capstone from "./stories/capstone";
 import webCrawler from "./stories/web-crawler";
 
@@ -104,6 +107,9 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
   "push-vs-poll": pushVsPoll,
   "l4-vs-l7": l4VsL7,
   heartbeats,
+  "connection-pools": connectionPools,
+  failover,
+  "cold-caches-and-herds": coldCachesAndHerds,
 };
 
 export const STORY_DEFS: Record<string, StoryDef> = { capstone, "web-crawler": webCrawler };
