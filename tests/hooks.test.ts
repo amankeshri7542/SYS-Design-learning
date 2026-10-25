@@ -206,6 +206,20 @@ test("deadlines: honouring them stops work for callers who have gone", () => {
   assert.ok(honour < ignore / 2, `with deadlines: ${honour}`);
 });
 
+test("deadlines: honouring them stops work in progress once the deadline passes, and frees the worker", () => {
+  // Work that is admitted in time but runs long: 120 ms on average, with a slow tail, against a 150 ms deadline.
+  const spec = (deadlines?: "honour") =>
+    scene([client("u", 20, "s", { timeoutMs: 150 }), server("s", { slots: 4, serviceMs: 120, tail: { share: 0.3, mult: 4 }, deadlines })], { links: { "u>s": 5 } });
+  const sim = new Sim(spec("honour"));
+  let longest = 0;
+  for (let t = 0; t < 4000; t += 10) {
+    sim.step(10);
+    for (const r of sim.nodes.get("s")!.work) longest = Math.max(longest, sim.t - r.first);
+  }
+  assert.ok(longest <= 160, `no work runs past the deadline (longest ${longest} ms)`);
+  assert.ok(value(run(spec(), 4000), m("wasted")) > value(sim, m("wasted")) + 0.1, "cancelling the rest wastes less than finishing it");
+});
+
 test("a shared deadline: retries spend what is left of the first attempt's time", () => {
   // Some answers fail fast, so retries go out while time is left.
   const spec = (deadline?: "shared") =>

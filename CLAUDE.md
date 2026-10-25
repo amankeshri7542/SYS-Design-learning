@@ -64,7 +64,8 @@ An animated system-design course. It's built with Next.js 16 App Router, React 1
 - **Change column.** Only a `problem,fix` lesson gets better/worse verdicts. Explore and trade-off steps show a plain signed difference, and metrics with `better: "neutral"` (servers in use) never get a verdict. Response-time rows show their target.
 - **Visual language.** Never reuse a dot colour for a new meaning. The mapping is fixed: cobalt for a request, amber for late, green for answered, violet for stale, slate for turned away, red for failed. Shape carries the state as well as colour.
   - Marks that extend those meanings keep them: a rail glows cobalt with its traffic (red when most of it fails); a waiting line sits on an amber pressure wedge; a replica with a copy in flight shows a violet rule (a read there may be stale); a copy travels as a small hollow muted square.
-  - Things that are not requests take ink, never a dot colour: an evicted cache entry falls as a flat ink chip.
+  - A big answer on a thin link stretches into a bar along its rail (head at the link's latency, tail one transfer time behind). A message lost on its link leaves a red cross where it vanished, not a diamond: nothing answered it.
+  - Things that are not requests take ink, never a dot colour: an evicted cache entry falls as a flat ink chip, and the Travel, Waiting and Working rows of the table carry an ink rule as long as their share of the whole.
   - Rings mark a station changing state (crash, recover, boot, hot, a breaker opening or closing); a cache's hit or miss gets only a faint one, at most one per cache every 250 ms.
 - **Fault buttons.** Each action reads its on/off state from the simulation (`isOn`), so scripted faults and buttons stay in sync.
 - **Reduced motion.** Must keep working: no autoplay, a settled still frame, and CSS animations disabled.

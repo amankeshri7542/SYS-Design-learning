@@ -109,6 +109,31 @@ export const bursts = (base: number, peak: number, every: number, length: number
   t % every < length ? peak : base;
 
 export const M = {
+  p50: (o: Partial<MetricSpec> = {}): MetricSpec => ({
+    id: "p50",
+    label: "Typical response",
+    hint: "Half of requests are answered faster than this (the median).",
+    ...o,
+  }),
+  /** Where an answer's time went: on the wires, waiting in line, being worked on. The table draws each one's share. */
+  wire: (o: Partial<MetricSpec> = {}): MetricSpec => ({
+    id: "wire",
+    label: "Travel",
+    hint: "Average time an answered request spent on the wires, out and back.",
+    ...o,
+  }),
+  wait: (o: Partial<MetricSpec> = {}): MetricSpec => ({
+    id: "wait",
+    label: "Waiting",
+    hint: "Average time an answered request waited in line for a free worker.",
+    ...o,
+  }),
+  work: (o: Partial<MetricSpec> = {}): MetricSpec => ({
+    id: "work",
+    label: "Working",
+    hint: "Average time a worker spent on an answered request.",
+    ...o,
+  }),
   p95: (o: Partial<MetricSpec> = {}): MetricSpec => ({
     id: "p95",
     label: "Response time",

@@ -735,7 +735,7 @@ Every new lesson follows §8 and its curriculum §3 row. Add a `requires` entry 
 - [x] Every existing lesson's tuned metrics are unchanged after the engine PR: `npm run tune -- --json` is byte-for-byte the same before and after.
 - [x] Lossy-link scenes lose the same `(logicalId, attempt)` set in both worlds (`tests/hooks.test.ts`, two worlds with different downstreams).
 - [ ] Every new lesson passes claims, beats validation, fairness and stage-fit.
-- [ ] The home page's "Start" button points at N1.
+- [x] The home page's "Start" button points at N1.
 
 Engine PR gates on 2026-10-24: typecheck, 166 unit tests (28 in `tests/hooks.test.ts`, 3 catalog-wide properties in `tests/invariants.test.ts`, one new scene rule), build, and the browser suite: 452 tests, of which 441 passed and 11 were skipped, the 4 frame budgets included.
 
@@ -752,6 +752,21 @@ Engine PR gates on 2026-10-24: typecheck, 166 unit tests (28 in `tests/hooks.tes
 - **Bugs the property tests found, now fixed.** (1) A server that gave up on a call left a ghost that the client's deadline later recorded a second time: in R2, 6 of 233 requests were counted twice. (2) A request let go by a hung node (when the node came back, or past 60 hung on it) was marked ended while its caller still held a worker for it, and a client calling a hung node directly never recorded it at all. Now it is lost, and its caller gives up in time. (3) A lost crossing, or a request dropped for its deadline, kept a balancer's count of requests outstanding. Of the existing scenes only R2's changed, and its tuned numbers did not.
 - **Scene rule:** a scene whose links lose messages gives every client a timeout and every blocking server a call timeout or honoured deadlines (`tests/lessons.test.ts`).
 - **Stage:** a lost crossing leaves a red cross on its rail where it vanished; it is a new Key row ("Lost") that a lesson opts into. A lookup the existence check answered gets the hit's faint green ring. Rail captions come from `LinkSpec.label` as well as `linkLabels`. New badges: SHEDDING (held 300 ms past each refusal, so it doesn't flicker) and versions (v1, v2). New sub-labels: "rolled back", "restarting…", "warming up · 2/4 busy". Bulkhead dividers, stretched dots on thin links, retransmit rings, the availability gauge and the wire/wait/work bar land with R5, N3, N1 and F6, each designed against the lesson that shows it.
+
+**Decisions made while building the M6 networking lessons (N1, N3, N5, N8, N13, N16):**
+
+Networking PR gates on 2026-10-24: typecheck, 189 unit tests, build, and the browser suite: 548 tests, of which 537 passed and 11 were skipped, the 4 frame budgets included. N1, N3, N5, N8, N13 and N16 were checked by eye at 1440×900, 1280×720, 390×844 and 844×390, light and dark.
+
+- **Where the time goes is drawn in the table, not on the stage.** Rows of `wire`, `wait` and `work` ("Travel", "Waiting", "Working") each carry a thin ink rule under their number, as long as that part's share of the column's whole. N1's explore step flips them as the learner drags the server closer. The kit gained `M.p50` ("Typical response"), `M.wire`, `M.wait` and `M.work`. Following a request already shows the same split in its strip.
+- **A payload on a thin link is stretched:** the engine records each crossing's transfer time (`Req.xfer`, output only), and the stage draws the answer as a bar whose head crosses at the link's latency and whose tail follows one transfer time behind. N3's 1 MB file fills the whole wire; its 2 KB page stays a dot.
+- **N3 keeps every request the same size in the trace.** The answer's size lives in the link's `perCostMs`, so both trade-off steps send identical traffic. The line sends one answer at a time (`parallel: 1`).
+- **The fairness test needs 5 identical arrivals, not 50.** Some lessons send one request at a time so each can be watched; five arrivals compared exactly still prove the traffic is the same.
+- **N5 has no "move the server" break.** Stale cached addresses need the cached-address hook, which moves to a later milestone; N16 shows a stale cached answer under a fault, and N5 teaches the move in a check and its catch. N5's name servers sit in one column, so the phone's tall layout keeps four rows.
+- **N8 changed the engine:** a node that honours deadlines now also stops work in progress once its deadline passes, and its admission estimate counts half a service for a busy worker to free up. With the slowed database, wasted work falls from about two thirds to about 2 %. No existing scene honours deadlines, so the fingerprint is unchanged.
+- **N13 batches by asking fewer, slightly longer queries** (5 ms for one item, 1 ms more per extra item), so the users and their traffic are the same in both steps.
+- **N16 models a DNS answer's time to live as a router that re-checks health once per TTL**; anycast checks every 100 ms. Each group of users has its own router (nearest by link latency). Its window is 4 s, so the comparison covers the outage.
+- **Callouts keep clear of rail captions**, and one pointing at a captioned rail ends its leader at the top of the caption. **Balancers say how they pick:** "nearest healthy", "by weight".
+- **Edges added:** N1 before F1, N8 before R2. The home page's start button now points at N1, the first live stop on the path.
 
 ### M7 — Engine B2a (messages and delivery) and 7 lessons (L)
 

@@ -38,12 +38,16 @@ const transport: Partial<Sim> & ThisType<Sim> = {
     let start = this.t;
     r.sentAt = this.t;
     r.hop++;
+    r.xfer = 0;
     if (r.op !== "probe") this.crossings.add(this.t);
     const L = this.linkOf(from, to);
     if (L) {
       const key = `${from}>${to}`;
       const payload = r.op === "write" ? r.dir === 1 : r.dir === -1;
-      if (L.perCostMs && payload) ms += L.perCostMs * r.cost;
+      if (L.perCostMs && payload) {
+        r.xfer = L.perCostMs * r.cost;
+        ms += r.xfer;
+      }
       if (L.jitterMs) ms = Math.max(1, ms + L.jitterMs * (2 * fate(key, r, 2) - 1));
       if (L.parallel) {
         const busy = (this.linkBusy.get(key) ?? []).filter((end) => end > this.t).sort((a, b) => a - b);

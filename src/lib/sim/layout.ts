@@ -513,6 +513,8 @@ export function subsFor(n: NodeSpec, spec: SceneSpec, mode: Mode): string[] {
         if (n.autoscale) return ["target 99% busy"];
         if (n.algo === "hash") return ["key → 9 nodes"];
         if (n.algo === "ring") return ["ring of 64 points each"];
+        if (n.algo === "nearest") return ["nearest healthy"];
+        if (n.algo === "weighted") return ["by weight"];
         if (n.health) return ["checking health"];
         return [n.algo === "least" ? "least busy" : n.algo === "random" ? "random" : "round robin"];
       case "limiter":

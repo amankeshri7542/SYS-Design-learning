@@ -80,8 +80,12 @@ const work: Partial<Sim> & ThisType<Sim> = {
       return this.refuse(n, r);
     }
     // Honouring deadlines: a request that can't be finished in the time it has left is refused now, not served late.
-    if (n.spec.deadlines === "honour" && r.deadline - this.t < (n.queue.length / this.slotsOf(n) + 1) * (n.spec.serviceBy?.[r.op === "write" ? "write" : "read"] ?? n.spec.serviceMs ?? 0))
-      return this.refuse(n, r);
+    // Its estimate: the line ahead shared among the workers, half a service for a busy worker to free up, then its own.
+    if (n.spec.deadlines === "honour") {
+      const slots = this.slotsOf(n);
+      const busy = n.work.length + n.held.length >= slots ? 0.5 : 0;
+      if (r.deadline - this.t < (n.queue.length / slots + busy + 1) * (n.spec.serviceBy?.[r.op === "write" ? "write" : "read"] ?? n.spec.serviceMs ?? 0)) return this.refuse(n, r);
+    }
     n.queue.push(r);
     r.phase = "wait";
     r.queuedAt = this.t;

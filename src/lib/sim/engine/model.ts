@@ -63,6 +63,8 @@ export interface Req {
   work: number;
   /** When it joined the line it is waiting in. */
   queuedAt: number;
+  /** Of this crossing's time, how much is sending its payload down a thin link (output only: the stage stretches it). */
+  xfer: number;
 }
 
 export interface Entry {

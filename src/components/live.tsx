@@ -1,14 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Sim } from "@/lib/sim/engine";
-import { betterIs, changeSize, explainMetric, formatChange, formatClock, formatDiff, formatMetric, formatTarget, measure, toneOf, type MetricSpec } from "@/lib/sim/metrics";
+import { betterIs, changeSize, explainMetric, formatChange, formatClock, formatDiff, formatMetric, formatTarget, measure, toneOf, type MetricId, type MetricSpec } from "@/lib/sim/metrics";
 import { stepGrid } from "@/lib/lessons/beats";
 import type { SceneSpec } from "@/lib/sim/types";
 import { useMode, useReducedMotion, useVisible } from "./hooks";
 import type { DrawFn } from "./stage";
 
 const HISTORY = 40;
+
+/** Where an answer's time goes: rows of these show, under each number, its share of the column's whole. */
+const SPLIT: MetricId[] = ["wire", "wait", "work"];
+
+/** A time part's share of the whole (travel + waiting + working) in one world, for its bar. */
+function shareOf(m: MetricSpec, sim: Sim): number | undefined {
+  if (!SPLIT.includes(m.id)) return undefined;
+  const v = measure(sim, m);
+  const total = SPLIT.reduce((sum, id) => sum + (measure(sim, { ...m, id, label: id }) ?? 0), 0);
+  return v !== null && total > 0 ? v / total : undefined;
+}
 
 /** Reduced motion opens on a settled still frame this far past the warm-up (simulated ms). */
 const STILL = 2600;
@@ -391,17 +402,21 @@ export function Compare({ metrics, columns, verdict, spot, why = {} }: { metrics
                 </button>
                 <Target m={m} sloMs={columns[0].sim.spec.sloMs} />
               </th>
-              {row.map((v, j) => (
+              {row.map((v, j) => {
+                const share = shareOf(m, columns[j].sim);
+                return (
                 <td
                   key={j}
-                  className={`num tone-${toneOf(m, v, columns[j].sim.spec.sloMs)}${columns[j].active ? " on" : ""}${best !== null && v === best ? " best" : ""}`}
+                  className={`num tone-${toneOf(m, v, columns[j].sim.spec.sloMs)}${columns[j].active ? " on" : ""}${best !== null && v === best ? " best" : ""}${share !== undefined ? " share" : ""}`}
+                  style={share !== undefined ? ({ "--share": share.toFixed(3) } as CSSProperties) : undefined}
                 >
                   {/* Keyed by tone: a number crossing into a new tone gets a one-time cue (never on first draw). */}
                   <span key={toneOf(m, v, columns[j].sim.spec.sloMs)} className={cue(`${j}:${m.label}`, toneOf(m, v, columns[j].sim.spec.sloMs)) ? "cue" : undefined}>
                     {formatMetric(m, v)}
                   </span>
                 </td>
-              ))}
+                );
+              })}
               {two && (
                 <td className={`delta${change?.cls ?? ""}`}>
                   <span key={change ? change.text.charAt(0) + change.cls : "none"} className={cue(`d:${m.label}`, change ? change.text.charAt(0) + change.cls : "none") ? "cue" : undefined}>

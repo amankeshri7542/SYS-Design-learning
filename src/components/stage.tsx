@@ -15,6 +15,7 @@ import {
   glyphOf,
   labelSpot,
   linkLabel,
+  linkLabelRect,
   nodeKey,
   pathD,
   placeAll,
@@ -399,7 +400,9 @@ export function Stage({
       // Where a travelling request is at simulated time `t`: along its link, on its own lane of the rail.
       const along = (r: Req, e: { c: [Pt, Pt, Pt, Pt]; tA: number; tB: number }, t: number, lane: number) => {
         const span = r.t1 - r.t0;
-        const prog = span > 0 ? Math.min(1, Math.max(0, (t - r.t0) / span)) : 1;
+        return pointAt(e, span > 0 ? Math.min(1, Math.max(0, (t - r.t0) / span)) : 1, lane);
+      };
+      const pointAt = (e: { c: [Pt, Pt, Pt, Pt]; tA: number; tB: number }, prog: number, lane: number) => {
         const u = e.tA + (e.tB - e.tA) * prog;
         const a = bezier(e.c, u);
         const b = bezier(e.c, Math.min(1, u + 0.01));
@@ -498,6 +501,7 @@ export function Stage({
       const fromCache = (id: string) => sim.nodes.get(id)?.spec.kind === "cache";
       const popped = new Set<number>();
       const wipes: { look: { color: string; shape: Parameters<typeof shape>[1] }; alpha: number; p: Pt; size: number; work: number }[] = [];
+      const streams: { color: string; alpha: number; pts: Pt[]; size: number }[] = [];
       for (const r of sim.reqs) {
         if (r.phase === "gone") continue;
         const look = styleOf(r, now, slo, P);
@@ -510,10 +514,20 @@ export function Stage({
           const e = path(r.from, r.to);
           if (!e) continue;
           const lane = look.small ? 0 : 4 * Math.max(1, L.frame.scale);
-          const at = along(r, e, now, lane);
+          let at = along(r, e, now, lane);
+          size = base * (r.cost > 1 ? 1.35 : 1);
+          if (r.xfer > 0 && r.t1 - r.t0 > r.xfer) {
+            // A payload on a thin link: its head crosses at the link's latency and its tail follows one transfer time
+            // behind, so a big answer on a thin pipe is a bar along the rail, not a dot.
+            const head = r.t1 - r.t0 - r.xfer;
+            const hp = Math.min(1, Math.max(0, (now - r.t0) / head));
+            const tp = Math.min(1, Math.max(0, (now - r.t0 - r.xfer) / head));
+            at = { p: pointAt(e, hp, lane).p, prog: hp };
+            // Centred on the rail and a little thinner than a dot, so it never covers the rail's caption.
+            if (hp - tp > 0.01) streams.push({ color: look.color, alpha: look.alpha * fade * dim(r, look), pts: [0, 0.25, 0.5, 0.75, 1].map((f) => pointAt(e, tp + (hp - tp) * f, 0).p), size });
+          }
           p = at.p;
           next.set(r.id, p);
-          size = base * (r.cost > 1 ? 1.35 : 1);
           if (!reduced) {
             // Requests grow out of the client and shrink back into it, so they don't pop in and out.
             if (r.dir === 1 && atClient(r.from) && at.prog < 0.18) size *= 0.45 + (0.55 * at.prog) / 0.18;
@@ -526,8 +540,8 @@ export function Stage({
               const u = (real - start) / DUR.fast;
               if (u < 1) size *= 1 + 0.35 * Math.sin(Math.PI * u);
             }
-            // Its trail: where it was a moment of simulated time ago.
-            if (r.op !== "probe" && now - TRAIL_MS < r.t1) {
+            // Its trail: where it was a moment of simulated time ago (a stretched payload is its own trail).
+            if (r.op !== "probe" && !r.xfer && now - TRAIL_MS < r.t1) {
               const from = Math.max(r.t0, now - TRAIL_MS);
               const pts = [0, 1 / 3, 2 / 3, 1].map((f) => along(r, e, from + (now - from) * f, lane).p);
               if (Math.hypot(pts[3].x - pts[0].x, pts[3].y - pts[0].y) > size) s.trails.add(look.color, pts);
@@ -566,6 +580,17 @@ export function Stage({
         ctx.restore();
       }
       s.trails.draw(ctx, 2.2 / k, fade);
+      ctx.lineCap = "round";
+      for (const st of streams) {
+        ctx.strokeStyle = st.color;
+        ctx.globalAlpha = st.alpha * 0.85;
+        ctx.lineWidth = st.size * 1.1;
+        ctx.beginPath();
+        st.pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+        ctx.stroke();
+      }
+      ctx.lineCap = "butt";
+      ctx.globalAlpha = 1;
       s.dots.draw(ctx);
       // Requests in service: a ghost of the dot with a clock-wipe of the work still to do.
       for (const w of wipes) {
@@ -659,6 +684,14 @@ export function Stage({
       const y = Math.min(...rs.map((r) => r.y));
       return { x, y, w: Math.max(...rs.map((r) => r.x + r.w)) - x, h: Math.max(...rs.map((r) => r.y + r.h)) - y };
     };
+    // Rail captions are labels too: a callout never covers one, and one pointing at a rail keeps clear of its caption.
+    const captions = new Map<string, Rect>();
+    for (const e of edges) {
+      const text = linkLabel(spec, e.a, e.b);
+      const p = boxes.get(e.a);
+      const q = boxes.get(e.b);
+      if (text && p && q) captions.set(`${e.a}~${e.b}`, linkLabelRect(text, p, q, frame.mode, k));
+    }
     let anchor: Rect | null = null;
     let block: Rect | null = null;
     const b = f?.nodes?.[0] ? boxes.get(f.nodes[0]) : undefined;
@@ -675,8 +708,12 @@ export function Stage({
     } else if (f?.link) {
       const [p, q] = f.link.map((id) => boxes.get(id));
       if (p && q) {
+        // The middle of the rail; when its caption sits there, the top of the caption, so the leader doesn't cross it.
+        const caption = captions.get(`${f.link[0]}~${f.link[1]}`) ?? captions.get(`${f.link[1]}~${f.link[0]}`);
         const mid = bezier(curve(p, q, frame.mode), 0.5);
-        anchor = block = { x: mid.x - 4, y: mid.y - 4, w: 8, h: 8 };
+        const y = caption ? Math.min(mid.y, caption.y) : mid.y;
+        anchor = { x: mid.x - 4, y: y - 4, w: 8, h: 8 };
+        block = caption ? union([anchor, caption]) : anchor;
       }
     }
     if (!anchor || !block) return null;
@@ -687,8 +724,9 @@ export function Stage({
       const c = curve(p, q, frame.mode);
       return [Array.from({ length: 21 }, (_, i) => bezier(c, i / 20)).map((pt) => ({ x: pt.x * k + ox, y: pt.y * k + oy }))];
     });
-    return { anchor: px(anchor), block: px(block), obstacles: [...boxes.values()].flatMap((x) => x.rects.map(px)), rails, box };
-  }, [layout, box, focusKey, edges]);
+    const obstacles = [...[...boxes.values()].flatMap((x) => x.rects), ...captions.values()].map(px);
+    return { anchor: px(anchor), block: px(block), obstacles, rails, box };
+  }, [layout, box, focusKey, edges, spec]);
 
   return (
     <div
@@ -1203,6 +1241,8 @@ function describe(sim: Sim, n: NodeRt, lbs: NodeRt[]): { cls: string; sub: strin
       if (s.autoscale) sub = `target ${Math.round(s.autoscale.target * 100)}% busy`;
       else if (s.algo === "hash") sub = `key → ${sim.flat(s.to).length} nodes`;
       else if (s.algo === "ring") sub = "ring of 64 points each";
+      else if (s.algo === "nearest") sub = "nearest healthy";
+      else if (s.algo === "weighted") sub = "by weight";
       else if (s.health) sub = "checking health";
       else sub = s.algo === "least" ? "least busy" : s.algo === "random" ? "random" : "round robin";
       break;

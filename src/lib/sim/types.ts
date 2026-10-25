@@ -127,7 +127,8 @@ export interface NodeSpec {
   byTag?: Record<string, Call[]>;
   /**
    * `honour`: refuse work that can't finish before the request's deadline, turn away work for a request already
-   * abandoned, and stop waiting on a downstream call once the deadline passes. `ignore` (default): work on regardless.
+   * abandoned, stop work in progress once its deadline passes, and stop waiting on a downstream call then too.
+   * `ignore` (default): work on regardless.
    */
   deadlines?: "honour" | "ignore";
   /** Balancer, `algo: "weighted"`: each target's share of the traffic (default 1). */
