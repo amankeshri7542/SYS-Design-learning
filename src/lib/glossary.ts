@@ -83,6 +83,11 @@ const TERMS: Term[] = [
   // Data
   { key: "connection-pool", name: "Connection pool", alias: "pool, PgBouncer", short: "A few connections kept open and lent out to requests, instead of opening one per request.", show: { lesson: "connection-pools", focus: { nodes: ["a1", "a2"] } } },
   { key: "failover", name: "Failover", alias: "promotion, switchover", short: "Making a replica the new primary when the primary dies, so writes can carry on.", show: { lesson: "failover", focus: { nodes: ["r1"] } } },
+  { key: "quorum", name: "Quorum", alias: "W and R, majority", short: "How many copies must answer before a write or read counts. W + R > N means they always overlap.", show: { lesson: "quorums", focus: { nodes: ["co"] } } },
+  { key: "split-brain", name: "Split brain", alias: "two leaders", short: "A cut network leaving a leader on each side, both taking writes: two versions of the truth.", show: { lesson: "leader-election", focus: { nodes: ["a"] } } },
+  { key: "consensus", name: "Consensus", alias: "Raft, Paxos, majority vote", short: "Copies agreeing by majority vote on one leader and one order of writes, so a cut can't make two.", show: { lesson: "leader-election", focus: { nodes: ["a", "b", "c"] } } },
+  { key: "double-booking", name: "Double booking", alias: "race condition, lost update", short: "Two requests each checking that something is free, then both taking it, because neither saw the other.", show: { lesson: "locks-and-double-booking", focus: { nodes: ["seats"] } } },
+  { key: "compare-and-set", name: "Compare-and-set", alias: "CAS, conditional write, optimistic locking", short: "A write that succeeds only if the value is still what it was when read; otherwise it is refused.", show: { lesson: "locks-and-double-booking", focus: { nodes: ["seats"] } } },
   { key: "replica", name: "Replica", alias: "read replica, secondary", short: "A copy of a database that takes the primary's writes a moment later and answers reads.", show: { lesson: "read-replicas", focus: { nodes: ["r1"] } } },
   { key: "replication-lag", name: "Replication lag", short: "The moment between a write landing on the primary and its copy reaching a replica.", show: { lesson: "read-replicas", focus: { dots: "stale" } } },
   { key: "shard", name: "Shard", alias: "partition", short: "One database's slice of the keys, when the data is split across several by key.", show: { lesson: "sharding", focus: { nodes: ["d1", "d2", "d3"] } } },
@@ -106,6 +111,7 @@ const TERMS: Term[] = [
   { key: "consumer-lag", name: "Consumer lag", short: "How far a log's readers are behind its writers: events waiting to be read.", show: { lesson: "partitioned-logs", focus: { nodes: ["q"], dots: "waiting" } } },
   { key: "partition", name: "Partition", alias: "shard of a log", short: "One slice of a log. Events with the same key always land in the same partition, in order.", show: { lesson: "partitioned-logs", focus: { nodes: ["p1", "p2", "p3"] } } },
   { key: "consumer-group", name: "Consumer group", short: "Readers sharing a log's partitions, one reader per partition, rebalancing when one leaves.", show: { lesson: "partitioned-logs", focus: { nodes: ["p2", "c3"] } } },
+  { key: "saga", name: "Saga", alias: "compensating transaction", short: "A multi-step job where each step has an undo, run in reverse when a later step fails.", show: { lesson: "sagas", focus: { nodes: ["orders"] } } },
   // Resilience
   { key: "token-bucket", name: "Token bucket", alias: "rate limit", short: "Each client earns tokens at a steady rate up to a small store; each request spends one.", show: { lesson: "rate-limiting", focus: { nodes: ["lim"] } } },
   { key: "circuit-breaker", name: "Circuit breaker", short: "Stops calling a failing dependency for a while after repeated failures, then tests it with one call.", show: { lesson: "circuit-breakers", focus: { nodes: ["shop"] } } },
@@ -113,6 +119,8 @@ const TERMS: Term[] = [
   { key: "bulkhead", name: "Bulkhead", alias: "pool isolation", short: "A separate pool of workers for one kind of work, so a slow dependency can't take them all.", show: { lesson: "bulkheads", focus: { nodes: ["app"], sockets: true } } },
   { key: "cascade", name: "Cascading failure", alias: "domino failure", short: "One part fails, its load lands on the others, and they fail too, one after another.", show: { lesson: "cascading-failures", focus: { nodes: ["s2", "s3", "s4"] } } },
   { key: "headroom", name: "Headroom", alias: "N+1 capacity", short: "Spare capacity, so losing one server leaves enough for everyone.", show: { lesson: "cascading-failures", focus: { metric: "Answered" } } },
+  { key: "tail-latency", name: "Tail latency", alias: "p99, stragglers", short: "The slowest few percent of responses. When a page waits on many servers, the tail becomes the usual case.", show: { lesson: "hedged-requests", focus: { metric: "Page within" } } },
+  { key: "hedged-request", name: "Hedged request", alias: "speculative retry, backup request", short: "A second copy of a request, sent once the first is late. The first answer wins; the other is cancelled.", show: { lesson: "hedged-requests", focus: { nodes: ["page"] } } },
   // Operating
   { key: "canary", name: "Canary release", alias: "canary deployment", short: "Sending a small share of traffic to a new version first, so a bad one hurts only a few users.", show: { lesson: "canary-rollouts", focus: { nodes: ["c"] } } },
   { key: "rollback", name: "Rollback", short: "Going back to the previous version. Automatic when a canary's errors pass a limit.", show: { lesson: "canary-rollouts", focus: { nodes: ["lb", "c"] } } },

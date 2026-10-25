@@ -612,8 +612,15 @@ export function edgesOf(spec: SceneSpec): Edge[] {
     // A queue's dead letters and a database's outbox relay travel rails of their own.
     if (n.ack?.deadLetter) targets.push(n.ack.deadLetter);
     if (n.outbox) targets.push(n.outbox.to);
+    // Parts sent out to shards or replicas, a booking's database, and a saga's undo steps.
+    if (n.fanout) targets.push(...flat(n.fanout.to));
+    if (n.quorum) targets.push(...n.quorum.replicas);
+    if (n.reserve) targets.push(n.reserve.db);
+    if (n.saga) targets.push(...flat(n.saga.undo));
     for (const t of targets) if (ids.has(t)) add(n.id, t, "flow");
     if (n.replicaOf && ids.has(n.replicaOf)) add(n.replicaOf, n.id, "sync");
+    // A cluster's members beat and vote between themselves: copies' rails, not traffic's.
+    if (n.cluster) for (const m of n.cluster.group) if (m !== n.id && ids.has(m)) add(n.id, m, "sync");
     if (n.peer && ids.has(n.peer)) add(n.id, n.peer, "sync");
   }
   return out;
