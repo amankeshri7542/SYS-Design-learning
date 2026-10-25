@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "./fixtures";
-import { COURSE, LESSONS, neighbours } from "../../src/lib/lessons";
+import { COURSE, neighbours } from "../../src/lib/lessons";
 import { ALL_LESSONS, ALL_STORIES } from "../../src/lib/lessons/all";
 import { buildSteps, defaultsOf, headlineOf, type Lesson } from "../../src/lib/lessons/types";
 import { formatTarget, isLatency, type MetricSpec } from "../../src/lib/sim/metrics";
@@ -37,11 +37,12 @@ const compareRow = (page: Page, label: string) => page.locator(".compare tbody t
 /** Narrow screens show the route as a board; wider ones as the poster. */
 const boardShown = (page: Page) => (page.viewportSize()?.width ?? 1440) <= 900;
 
-test("home: the hero runs, the counts come from the catalog, and the route lists every live station", async ({ page }) => {
+test("home: the hero runs, the first ride names its first stop, and the route lists every live station", async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Watch systems work");
-  await expect(page.locator(".lede")).toContainText(`${LESSONS.length} lessons`);
+  await expect(page.locator(".masthead .btn-primary")).toContainText(`Start: ${COURSE[0].title}`);
+  await expect(page.locator(".ride .ride-stops li")).toHaveCount(5);
   // The hero runs only while it is on screen; on a phone held sideways it starts below the fold.
   await page.locator(".hero-fig").scrollIntoViewIfNeeded();
   const t0 = await simTime(page);
@@ -115,7 +116,14 @@ test("home: once lessons are visited, the start button carries on from the last 
   await page.reload();
   const start = page.locator(".masthead .btn-primary");
   await expect(start).toHaveAttribute("href", `/learn/${COURSE[2].slug}`);
-  await expect(start).toContainText(`Continue at ${COURSE[2].code}`);
+  await expect(start).toContainText(`Continue: ${COURSE[2].title}`);
+  // Once the first ride is done, the button carries on along the path and the lines show how far along each one is.
+  await page.evaluate((list) => localStorage.setItem("system-lab:visited:v1", JSON.stringify(list)), COURSE.slice(0, 5).map((e) => e.slug));
+  await page.reload();
+  await expect(start).toHaveAttribute("href", `/learn/${COURSE[5].slug}`);
+  await expect(start).toContainText(`Continue: ${COURSE[5].title}`);
+  await expect(page.locator(".masthead .line-index")).toBeVisible();
+  await expect(page.locator(".ride")).toHaveCount(0);
 });
 
 for (const lesson of ALL_LESSONS) {

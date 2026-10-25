@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { Check, Focus } from "@/lib/lessons/beats";
-import type { Lesson } from "@/lib/lessons/types";
+import type { Lesson, LessonMeta } from "@/lib/lessons/types";
 import { record } from "@/lib/record";
 import { Mark } from "./beats";
 import { Rich } from "./term";
@@ -127,8 +127,11 @@ export function FeelCard() {
   );
 }
 
-/** The last tab: the rule, the why, the claim in numbers, the checks, the takeaways, and how the lesson felt. */
-export function Recap({ lesson, claim, onWrong }: { lesson: Lesson; claim: string | null; onWrong: (f: Focus) => void }) {
+/**
+ * The last tab: the rule, the why, the claim in numbers, the checks, the takeaways (with the journeys that use the idea),
+ * and how the lesson felt.
+ */
+export function Recap({ lesson, claim, rides = [], onWrong }: { lesson: Lesson; claim: string | null; rides?: LessonMeta[]; onWrong: (f: Focus) => void }) {
   // Read once, as the Recap opens: a sentence whose numbers flicker is hard to read.
   const [sentence] = useState(claim);
   const t = lesson.takeaways;
@@ -158,6 +161,18 @@ export function Recap({ lesson, claim, onWrong }: { lesson: Lesson; claim: strin
           <dt>Seen in</dt>
           <dd>{t.seen}</dd>
         </div>
+        {rides.length > 0 && (
+          <div>
+            <dt>Ride it in</dt>
+            <dd className="recap-rides">
+              {rides.map((r) => (
+                <Link key={r.slug} href={`/learn/${r.slug}`}>
+                  {r.code} {r.title}
+                </Link>
+              ))}
+            </dd>
+          </div>
+        )}
         {t.interview && (
           <div>
             <dt>In an interview</dt>

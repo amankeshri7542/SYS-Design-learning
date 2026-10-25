@@ -65,13 +65,24 @@ export function mapGeometry(): MapGeometry {
   return { width: x + END, height: journeyY + 44, bands, rows, journeys, journeyY };
 }
 
-/** A station name in one or two lines of about 16 characters. */
-function split(name: string): string[] {
-  if (name.length <= 16) return [name];
-  const mid = name.length / 2;
-  let best = -1;
-  for (let i = 0; i < name.length; i++) if (name[i] === " " && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i;
-  return best < 0 ? [name] : [name.slice(0, best), name.slice(best + 1)];
+/**
+ * A station's name in up to three lines of at most 16 characters, so neighbours 120 px apart never touch. A title too
+ * long for that shows the part before its colon ("L4 vs L7"); the link and the station's card carry it whole.
+ */
+export function split(name: string, max = 16): string[] {
+  const wrap = (text: string) => {
+    const out: string[] = [];
+    let line = "";
+    for (const w of text.split(" ")) {
+      if (line && `${line} ${w}`.length > max) {
+        out.push(line);
+        line = w;
+      } else line = line ? `${line} ${w}` : w;
+    }
+    return line ? [...out, line] : out;
+  };
+  const lines = wrap(name);
+  return lines.length > 3 && name.includes(": ") ? wrap(name.slice(0, name.indexOf(": "))) : lines;
 }
 
 /** A journey's dashed route through its stops to its terminal: smooth curves that leave and arrive level. */
@@ -251,7 +262,7 @@ function RoutePoster({ visited, next }: { visited: Set<string>; next?: LessonMet
                     <circle cx={x} cy={y} r="11" className="station-dot" />
                     {seen && <path d={`M${x - 4.5} ${y}l3 3 6-6.5`} className="station-check" />}
                     {split(meta.title).map((part, k) => (
-                      <text key={k} x={x} y={y + 32 + k * 17} textAnchor="middle" className="station-name">
+                      <text key={k} x={x} y={y + 31 + k * 16} textAnchor="middle" className="station-name">
                         {part}
                       </text>
                     ))}

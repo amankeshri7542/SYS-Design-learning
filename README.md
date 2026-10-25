@@ -23,7 +23,7 @@ The course is a transit map: 57 lessons on seven lines, plus nine journeys. Line
 
 One recommended path interleaves the lines, and every lesson's **Next stop** follows it. An interview fast lane picks out the canon.
 
-The home page draws the map with the zones as bands. Hover or focus a station to see its card with the lesson running; a dimmed station is best seen after another. On a phone the map becomes a board you can filter by level and search by any name a concept goes by ("thundering herd", "429", "Kafka").
+The home page opens on a live scene whose parts explain themselves when tapped, and a first ride: five short stops, about twenty minutes, from a request and a response to finding a server. Below, the map draws the zones as bands. Hover or focus a station to see its card with the lesson running; a dimmed station is best seen after another. On a phone the map becomes a board you can filter by level and search by any name a concept goes by ("thundering herd", "429", "Kafka").
 
 ![The route map: lines as rows, levels as zone bands, and a station's card with its lesson running](docs/screenshots/route-map.png)
 
@@ -48,6 +48,7 @@ A lesson teaches by watching:
 - **You cause the failure.** The ⚡ button (crash a cache, open a sale, cut a link) plays the fault in both worlds at once.
 - **Follow one** request through every hop, with a wait/work/wire timeline.
 - **Glossary terms** are named once, by the beat that shows them, and open a short definition with a "Show me".
+- **Part cards:** tap any station's name to see what it is, what it does in this scene, what it is doing right now, how to read its drawing, and the lesson that teaches it.
 
 ![The caching lesson on one screen: scene, narration, steps and the Without/With/Change table](docs/screenshots/lesson-caching.png)
 

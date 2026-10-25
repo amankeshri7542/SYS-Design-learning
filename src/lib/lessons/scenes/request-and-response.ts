@@ -39,6 +39,7 @@ const requestAndResponse: LessonScene = {
           term: "request",
         },
         { id: "idle", when: { wait: 0 }, text: "Count Server's part: 20 ms of work. Its workers sit empty most of the time.", focus: { nodes: ["app"], sockets: true } },
+        { id: "card", when: { wait: 0 }, text: "Tap Server's name: a card says what it is and how to read it.", focus: { nodes: ["app"] } },
         {
           id: "response",
           when: { metric: M.wire(), is: ">", value: 0 },

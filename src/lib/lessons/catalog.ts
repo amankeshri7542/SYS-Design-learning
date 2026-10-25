@@ -12,7 +12,7 @@ import type { LessonMeta, Line } from "./types";
 
 /** The lines, in the map's order: topics as rows. Stories ride several lines, so they are journeys, not a row. */
 export const LINES: Line[] = [
-  { id: "networking", letter: "N", name: "Networking", blurb: "What crosses the wire: a request, its answer, the acknowledgement, and what goes wrong on the way." },
+  { id: "networking", letter: "N", name: "Networking", blurb: "What crosses the wire between machines, and what goes wrong on the way." },
   { id: "foundations", letter: "F", name: "Foundations", blurb: "How a request is served, and what happens when there are too many." },
   { id: "caching", letter: "C", name: "Caching", blurb: "Answer from a nearby copy instead of doing the work again." },
   { id: "data", letter: "D", name: "Data", blurb: "Copying and splitting data across machines, and what that costs." },

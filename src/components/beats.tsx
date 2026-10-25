@@ -217,14 +217,16 @@ export function useBeats(lesson: Lesson, step: number) {
 
     // What made a row move, for its explainer: the last beat that pointed at it, or the lesson's claim for its headline.
     const why: Record<string, string> = {};
-    const said = claim ? (s.claim ?? (claim.at ? null : fillIn(claim.sentence, { sims: live.sims, ...ctx, current: shown }))) : null;
+    const live1 = claim && !claim.at ? fillIn(claim.sentence, { sims: live.sims, ...ctx, current: shown }) : null;
+    // Read live, a number the worlds haven't measured yet reads "—": no sentence until they have.
+    const said = claim ? (s.claim ?? (live1?.includes("—") ? null : live1)) : null;
     if (claim && said) why[claim.metric] = plainText(said);
     for (const runner of runners) for (const f of runner.fired) if (f.beat.focus?.metric) why[f.beat.focus.metric] = plainText(f.text);
 
     return {
       beat,
       why,
-      /** The claim's sentence: read at its beat, or live; null when its beat hasn't fired yet. */
+      /** The claim's sentence: read at its beat, or live; null when its beat hasn't fired yet, or nothing is measured. */
       claim: said,
       /** Plain text of a beat that fired on this visit to the step, for the live region (once each). */
       announce: fresh,

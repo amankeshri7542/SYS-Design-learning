@@ -1,9 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
+import { COURSE } from "@/lib/lessons";
 import { HERO } from "@/lib/lessons/hero";
 import { BeatStrip, type BeatView } from "./beats";
 import { useMode } from "./hooks";
+import { DOTS, Dot } from "./legend";
+import type { Explain } from "./part-card";
 import { Transport, useLiveSims } from "./live";
 import { MetricList, useSceneBeats } from "./scene-run";
 import { Stage } from "./stage";
@@ -11,6 +14,10 @@ import { Stage } from "./stage";
 const BEATS = HERO.beats ?? [];
 const LOOP = HERO.build({}).script?.loopMs ?? 1;
 /** Before a beat has fired (and under reduced motion, where nothing runs), the strip opens on the first. */
+// Its stations open their cards like a lesson's, pointing at the lessons that teach them.
+const EXPLAIN: Explain = { lesson: "", learn: Object.fromEntries(COURSE.map((e) => [e.slug, { code: e.code, title: e.title }])) };
+/** The dots a first look needs, in one row under the scene: the rest are named in the lessons that show them. */
+const KEY = DOTS.filter((d) => ["req", "late", "ok", "failed", "turned"].includes(d.kind));
 const FIRST: BeatView = { id: "first", text: BEATS[0]?.text ?? "", focus: null, n: 1, total: BEATS.length, waiting: false, part: false, follow: false };
 
 /**
@@ -38,11 +45,21 @@ export function HeroScene() {
           reduced={live.reduced}
           label={`${HERO.title}. ${caption}`}
           drawRef={live.drawRef}
+          explain={EXPLAIN}
         />
       </div>
       <figcaption className="hero-bar">
         <Transport live={live} />
         <MetricList metrics={metrics} sim={sim} />
+        <p className="hero-key">
+          {KEY.map((d) => (
+            <span key={d.kind}>
+              <Dot shape={d.shape} cls={d.cls} />
+              {d.name}
+            </span>
+          ))}
+          <span className="hero-tip">Tap a name to see what it is.</span>
+        </p>
       </figcaption>
     </figure>
   );
