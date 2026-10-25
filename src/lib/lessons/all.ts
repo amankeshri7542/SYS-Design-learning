@@ -65,6 +65,10 @@ import capstone from "./stories/capstone";
 import webCrawler from "./stories/web-crawler";
 import videoPremiere from "./stories/video-premiere";
 import chat from "./stories/chat";
+import flashSale from "./stories/flash-sale";
+import rideMatching from "./stories/ride-matching";
+import newsFeed from "./stories/news-feed";
+import payments from "./stories/payments";
 
 export const SCENE_DEFS: Record<string, LessonScene> = {
   "latency-and-throughput": latencyAndThroughput,
@@ -124,7 +128,7 @@ export const SCENE_DEFS: Record<string, LessonScene> = {
   sagas,
 };
 
-export const STORY_DEFS: Record<string, StoryDef> = { capstone, "web-crawler": webCrawler, "video-premiere": videoPremiere, chat };
+export const STORY_DEFS: Record<string, StoryDef> = { capstone, "web-crawler": webCrawler, "video-premiere": videoPremiere, chat, "flash-sale": flashSale, "ride-matching": rideMatching, "news-feed": newsFeed, payments };
 
 /** Every live lesson, whole, in path order. */
 export const ALL_LESSONS: Lesson[] = LESSONS.map((m) => withScene(m, SCENE_DEFS[m.slug]));

@@ -943,9 +943,9 @@ Gates on 2026-10-25: typecheck, 336 unit tests (3 new in `tests/hooks.test.ts`),
 | `tests/sim.test.ts` | modified | Every test in architecture §2.4. |
 
 **Acceptance:**
-- [ ] Crashing the leader elects a new one within `max(electionMs) + 2 × heartbeatMs`, and a minority partition never elects.
-- [ ] With W + R > N, stale reads stay at zero under replication lag.
-- [ ] D10 shows double bookings above zero without a lock and exactly zero with one.
+- [x] Crashing the leader elects a new one within `max(electionMs) + 2 × heartbeatMs`, and a minority partition never elects.
+- [x] With W + R > N, stale reads stay at zero under replication lag.
+- [x] D10 shows double bookings above zero without a lock and exactly zero with one.
 
 **Decisions made while building the M9 engine PR:**
 
@@ -973,6 +973,24 @@ Gates on 2026-10-25: typecheck, 364 unit tests (1 new in `tests/hooks.test.ts`),
 - **A9:** an order pays, reserves stock and books shipping; shipping fails 5% of the time, and "Crash shipping" takes it down for 1.5 s. Without undo about 36 orders are left half-done in the window; the saga's undo calls go back to Stock and then Payment (release, then refund), and the orders end cancelled.
 - **R8:** a page asks five shards and waits for all five; each takes 20 ms but one in 20 is twelve times slower. Pages take about 364 ms at the 95th percentile; hedged after 60 ms, about 157 ms, with 5% of requests to shards sent twice (after 20 ms: 119 ms, and about half sent twice).
 - **The route test's example of a planned lesson** is now `stream-windows`, the last lessons still planned being M10's.
+
+**Decisions made while building the four M9 stories (S4 flash sale, S5 ride matching, S6 news feed, S7 payments in the catalog's frozen codes):**
+
+Gates on 2026-10-25: typecheck, 378 unit tests (5 new in `tests/hooks.test.ts`, 1 in `tests/sim.test.ts`, 8 from the four stories), build, and the browser suite: 1,148 tests, of which 1,137 passed and 11 were skipped, the 4 frame budgets included. Each story was checked by eye at the four sizes with every switch on. Over a 16 s run, each stage's own design holds its targets the whole time (the ride-matching outage stage 93% of it), and the previous stage's design never holds them as long as the stage needs.
+
+- **One PR for the four stories,** like M8's two. Each `requires` now lists the lessons the story rides, in ride order: flash sale caching, locks and double booking, rate limiting; ride matching batching, locks, nearest region; news feed sharding, hedged requests, publish-subscribe; payments idempotency, sagas, locks.
+- **Six engine changes, each with a test that a mutation of it fails; no earlier scene changes** (every lesson, the hero and the earlier stories hash the same):
+  - a `reserve` server books only on writes; a read is served through its `calls` (the seat map, nearby cars);
+  - a `lock` holds back writes only, and reads pass;
+  - `limit.shared` is one bucket for every client, labelled "lets in 60/s": a waiting room;
+  - a topic's (or queue's) copy carries its message's `cost`;
+  - a saga's undo has an idempotency note of its own, so an idempotent step refunds instead of replaying the charge;
+  - an answer lost on its way back after its client gave up stays held until the server waiting on it gives up (`stillHeld`), and a lock's line keeps a waiter a server still waits on; before, the request was ended under the server, which the invariants caught in S7.
+- **Phones:** the strip's stage line stays on one line (ellipsis) under the beat's two lines; S5's lead overlapped them before.
+- **S4 flash sale:** browsers read the seat map at 700 a second; buyers book (read the seat, write it if free). Doors open → a seat map cache; the last seats (blocks of 40 every 2 s, a looping script freeing them, 60 buyers a second) → compare-and-set; everyone at once (600 buyers a second) → a waiting room at 60 a second. Targets: response time ≤ 0.4 s and no seat sold twice.
+- **S5 ride matching:** drivers ping Locations; riders look for nearby cars (reads) and book a driver (writes). Rush hour (600 pings a second) → batch the pings, five to a write; the stadium empties (100 riders a second after 30 drivers, freed every 2 s) → a lock per driver; East goes dark for 2 s in 4 → a second region behind a nearest-healthy router. Its probes go every 20 ms with a 50 ms timeout: at 100 ms, the riders caught in the gap kept the p95 above 0.4 s a quarter of the time. The outage stage is an ordinary evening, as a hot driver's lock line overflowed through West's longer trips. Short labels (East, West, Locks, Nearest) let five columns fit a landscape phone.
+- **S6 news feed:** each feed is gathered from four shards. Stragglers (one shard answer in 20 is 20 times slower) → hedging; prime time (500 feeds a second) → build feeds on post (a topic into Timelines: reads 4 ms, writes 30 ms); a celebrity (16 posts a second, each 20 times the work when fanned out) → celebrities on read (stored once, merged by fanning each read out to Timelines and Celebrity posts). Gathered on read, a celebrity's post is stored once on Posts 1, so the Celebrity is in every stage-4 design and the beats can point at it.
+- **S7 payments:** an order charges the Card network, reserves stock and books shipping; shoppers pay again after 0.6 s. Lost replies (one crossing in ten) → idempotency keys; shipping fails one order in ten → undo on failure; a slow card network (0.7 s a charge) → a lock per payment. A server writes its keyed note only when a charge ends, so a retry that arrives mid-charge is charged too (a database checks at completion and would hide it). Targets: no card charged twice, no order half-done. The outbox and deadlines are not ridden: with two targets there is no room for a third concern, and a third target card would wrap.
 
 ### M10 — Engine B4 (streams and durability), 2 lessons and the final pass (M/L)
 

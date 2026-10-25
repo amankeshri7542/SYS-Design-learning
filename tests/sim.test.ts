@@ -117,6 +117,19 @@ test("a per-client rate limiter only turns away the greedy client", () => {
   assert.ok((measure(sim, { id: "rejected", label: "", tag: "bot" }) ?? 0) > 0.6);
 });
 
+test("a shared rate limiter lets in its rate for everyone together", () => {
+  const build = (shared: boolean) =>
+    scene([
+      client("a", 20, "lim", { tag: "a" }),
+      client("b", 20, "lim", { tag: "b" }),
+      { id: "lim", kind: "limiter", label: "lim", at: [30, 50], limit: { rps: 20, burst: 5, shared }, to: ["s"] },
+      server("s", { slots: 8 }),
+    ]);
+  const turned = (shared: boolean) => measure(run(build(shared), 3000), { id: "rejected", label: "" }) ?? 0;
+  assert.ok(turned(false) < 0.05, "each client keeps under its own 20/s");
+  assert.ok(turned(true) > 0.35, "together they pass the shared 20/s");
+});
+
 test("a retry budget caps the load multiplier", () => {
   const build = (budget?: number) =>
     scene([client("u", 60, "s", { timeoutMs: 200, retry: { mode: "now", max: 3, budget } }), server("s", { slots: 2, serviceMs: 60 })]);

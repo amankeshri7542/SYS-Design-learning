@@ -159,8 +159,8 @@ export interface NodeSpec {
   leader?: string;
   lagMs?: number;
   region?: string;
-  /** Token bucket per client tag. `tags` limits only those clients (a "Users" node stands for many people). */
-  limit?: { rps: number; burst: number; tags?: string[] };
+  /** Token bucket per client tag (`shared`: one bucket for all of them). `tags` limits only those clients (a "Users" node stands for many people). */
+  limit?: { rps: number; burst: number; tags?: string[]; shared?: boolean };
   /** Server keeps a worker busy while it waits on downstream calls (thread-per-request). */
   blocking?: boolean;
   breaker?: { threshold: number; cooldownMs: number };
@@ -284,11 +284,11 @@ export interface NodeSpec {
    * `majority: false` is the naive version: a member that hears nothing just leads, and commits on its own.
    */
   cluster?: { group: string[]; heartbeatMs: number; electionMs: [number, number]; majority?: boolean };
-  /** Server: books its key in `db`: reads it first, writes it only if it was free, and turns the request away if not. */
+  /** Server: books its key in `db` on a write: reads it first, writes it only if it was free, and turns the request away if not. */
   reserve?: { db: string };
   /** Database: refuses a write whose key has changed since it was read (compare-and-set): the second of two is turned away. */
   cas?: boolean;
-  /** Lock: one request per key at a time goes on to `to`; the rest wait in line. A holder past `leaseMs` loses the lock. */
+  /** Lock: one write per key at a time goes on to `to`; the rest wait in line, and reads pass. A holder past `leaseMs` loses the lock. */
   lock?: { leaseMs: number };
   /**
    * Server: its calls are the steps of a saga. When a step fails, the steps already done are undone in reverse, each by

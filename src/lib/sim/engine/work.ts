@@ -31,8 +31,8 @@ const work: Partial<Sim> & ThisType<Sim> = {
       if (n.spec.downMode === "hang") return this.park(n, r);
       return this.fail(n, r);
     }
-    // A lock lets one request per key through at a time.
-    if (n.spec.lock) return this.acquire(n, r);
+    // A lock lets one write per key through at a time; a read takes no lock.
+    if (n.spec.lock) return r.op === "write" ? this.acquire(n, r) : this.send(r, this.resolve(n, n.spec.to![0]));
     switch (n.spec.kind) {
       case "lb":
         // A balancer that reads each request (an L7 gateway with `serviceMs`) parses it first, in line for a worker.
@@ -63,9 +63,9 @@ const work: Partial<Sim> & ThisType<Sim> = {
     }
   },
 
-  /** The idempotency note for a logical message: its sender and id. */
+  /** The idempotency note for a logical message: its sender and id (a saga's undo is a message of its own). */
   noteOf(r: Req) {
-    return `${r.client}:${r.logicalId}`;
+    return `${r.client}:${r.logicalId}${r.undoing ? ":undo" : ""}`;
   },
 
   /**
@@ -192,6 +192,8 @@ const work: Partial<Sim> & ThisType<Sim> = {
     c.logicalId = r.logicalId;
     c.poison = r.poison;
     c.news = r.news;
+    // A copy is as big as the message it copies.
+    c.cost = r.cost;
     return c;
   },
 
@@ -381,8 +383,8 @@ const work: Partial<Sim> & ThisType<Sim> = {
     // Sent out in parts and gathered back: to every shard, or to a quorum of replicas.
     if (n.spec.fanout) return this.scatter(n, r, n.spec.fanout.to, n.spec.fanout.need ?? n.spec.fanout.to.length, r.op);
     if (n.spec.quorum) return this.quorumDone(n, r);
-    // A booking reads its key first.
-    if (n.spec.reserve) {
+    // A booking reads its key first (a plain read is served as usual).
+    if (n.spec.reserve && r.op === "write") {
       r.reserving = 1;
       r.op = "read";
       return this.call(n, r, [n.spec.reserve.db]);

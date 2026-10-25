@@ -11,6 +11,10 @@ export const STORY_MODULES: Record<string, Load> = {
   "web-crawler": () => import("./web-crawler"),
   "video-premiere": () => import("./video-premiere"),
   chat: () => import("./chat"),
+  "flash-sale": () => import("./flash-sale"),
+  "ride-matching": () => import("./ride-matching"),
+  "news-feed": () => import("./news-feed"),
+  payments: () => import("./payments"),
 };
 
 const loaded = new Map<string, Promise<StoryDef>>();

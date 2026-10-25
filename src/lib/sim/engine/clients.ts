@@ -121,8 +121,9 @@ const clients: Partial<Sim> & ThisType<Sim> = {
 
   timeout(r: Req) {
     r.abandoned = true;
-    // Lost on a link: it was kept only until now, when the client stops waiting for it.
-    if (r.phase === "lost") r.phase = "gone";
+    // Lost on a link: it was kept only until now, when the client stops waiting for it (a server still waiting on it ends
+    // it when it gives up in its own time).
+    if (r.phase === "lost" && !this.stillHeld(r)) r.phase = "gone";
     // A handshake that never came back fails its connection; a heartbeat that never came back is a miss.
     if (r.op === "probe" && (r.hand || r.beat)) {
       const n = this.nodes.get(r.client);
