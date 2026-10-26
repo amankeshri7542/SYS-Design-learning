@@ -25,6 +25,9 @@ export type Result = "ok" | "stale" | "fallback" | "rejected" | "error";
 /** A call target: one node, or a pool picked round-robin among healthy members. */
 export type Call = string | string[];
 
+/** A step of a route (`NodeSpec.paths`): one call, or calls made at the same time and all answered before the next. */
+export type Step = Call | { all: Call[] };
+
 /** `nearest`: the healthy target with the shortest link. `weighted`: at random, in proportion to `weights` (canaries). */
 export type Algo = "round-robin" | "random" | "least" | "hash" | "ring" | "nearest" | "weighted";
 
@@ -127,6 +130,12 @@ export interface ClientSpec {
    * arrival trace.
    */
   poll?: number;
+  /**
+   * Each request goes one of these ways (route name → share), picked by a hash of the logical request, never the clock,
+   * so every world sends the same requests the same ways and a retry keeps its way. Servers say what each way does
+   * there (`NodeSpec.paths`): a traced system's requests, each taking the way its trace took.
+   */
+  routes?: Record<string, number>;
 }
 
 export interface NodeSpec {
@@ -184,6 +193,12 @@ export interface NodeSpec {
   bulkheads?: Record<string, number>;
   /** Balancer: route by the request's tag to its own targets (an L7 gateway's path routing). */
   byTag?: Record<string, Call[]>;
+  /**
+   * Server or balancer: what a request on each route (`ClientSpec.routes`) does here, in place of `calls` (or a
+   * balancer's targets) and `serviceMs`: its calls in order (`{ all }`: at the same time) and its work, in ms (varied as
+   * usual) or as times measured there, each visit taking one of them at random. A route not listed does the usual.
+   */
+  paths?: Record<string, { calls?: Step[]; ms?: number | number[] }>;
   /**
    * `honour`: refuse work that can't finish before the request's deadline, turn away work for a request already
    * abandoned, stop work in progress once its deadline passes, and stop waiting on a downstream call then too.

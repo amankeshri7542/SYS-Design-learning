@@ -1575,3 +1575,81 @@ test("property: every request is accounted for and nothing leaks, with every str
     "batch 4",
   );
 });
+
+// ------------------------------------------------------------------------------------------------ v4: traced routes
+
+test("routes: each request goes its way, in its share, decided by the request; servers do that way's calls and work", () => {
+  const spec = (routes?: Record<string, number>) =>
+    scene(
+      [
+        client("u", 40, "gw", { routes }),
+        lb("gw", ["s"], { paths: { slow: { calls: ["s"] } } }),
+        server("s", { serviceMs: 5, to: ["x"], paths: { fast: { calls: ["x"], ms: 2 }, slow: { calls: ["x", "y"], ms: 40 } } }),
+        server("x", { at: [80, 30], serviceMs: 5 }),
+        server("y", { at: [80, 70], serviceMs: 5 }),
+      ],
+      { seed: 5 },
+    );
+  const routed = run(spec({ fast: 3, slow: 1 }), 8000);
+  const served = (sim: Sim, id: string) => sim.nodes.get(id)!.served;
+  const share = served(routed, "y") / served(routed, "x");
+  assert.ok(Math.abs(share - 0.25) < 0.06, `a quarter go the slow way: ${share}`);
+  // The same requests go the same ways in every world, and a retry would too: the way is the request's.
+  const again = run(spec({ fast: 3, slow: 1 }), 8000);
+  assert.equal(served(again, "y"), served(routed, "y"));
+  // Arrivals never depend on the ways requests take.
+  const trace = (s: SceneSpec) => {
+    const sim = new Sim(s, { trace: true });
+    sim.step(5000);
+    return sim.trace;
+  };
+  assert.deepEqual(trace(spec({ fast: 3, slow: 1 })), trace(spec()));
+  // Without routes, the usual: every request calls x only.
+  const plain = run(spec(), 8000);
+  assert.equal(served(plain, "y"), 0);
+  // Work is the route's: the slow way's 40 ms shows in the tail, and only one in four requests pays it.
+  const p50 = value(routed, m("p50"));
+  const p95 = value(routed, m("p95"));
+  assert.ok(p95 > p50 + 30, `p50 ${p50}, p95 ${p95}`);
+  settles({ ...spec({ fast: 3, slow: 1 }), nodes: spec({ fast: 3, slow: 1 }).nodes.map((n) => (n.client ? { ...n, client: { ...n.client, rate: (t: number) => (t < 5000 ? 40 : 0) } } : n)) }, "routes");
+});
+
+test("routes: calls made at the same time take as long as the slowest, then the route goes on", () => {
+  const spec = (together: boolean) =>
+    scene(
+      [
+        client("u", (t: number) => (t < 5000 ? 10 : 0), "s", { routes: { a: 1 } }),
+        server("s", { serviceMs: 1, paths: { a: { calls: together ? [{ all: ["x", "y"] }, "z"] : ["x", "y", "z"], ms: 1 } } }),
+        server("x", { at: [80, 20], slots: 20, serviceMs: 100 }),
+        server("y", { at: [80, 50], slots: 20, serviceMs: 100 }),
+        server("z", { at: [80, 80], slots: 20, serviceMs: 10 }),
+      ],
+      { links: { "u>s": 1, "s>x": 1, "s>y": 1, "s>z": 1 } },
+    );
+  const p50 = (s: SceneSpec) => value(run(s, 4000), m("p50"));
+  const apart = p50(spec(false));
+  const together = p50(spec(true));
+  assert.ok(apart > 190, `one after the other: ${apart}`);
+  assert.ok(together > 100 && together < 150, `at the same time, then z: ${together}`);
+  const sim = settles(spec(true), "calls at the same time");
+  assert.equal(sim.nodes.get("z")!.served, sim.nodes.get("x")!.served, "every request went on to z");
+});
+
+test("routes: work drawn from measured times keeps their spread, and a part answers back through a cache to its gatherer", () => {
+  const spec = scene(
+    [
+      client("u", (t: number) => (t < 6000 ? 20 : 0), "s", { routes: { a: 1 } }),
+      server("s", { slots: 50, paths: { a: { calls: [{ all: ["x", "c"] }], ms: [10, 10, 10, 90] } } }),
+      server("x", { at: [80, 20], slots: 50, serviceMs: 1 }),
+      { id: "c", kind: "cache", label: "c", at: [70, 70], capacity: 1, to: ["db"] } as NodeSpec,
+      { id: "db", kind: "db", label: "db", at: [90, 70], slots: 50, serviceMs: 5 } as NodeSpec,
+    ],
+    { links: { "u>s": 1, "s>x": 1, "s>c": 1, "c>db": 1 }, windowMs: 1e9 },
+  );
+  const sim = settles(spec, "drawn times");
+  const lat = sim.done.map((d) => d.lat).sort((a, b) => a - b);
+  // Three in four take about 10 ms here, one in four 90: no ±40% blur around a middle.
+  assert.ok(lat[Math.floor(lat.length * 0.5)] < 30, `p50 ${lat[Math.floor(lat.length * 0.5)]}`);
+  assert.ok(lat[Math.floor(lat.length * 0.9)] > 90, `p90 ${lat[Math.floor(lat.length * 0.9)]}`);
+  assert.ok(sim.nodes.get("db")!.served > 0, "the cache's misses reached the database, and their parts came home");
+});

@@ -3,12 +3,14 @@
 // (`toDoc`), sized to start healthy, and checked against the trace: the notes say how close the model's times come.
 // Loaded only when a trace is opened; the file's text and IDs are dropped once it is read.
 
-import { validate, type SystemDoc } from "../doc";
+import { compile, type Compiled } from "../compile";
+import { validate, type PartKind, type SystemDoc } from "../doc";
 import { guessNote, toDoc, type Imported, type ReadError } from "../import/graph";
 import { measure, sized } from "../import/size";
 import { jaegerTraces, readJaeger } from "./jaeger";
 import { otlpResources, readOtlp } from "./otlp";
-import { msText, reduce } from "./reduce";
+import { msText, reduce, type Grouping, type Reduced } from "./reduce";
+import { replayOf, type Replay } from "./replay";
 import { serviceName } from "./scrub";
 import { Reading, type Span } from "./span";
 import { readZipkin, zipkinSpans } from "./zipkin";
@@ -63,12 +65,17 @@ export function readSpans(text: string): { spans: Span[]; format: TraceFormat | 
   return { spans, format, orphans, skipped: into.skipped, errors: [] };
 }
 
+type Read = ReturnType<typeof readSpans>;
+
 /** A trace as a system, with what was read and changed in notes; the requests' times come along for checking. */
-export function readTrace(text: string, name = "My system"): Imported & { format: TraceFormat | null; p50: number; p95: number; work: number; requests: number } {
-  const none = { guesses: [], notes: [], p50: 0, p95: 0, work: 0, requests: 0 };
-  const r = readSpans(text);
+export function readTrace(text: string, name = "My system", by: Grouping = "service") {
+  return systemOf(readSpans(text), name, by);
+}
+
+function systemOf(r: Read, name: string, by: Grouping): Imported & { format: TraceFormat | null; red: Reduced | null; p50: number; p95: number; work: number; requests: number } {
+  const none = { guesses: [], notes: [], red: null, p50: 0, p95: 0, work: 0, requests: 0 };
   if (r.errors.length) return { ...none, doc: null, errors: r.errors, format: r.format };
-  const red = reduce(r.spans);
+  const red = reduce(r.spans, by);
   if (!red) return { ...none, doc: null, errors: [{ text: "No request starts in this file: every span's parent is missing. Export whole traces." }], format: r.format };
   const out = toDoc(red.graph, serviceName(name) || "My system");
   const errors = out.doc ? validate(out.doc).filter((i) => i.level === "error").map((i) => ({ text: i.text })) : [];
@@ -83,6 +90,7 @@ export function readTrace(text: string, name = "My system"): Imported & { format
     notes: [...read, ...red.notes, ...out.notes],
     errors: [...out.errors, ...errors],
     format: r.format,
+    red,
     p50: red.p50,
     p95: red.p95,
     work: red.work,
@@ -90,10 +98,65 @@ export function readTrace(text: string, name = "My system"): Imported & { format
   };
 }
 
-/** Open a trace file as a running system: read, sized to start healthy, and its times checked against the trace's. */
-export async function openTrace(text: string, name?: string): Promise<{ doc: SystemDoc | null; notes: string[]; errors: ReadError[] }> {
-  const r = readTrace(text, name);
-  if (!r.doc || r.errors.length) return { doc: null, notes: [], errors: r.errors };
+/** A trace opened as a system grouped one way: sized to start healthy, its notes, and its replay. */
+export interface TraceView {
+  doc: SystemDoc;
+  notes: string[];
+  replay: Replay;
+  by: Grouping;
+}
+
+/**
+ * A trace file, read once: its spans scrubbed and numbered (the file's text is let go), ready to be drawn grouped by
+ * service, prefix or kind. Each grouping is worked out the first time it is asked for. Nothing here is saved or sent.
+ */
+export interface TraceSession {
+  format: TraceFormat;
+  requests: number;
+  spans: number;
+  /** What it would be drawn as, grouped this way: at once, before anything runs. */
+  preview(by: Grouping): Preview;
+  view(by: Grouping): Promise<TraceView | { errors: ReadError[] }>;
+}
+
+/** The parts a grouping makes, what each is taken for and how many of the file's it stands for, and the notes. */
+export interface Preview {
+  parts: { name: string; kind: PartKind; merged?: number }[];
+  notes: string[];
+}
+
+/** Read a trace file into a session, or say what was wrong with it. */
+export function readSession(text: string, name = "My system"): { session: TraceSession | null; errors: ReadError[] } {
+  const r = readSpans(text);
+  if (r.errors.length) return { session: null, errors: r.errors };
+  const first = systemOf(r, name, "service");
+  if (!first.doc || first.errors.length) return { session: null, errors: first.errors };
+  const views = new Map<Grouping, Promise<TraceView | { errors: ReadError[] }>>();
+  const previews = new Map<Grouping, Preview>();
+  return {
+    session: {
+      format: r.format!,
+      requests: first.requests,
+      spans: r.spans.length,
+      preview: (by) => {
+        if (previews.has(by)) return previews.get(by)!;
+        const x = by === "service" ? first : systemOf(r, name, by);
+        const p: Preview = {
+          parts: (x.doc?.parts ?? []).filter((p) => p.kind !== "users").map((p) => ({ name: p.name, kind: p.kind, ...(x.red?.merged[p.name] ? { merged: x.red.merged[p.name] } : {}) })),
+          notes: x.red?.notes.filter((n) => /drawn as one|folded into|Grouped by kind|left out/.test(n)) ?? [],
+        };
+        previews.set(by, p);
+        return p;
+      },
+      view: (by) => views.get(by) ?? views.set(by, viewOf(r, name, by)).get(by)!,
+    },
+    errors: [],
+  };
+}
+
+async function viewOf(read: Read, name: string, by: Grouping): Promise<TraceView | { errors: ReadError[] }> {
+  const r = systemOf(read, name, by);
+  if (!r.doc || r.errors.length || !r.red) return { errors: r.errors };
   // What working means, from the trace: half again its slowest 1 in 20, when that is past the usual target.
   let doc = r.doc;
   const target = Math.min(10000, Math.ceil((r.p95 * 1.5) / 100) * 100);
@@ -104,9 +167,9 @@ export async function openTrace(text: string, name?: string): Promise<{ doc: Sys
   }
   const s = await sized(doc);
   notes.push(...s.notes);
-  // How close the model comes to what the trace measured: the work each request does (so how busy each part is), and
-  // how long requests take, which the model can't match (every request takes every arrow, one call at a time, along
-  // wires slow enough to watch).
+  // How close the drawing runs to what the trace measured: the work each request does (so how busy each part is), and
+  // how long requests take, which it can't match (every request takes every arrow, one call at a time, along wires
+  // slow enough to watch). The replay runs each request its own way.
   const m = r.requests > 1 ? await measure(s.doc) : null;
   if (m && m.p50 > 0) {
     notes.splice(
@@ -115,5 +178,15 @@ export async function openTrace(text: string, name?: string): Promise<{ doc: Sys
       `How close it runs: each request does ${msText(m.work)} of work across the parts, against ${msText(r.work)} in the trace. Its requests take longer (half within ${msText(m.p50)}, against ${msText(r.p50)}): each takes every arrow, one call at a time, along wires slow enough to watch.`,
     );
   }
-  return { doc: s.doc, notes, errors: [] };
+  const replay = await replayOf(read.spans, r.red, s.doc, compile(s.doc) as Compiled);
+  notes.splice(m && m.p50 > 0 ? 2 : 1, 0, ...replay.second.notes);
+  return { doc: s.doc, notes, replay, by };
+}
+
+/** Open a trace file as a running system: read, sized to start healthy, and its times checked against the trace's. */
+export async function openTrace(text: string, name?: string, by: Grouping = "service"): Promise<{ doc: SystemDoc | null; notes: string[]; errors: ReadError[]; replay?: Replay }> {
+  const { session, errors } = readSession(text, name);
+  if (!session) return { doc: null, notes: [], errors };
+  const v = await session.view(by);
+  return "errors" in v ? { doc: null, notes: [], errors: v.errors } : { doc: v.doc, notes: v.notes, errors: [], replay: v.replay };
 }

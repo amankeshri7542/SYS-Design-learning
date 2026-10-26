@@ -5686,3 +5686,266 @@ svg.stroke {
   color: var(--ink);
   font: 500 var(--fs-ui) var(--font-body);
 }
+
+/* ------------------------------------------------------------------ my system: replay a trace */
+
+/* The gallery's drop zone: the import box's look on a dashed edge (a file can be dropped anywhere in the section). */
+.my-replay {
+  margin-top: var(--sp-6);
+}
+
+.my-trace {
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  border: 1px dashed var(--rule);
+  border-radius: var(--r-card);
+}
+
+.my-trace-read {
+  display: grid;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+.my-trace-sum {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-ui);
+}
+
+/* What it reads as: each part, what it was taken for, and how many of the file's it stands for. */
+.my-trace-parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 0 var(--sp-4);
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+  list-style: none;
+}
+
+.my-trace-parts li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--fs-meta);
+}
+
+.my-trace-parts strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.my-trace-parts span {
+  flex: none;
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1.5 var(--font-mono);
+}
+
+.my-trace-notes {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ink-2);
+  font-size: var(--fs-meta);
+}
+
+/* The replay's panel: the requests to replay, the one replayed span by span, the second, and the grouping. */
+.rp-panel .step-text {
+  margin-bottom: var(--sp-3);
+}
+
+.rp-picks {
+  display: grid;
+  gap: 0;
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+.rp-pick {
+  position: relative;
+  display: grid;
+  grid-template-columns: 5.5em minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px var(--sp-2);
+  min-height: 44px;
+  padding: 6px 8px 6px 10px;
+  border-bottom: 1px solid var(--rule);
+  cursor: pointer;
+}
+
+.rp-pick input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.rp-pick:has(input:checked) {
+  box-shadow: inset 3px 0 0 var(--lc);
+  background: var(--surface);
+}
+
+.rp-pick:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.rp-pick-k {
+  color: var(--ink);
+  font: 700 var(--fs-caption)/1.2 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rp-pick-n {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font: 500 var(--fs-meta)/1.3 var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rp-pick-ms {
+  color: var(--ink);
+  font: 600 var(--fs-meta)/1.3 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rp-pick.broke .rp-pick-ms {
+  color: var(--t-bad);
+}
+
+/* The waterfall: each span a row, indented by its depth, its bar where and how long it ran; ink, like the flight
+   strip's work. A span that failed carries the failed mark. Rows the replay hasn't reached yet stay quiet. */
+.rp-fall {
+  margin: 0 0 var(--sp-4);
+}
+
+.rp-fall-h {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font: 600 var(--fs-caption)/1.3 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rp-fall ol {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "what ms" "track track";
+  align-items: center;
+  gap: 2px var(--sp-2);
+  padding: 3px 0 3px calc(var(--depth, 0) * 8px);
+  color: var(--muted);
+  font: 500 var(--fs-caption)/1.25 var(--font-mono);
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.rp-row.on {
+  color: var(--ink);
+}
+
+.rp-what {
+  grid-area: what;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rp-what strong {
+  font-weight: 700;
+}
+
+.rp-failed {
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  fill: var(--dot-err);
+}
+
+.rp-track {
+  grid-area: track;
+  position: relative;
+  height: 6px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.rp-track i {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--rule);
+}
+
+.rp-row.on .rp-track i {
+  background: var(--ink);
+}
+
+.rp-row.err.on .rp-track i {
+  background: var(--t-bad);
+}
+
+.rp-ms {
+  grid-area: ms;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.rp-second {
+  display: grid;
+  justify-items: start;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--rule);
+}
+
+.rp-second .step-text {
+  margin: 0;
+  font-size: var(--fs-meta);
+}
+
+.rp-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+.rp-group-h {
+  color: var(--ink-2);
+  font: 600 var(--fs-meta)/1.2 var(--font-body);
+}
+
+.rp-times td.on {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+@media (pointer: coarse) {
+  .rp-pick {
+    min-height: 48px;
+  }
+}

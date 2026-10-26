@@ -1,0 +1,202 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { KINDS, settingsOf, type PartDoc, type PartKind, type Settings, type SystemDoc } from "@/lib/system/doc";
+import { removePart, targetsFor, toggleLink, updatePart } from "@/lib/system/edit";
+
+// The builder's settings for one part, loaded the first time a part is opened.
+
+/** Kinds whose copies can be counted. */
+const COUNTED: PartKind[] = ["service", "worker", "cache", "cdn"];
+
+const msText = (v: number) => (v < 1000 ? `${Math.round(v)} ms` : `${+(v / 1000).toFixed(1)} s`);
+
+/** One part's settings: its name, its copies, the few numbers that matter for its kind, what it sends to. */
+export function PartEditor({ doc, p, onChange, onRemoved }: { doc: SystemDoc; p: PartDoc; onChange: (doc: SystemDoc) => void; onRemoved: () => void }) {
+  const s = settingsOf(p);
+  const set = (change: Partial<Settings>) => onChange(updatePart(doc, p.id, { set: change }));
+  const targets = targetsFor(doc, p.id);
+  const id = `sys-${p.id}`;
+  return (
+    <div className="sys-part-body">
+      <label className="sys-field" htmlFor={`${id}-name`}>
+        <span>Name</span>
+        <input id={`${id}-name`} type="text" value={p.name} maxLength={40} onChange={(e) => onChange(updatePart(doc, p.id, { name: e.target.value }))} />
+      </label>
+      <label className="sys-field sys-kind" htmlFor={`${id}-kind`}>
+        <span>What it is</span>
+        <select id={`${id}-kind`} value={p.kind} onChange={(e) => onChange(updatePart(doc, p.id, { kind: e.target.value as PartKind }))}>
+          {(Object.keys(KINDS) as PartKind[]).map((k) => (
+            <option key={k} value={k}>
+              {KINDS[k].name}: {KINDS[k].says}
+            </option>
+          ))}
+        </select>
+      </label>
+      {COUNTED.includes(p.kind) && (
+        <Stepper label="Copies" value={p.count ?? 1} min={1} max={64} onChange={(v) => onChange(updatePart(doc, p.id, { count: v }))} />
+      )}
+      {(p.kind === "users" || p.kind === "bots") && (
+        <>
+          <Range label="Requests a second" id={`${id}-rate`} value={s.rate} min={1} max={400} step={1} format={(v) => `${v}/s`} onChange={(v) => set({ rate: v })} />
+          {p.kind === "users" && (
+            <>
+              <Range label="Writes" id={`${id}-writes`} value={Math.round(s.writes * 100)} min={0} max={100} step={5} format={(v) => `${v}%`} onChange={(v) => set({ writes: v / 100 })} />
+              <Choice
+                label="Traffic"
+                name={`${id}-shape`}
+                value={s.shape}
+                options={[
+                  ["steady", "Steady"],
+                  ["daily", "Rises and falls"],
+                  ["spiky", "Bursts"],
+                ]}
+                onChange={(v) => set({ shape: v as Settings["shape"] })}
+              />
+              <Stepper label="Retries" value={s.retries} min={0} max={3} onChange={(v) => set({ retries: v })} />
+            </>
+          )}
+        </>
+      )}
+      {(p.kind === "service" || p.kind === "worker" || p.kind === "external" || p.kind === "database") && (
+        <>
+          <Range label="Workers each" id={`${id}-workers`} value={s.workers} min={1} max={64} step={1} onChange={(v) => set({ workers: v })} />
+          <Range label="Work per request" id={`${id}-ms`} value={s.ms} min={5} max={1000} step={5} format={msText} onChange={(v) => set({ ms: v })} />
+        </>
+      )}
+      {p.kind === "service" && <Toggle label="Stop calling a failing part (breaker)" on={s.breaker} onChange={(v) => set({ breaker: v })} />}
+      {p.kind === "database" && (
+        <>
+          <Stepper label="Read copies" value={s.replicas} min={0} max={3} onChange={(v) => set({ replicas: v, shards: 1 })} />
+          {s.replicas > 0 && <Toggle label="A copy takes over if it dies" on={s.failover} onChange={(v) => set({ failover: v })} />}
+          <Stepper label="Shards" value={s.shards} min={1} max={4} onChange={(v) => set({ shards: v, replicas: v > 1 ? 0 : s.replicas })} />
+        </>
+      )}
+      {(p.kind === "cache" || p.kind === "cdn") && (
+        <>
+          <Range label="Answers kept" id={`${id}-cap`} value={s.capacity} min={10} max={1000} step={10} onChange={(v) => set({ capacity: v })} />
+          <Range label="Fresh for" id={`${id}-ttl`} value={s.ttlMs} min={1000} max={120000} step={1000} format={msText} onChange={(v) => set({ ttlMs: v })} />
+        </>
+      )}
+      {p.kind === "queue" && (
+        <>
+          <Toggle label="Keep each job until a worker finishes it" on={s.ack} onChange={(v) => set({ ack: v })} />
+          {s.ack && <Toggle label="Set aside jobs that keep failing" on={s.deadLetter} onChange={(v) => set({ deadLetter: v })} />}
+        </>
+      )}
+      {p.kind === "balancer" && (
+        <>
+          <Choice
+            label="Picks"
+            name={`${id}-algo`}
+            value={s.algo}
+            options={[
+              ["round-robin", "In turn"],
+              ["least", "Least busy"],
+              ["sticky", "Same for each user"],
+            ]}
+            onChange={(v) => set({ algo: v as Settings["algo"] })}
+          />
+          <Toggle label="Check each target is healthy" on={s.health} onChange={(v) => set({ health: v })} />
+        </>
+      )}
+      {p.kind === "limiter" && <Range label="Each sender, a second" id={`${id}-rps`} value={s.rps} min={1} max={400} step={1} format={(v) => `${v}/s`} onChange={(v) => set({ rps: v })} />}
+      {targets.length > 0 && (
+        <div className="sys-sends" role="group" aria-label={`${p.name} sends to`}>
+          <span className="sys-sends-label">Sends to</span>
+          <div className="sys-chips">
+            {targets.map((q) => (
+              <button key={q.id} type="button" className="sys-chip" aria-pressed={!!p.to?.includes(q.id)} onClick={() => onChange(toggleLink(doc, p.id, q.id))}>
+                {q.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <button
+        type="button"
+        className="sys-remove"
+        onClick={() => {
+          onChange(removePart(doc, p.id));
+          onRemoved();
+        }}
+      >
+        Remove {p.name}
+      </button>
+    </div>
+  );
+}
+
+/** A slider that follows the pointer at once and changes the system at most once a frame. */
+function Range({ label, id, value, min, max, step, format, onChange }: { label: string; id: string; value: number; min: number; max: number; step: number; format?: (v: number) => string; onChange: (v: number) => void }) {
+  const [drag, setDrag] = useState<number | null>(null);
+  const frame = useRef(0);
+  const latest = useRef(value);
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  const change = (v: number) => {
+    latest.current = v;
+    setDrag(v);
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      onChange(latest.current);
+      setDrag(null);
+    });
+  };
+  const shown = drag ?? value;
+  return (
+    <div className="knob knob-range">
+      <label className="knob-label" htmlFor={id}>
+        {label}
+      </label>
+      <output className="knob-value" htmlFor={id}>
+        {format ? format(shown) : shown}
+      </output>
+      <input id={id} type="range" min={min} max={max} step={step} value={shown} onChange={(e) => change(Number(e.target.value))} />
+    </div>
+  );
+}
+
+function Stepper({ label, value, min, max, onChange }: { label: string; value: number; min: number; max: number; onChange: (v: number) => void }) {
+  return (
+    <div className="stepper">
+      <span className="stepper-label">{label}</span>
+      <div className="stepper-ctl" role="group" aria-label={label}>
+        <button type="button" onClick={() => onChange(value - 1)} disabled={value <= min} aria-label={`Fewer: ${label.toLowerCase()}`}>
+          −
+        </button>
+        <output>{value}</output>
+        <button type="button" onClick={() => onChange(value + 1)} disabled={value >= max} aria-label={`More: ${label.toLowerCase()}`}>
+          +
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ label, on, onChange }: { label: string; on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="toggle">
+      <span className="stepper-label">{label}</span>
+      <input type="checkbox" role="switch" checked={on} onChange={(e) => onChange(e.target.checked)} />
+      <span className="toggle-ui" aria-hidden="true" />
+    </label>
+  );
+}
+
+function Choice({ label, name, value, options, onChange }: { label: string; name: string; value: string; options: [string, string][]; onChange: (v: string) => void }) {
+  return (
+    <fieldset className="knob knob-choice">
+      <legend>{label}</legend>
+      <div className="seg seg-wrap">
+        {options.map(([v, text]) => (
+          <label key={v}>
+            <input type="radio" name={name} checked={value === v} onChange={() => onChange(v)} />
+            <span>{text}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+

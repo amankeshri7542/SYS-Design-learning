@@ -206,7 +206,7 @@ export function freshNote(sim: Sim) {
 const SPEEDS = [0.5, 1, 2];
 
 /** Play or pause, step a moment, restart, and one button that cycles the speed. */
-export function Transport({ live }: { live: Live }) {
+export function Transport({ live }: { live: Pick<Live, "playing" | "toggle" | "step" | "restart" | "speed" | "setSpeed" | "clock"> }) {
   return (
     <div className="transport">
       <button type="button" className="btn btn-play" onClick={live.toggle} aria-pressed={live.playing} aria-label="Play" title={live.playing ? "Pause" : "Play"}>

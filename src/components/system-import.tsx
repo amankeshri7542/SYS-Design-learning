@@ -6,8 +6,8 @@ import { FORMATS, detect } from "@/lib/system/import/detect";
 
 /** The most text read: a big compose file is a few hundred KB; anything near this is not a system description. */
 const MOST = 1_000_000;
-/** A trace file is read up to this: a few thousand requests' spans. */
-const MOST_TRACE = 20_000_000;
+/** A trace file is read up to this (by the trace reader, `trace-open.tsx`): a few thousand requests' spans. */
+export const MOST_TRACE = 20_000_000;
 
 const EXAMPLE = "Users -> Load balancer -> API x3 -> Redis -> Postgres\nAPI -> Stripe\nAPI -> Jobs [queue] -> Mailer -> SendGrid";
 
@@ -17,19 +17,23 @@ const EXAMPLE = "Users -> Load balancer -> API x3 -> Redis -> Postgres\nAPI -> S
  * read is listed by line. The readers and the engine that sizes it load when it is opened. A trace file's text is
  * never shown: only what is left once personal data is taken out.
  */
-export function SystemImport({ onOpen }: { onOpen: (doc: SystemDoc, notes: string[]) => void }) {
+export function SystemImport({ onOpen, onTrace }: { onOpen: (doc: SystemDoc, notes: string[]) => void; onTrace: (text: string, name: string) => void }) {
   const [text, setText] = useState("");
   const [errors, setErrors] = useState<{ line?: number; text: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const format = text.trim() ? detect(text) : null;
   const open = async (source = text, name?: string) => {
     if (busy) return;
-    const trace = detect(source) === "trace";
-    if (source.length > (trace ? MOST_TRACE : MOST)) return setErrors([{ text: `That's ${Math.round(source.length / 1000)} KB of text; System Lab reads up to ${MOST / 1000} KB. Paste the part that names your services.` }]);
+    // A trace is replayed: handed to the trace reader, and not kept in the box.
+    if (detect(source) === "trace") {
+      setText("");
+      return onTrace(source, name ?? "My system");
+    }
+    if (source.length > MOST) return setErrors([{ text: `That's ${Math.round(source.length / 1000)} KB of text; System Lab reads up to ${MOST / 1000} KB. Paste the part that names your services.` }]);
     setBusy(true);
     try {
-      // Read, then sized on a headless run so it opens healthy; a trace is scrubbed of personal data as it is read.
-      const r = trace ? await (await import("@/lib/system/trace/open")).openTrace(source, name) : await (await import("@/lib/system/import/open")).openSystem(source, name);
+      // Read, then sized on a headless run so it opens healthy.
+      const r = await (await import("@/lib/system/import/open")).openSystem(source, name);
       setErrors(r.errors);
       if (r.doc && !r.errors.length) onOpen(r.doc, r.notes);
     } catch {

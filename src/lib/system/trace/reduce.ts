@@ -11,6 +11,13 @@ import type { Span } from "./span";
 
 /** The most parts a trace is drawn with, Users included: a stage reads best with up to twelve. */
 export const MOST_PARTS = 12;
+
+/**
+ * How a big trace is grouped: services kept apart as far as the stage allows (`service`), every service sharing its
+ * name's first word as one (`prefix`, a team or namespace), or one part per kind of part behind the ways in (`kind`).
+ */
+export type Grouping = "service" | "prefix" | "kind";
+export const GROUPINGS: Grouping[] = ["service", "prefix", "kind"];
 const OTHER = "Other services";
 /** Sidecars and tracing plumbing, folded into the service beside them when there are too many parts. */
 const INFRA = /\b(istio|envoy|linkerd|sidecar|otel|opentelemetry|collector|jaeger|zipkin|tempo|agent)\b/i;
@@ -31,6 +38,10 @@ export interface Reduced {
   p95: number;
   /** The work done for each request on average, every part's together (ms): what the model is calibrated to. */
   work: number;
+  /** The part each span is drawn in, after grouping: what the replay is built from (`replay.ts`). */
+  spanPart: string[];
+  /** How many of the file's services and stores each grouped part stands for (two or more). */
+  merged: Record<string, number>;
 }
 
 interface Node {
@@ -59,8 +70,8 @@ const quantile = (xs: number[], q: number) => {
   return s[Math.min(s.length - 1, Math.floor(s.length * q))] ?? 0;
 };
 
-/** Spans as the system they ran through; null when no request starts in them. */
-export function reduce(spans: Span[], limit = MOST_PARTS): Reduced | null {
+/** Spans as the system they ran through, grouped `by` service, prefix or kind; null when no request starts in them. */
+export function reduce(spans: Span[], by: Grouping = "service", limit = MOST_PARTS): Reduced | null {
   const n = spans.length;
   const kids: number[][] = Array.from({ length: n }, () => []);
   spans.forEach((s, i) => s.parent >= 0 && kids[s.parent].push(i));
@@ -199,6 +210,23 @@ export function reduce(spans: Span[], limit = MOST_PARTS): Reduced | null {
     return [...by].filter(([, v]) => v.length > 1).sort((p, q) => q[1].length - p[1].length || (p[0] < q[0] ? -1 : 1));
   };
 
+  // By kind: behind the ways in, every part of one kind is one part ("Services", "Databases").
+  if (by === "kind") {
+    const byKind = new Map<PartKind, string[]>();
+    for (const x of m.names) if (!isEntry(x)) byKind.set(kindOf(x), [...(byKind.get(kindOf(x)) ?? []), x]);
+    const made: string[] = [];
+    for (const [k, names] of [...byKind].sort((p, q) => q[1].length - p[1].length || (p[0] < q[0] ? -1 : 1))) {
+      if (names.length < 2) continue;
+      const word = plural(k);
+      const into = `${word[0].toUpperCase()}${word.slice(1)}`;
+      merge(names, m.names.includes(into) && !names.includes(into) ? `All ${word}` : into, k);
+      made.push(`${into} (${names.length})`);
+    }
+    if (made.length) {
+      notes.push(`Grouped by kind: behind the way in, each kind of part is one part: ${short(made, 6)}.`);
+      m = measure();
+    }
+  }
   // 1. Sidecars and tracing plumbing fold into the busiest service calling them.
   if (m.size > limit) {
     const folded: string[] = [];
@@ -213,12 +241,13 @@ export function reduce(spans: Span[], limit = MOST_PARTS): Reduced | null {
       m = measure();
     }
   }
-  // 2. Services sharing the first word of their name, and of one kind, become one part.
-  if (m.size > limit) {
+  // 2. Services sharing the first word of their name, and of one kind, become one part: as many as the stage needs, or
+  // every such group when grouping by prefix.
+  if (m.size > limit || by === "prefix") {
     let size = m.size;
     const made: string[] = [];
     for (const [key, names] of groups((x) => (x.split(/[-_. /:]/)[0].length < 3 || x === OTHER ? null : `${x.split(/[-_. /:]/)[0].toLowerCase()}\u0000${kindOf(x)}`))) {
-      if (size <= limit) break;
+      if (size <= limit && by !== "prefix") break;
       const kind = key.split("\u0000")[1] as PartKind;
       const word = names[0].split(/[-_. /:]/)[0];
       const taken = m.names.some((x) => !names.includes(x) && x.toLowerCase() === word.toLowerCase());
@@ -276,7 +305,9 @@ export function reduce(spans: Span[], limit = MOST_PARTS): Reduced | null {
   // Kinds, now that the parts are settled. A balancer by name that calls more than services does the work of one; a
   // cache with no database behind it is the store itself.
   const kind = new Map(m.names.map((x) => [x, kindOf(x)]));
-  for (const x of m.names) if (kind.get(x) === "balancer" && m.outOf(x).some((y) => !["service", "balancer"].includes(kind.get(y)!))) kind.set(x, "service");
+  // One that calls on more than once for each request it gets (a gateway gathering several answers) is a service.
+  const onward = (x: string) => m.outOf(x).reduce((sum, y) => sum + m.callsOf(x, y), 0) / Math.max(1, m.nodes.get(x)?.entries ?? 0);
+  for (const x of m.names) if (kind.get(x) === "balancer" && (m.outOf(x).some((y) => !["service", "balancer"].includes(kind.get(y)!)) || onward(x) > 1.05)) kind.set(x, "service");
   for (const x of m.names) {
     if (kind.get(x) !== "cache" || m.outOf(x).length) continue;
     if (m.into(x).some((c) => m.outOf(c).some((y) => kind.get(y) === "database"))) continue;
@@ -435,6 +466,10 @@ export function reduce(spans: Span[], limit = MOST_PARTS): Reduced | null {
     guessed: [...guessed].filter((x) => m.nodes.has(x) && !kinds.has(x)).map((x) => ({ name: x, kind: kind.get(x)! })),
     requests,
     seconds,
+    spanPart: svc.map(at),
+    merged: Object.fromEntries(
+      [...[...originals].reduce((c, o) => c.set(at(o), (c.get(at(o)) ?? 0) + 1), new Map<string, number>())].filter(([x, k]) => k > 1 && m.nodes.has(x)),
+    ),
     p50: quantile(durations, 0.5),
     p95: quantile(durations, 0.95),
     // Work done while the request was open: a job taken from a queue afterwards is nobody's wait.

@@ -250,6 +250,7 @@ const control: Partial<Sim> & ThisType<Sim> = {
       deadline: r.deadline,
       abandoned: r.abandoned,
       logicalId: r.logicalId,
+      route: r.route,
       detached: r.detached,
       deliveryOf: r.deliveryOf,
       acked: r.acked,

@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Sim } from "../src/lib/sim/engine";
+import { accounted, leakedHolds } from "../src/lib/sim/invariants";
 import { compile, type Compiled } from "../src/lib/system/compile";
 import type { SystemDoc } from "../src/lib/system/doc";
 import { detect } from "../src/lib/system/import/detect";
-import { openTrace, readSpans, readTrace } from "../src/lib/system/trace/open";
+import { decodeDoc, encodeDoc } from "../src/lib/system/share";
+import { openTrace, readSession, readSpans, readTrace, type TraceView } from "../src/lib/system/trace/open";
 import { cleanName, serviceName } from "../src/lib/system/trace/scrub";
 import { SECRETS, big, jaeger, otlp, scattered, shop, zipkin } from "./traces";
 
-// Trace replay: a Jaeger, Zipkin or OpenTelemetry file becomes the system its requests ran through, read in the browser
-// with personal data taken out first. The fixtures (`traces.ts`) are synthetic: one shop's requests, in each format.
+// Traces: a Jaeger, Zipkin or OpenTelemetry file becomes the system its requests ran through, read in the browser with
+// personal data taken out first, and replays on it: sample requests span by span, and the second as the trace ran it.
+// The fixtures (`traces.ts`) are synthetic: one shop's requests, in each format, and platforms of 200 and 300 services.
 
 const part = (doc: SystemDoc | null, name: string) => doc!.parts.find((p) => p.name === name)!;
 const named = (doc: SystemDoc | null, id: string) => doc!.parts.find((p) => p.id === id)?.name;
@@ -93,8 +96,11 @@ test("personal data never survives: no attribute value, ID, email or address rea
       assert.ok(!spans.includes(s), `spans keep “${s}”`);
       assert.ok(!kept.includes(s), `the system or its notes keep “${s}”`);
     }
-    // IDs are numbers given in reading order; the file's own are gone.
-    assert.ok(!/[0-9a-f]{16}/.test(spans) && !/[0-9a-f]{16}/.test(kept));
+    // IDs are numbers given in reading order; the file's own are gone (a run of hex with a letter in it; a long run of
+    // digits is a time).
+    const hexId = /(?=[0-9a-f]*[a-f])[0-9a-f]{16,}/;
+    assert.ok(!hexId.test(spans) && !hexId.test(kept));
+    for (const id of new Set(SHOP.flatMap((s) => [s.trace, s.id]))) assert.ok(!spans.includes(id) && !kept.includes(id), `the file's ID ${id} is kept`);
     assert.equal(opened.doc!.name, "shop trace");
   }
   // Names keep their shape, without what identifies anyone.
@@ -199,4 +205,151 @@ test("a trace opens healthy, and its times come close to the trace's", async () 
   const lat = sim.done.filter((x) => x.t > 2000 && x.result === "ok" && x.tag === "users").map((x) => x.lat).sort((a, b) => a - b);
   assert.ok(lat[Math.floor(lat.length * 0.95)] <= d.targets.p95Ms);
   assert.ok(sim.list.filter((x) => x.spec.kind === "queue" || x.spec.kind === "topic").every((x) => x.queue.length < 20));
+});
+
+// ------------------------------------------------------------------------------------------------ replaying
+
+/** A trace opened grouped one way, as the replay screen gets it. */
+async function viewOf(text: string, by: "service" | "prefix" | "kind" = "service"): Promise<TraceView> {
+  const { session, errors } = readSession(text, "shop");
+  assert.deepEqual(errors, []);
+  const v = await session!.view(by);
+  assert.ok(!("errors" in v), JSON.stringify(v));
+  return v as TraceView;
+}
+
+test("three requests replay as they ran: a typical one, the slowest and the failed one, every span to the millisecond", async () => {
+  const v = await viewOf(jaeger(SHOP));
+  const samples = v.replay.samples;
+  assert.deepEqual(samples.map((s) => s.kind), ["typical", "slowest", "failed"]);
+  const byTrace = new Map<string, typeof SHOP>();
+  for (const s of SHOP) byTrace.set(s.trace, [...(byTrace.get(s.trace) ?? []), s]);
+  const roots = SHOP.filter((s) => !s.parent);
+  for (const sample of samples) {
+    // The request the sample is: the one with its time (and, for the failed one, an error). Times on a file's clock are
+    // about 1.8 × 10¹² ms, which a double holds to about a quarter of a microsecond: a microsecond is the tolerance.
+    const US = 1e-3;
+    const root = roots.find((r) => Math.abs(r.dur / 1000 - sample.ms) < US && !!r.error === sample.error);
+    assert.ok(root, `${sample.kind} is one of the trace's requests`);
+    // Its waterfall is its spans, from when it began, to the microsecond the file gave.
+    const want = byTrace
+      .get(root.trace)!
+      .filter((s) => s.start <= root.start + root.dur)
+      .map((s) => [(s.start - root.start) / 1000, (s.start + s.dur - root.start) / 1000, !!s.error])
+      .sort((a, b) => (a[0] as number) - (b[0] as number) || (a[1] as number) - (b[1] as number));
+    const got = sample.spans.map((s) => [s.t0, s.t1, s.error]).sort((a, b) => (a[0] as number) - (b[0] as number) || (a[1] as number) - (b[1] as number));
+    assert.equal(got.length, want.length, sample.kind);
+    got.forEach((g, i) => {
+      assert.ok(Math.abs((g[0] as number) - (want[i][0] as number)) < US && Math.abs((g[1] as number) - (want[i][1] as number)) < US, `${sample.kind} span ${i}: ${g} against ${want[i]}`);
+      assert.equal(g[2], want[i][2], `${sample.kind} span ${i} failed or not as the trace says`);
+    });
+    // The dot's way covers the request from its first moment to its last, without a gap, along drawn stations.
+    const stations = new Set(compile(v.doc).spec!.nodes.map((n) => n.id));
+    assert.equal(sample.hops[0].t0, 0);
+    assert.ok(Math.abs(sample.hops[sample.hops.length - 1].t1 - sample.ms) < US);
+    sample.hops.forEach((h, i) => {
+      assert.ok(stations.has(h.node) && (!h.from || stations.has(h.from)), `${sample.kind} hop ${i} is on the stage`);
+      if (i) assert.ok(Math.abs(h.t0 - sample.hops[i - 1].t1) < US, `${sample.kind} hop ${i} starts where the last ended`);
+    });
+    assert.ok(sample.path.includes("users") && sample.path.includes("frontend"));
+  }
+  // The slowest is the slowest; the failed one broke in payments, at the moment its span there began.
+  assert.ok(Math.abs(samples[1].ms - Math.max(...roots.map((r) => r.dur / 1000))) < 1e-3);
+  const failed = samples[2];
+  assert.equal(failed.broke?.part, "payments");
+  const pay = failed.spans.find((s) => s.part === "payments" && s.error)!;
+  assert.equal(failed.broke!.at, pay.t0);
+  assert.ok(failed.path.includes("payments") && !failed.path.includes("ads"));
+  // Calls made at the same time are followed by the one waited for, the other named.
+  assert.ok(samples[0].hops.some((h) => h.also?.length));
+});
+
+test("the same requests in each format replay the same", async () => {
+  const j = await viewOf(jaeger(SHOP));
+  for (const text of [zipkin(SHOP), otlp(SHOP), otlp(SHOP, true)]) {
+    const o = await viewOf(text);
+    assert.deepEqual(
+      o.replay.samples.map((s) => [s.kind, s.name, s.spans.map((x) => [x.part, x.name, x.depth, x.error]), s.path, s.broke?.part]),
+      j.replay.samples.map((s) => [s.kind, s.name, s.spans.map((x) => [x.part, x.name, x.depth, x.error]), s.path, s.broke?.part]),
+    );
+    assert.equal(o.replay.second.routes, j.replay.second.routes);
+    assert.ok(Math.abs(o.replay.second.model!.p95 - j.replay.second.model!.p95) < 0.5);
+  }
+});
+
+test("the second runs each request its own way: its p95 is within 15% of the trace's, in every format and grouping", async () => {
+  const cases: [string, string, ("service" | "prefix" | "kind")[]][] = [
+    ["Jaeger", jaeger(SHOP), ["service", "prefix", "kind"]],
+    ["Zipkin", zipkin(SHOP), ["service"]],
+    ["OpenTelemetry", otlp(SHOP), ["service"]],
+    ["200 services", big(), ["service", "prefix", "kind"]],
+    ["300 services", scattered(), ["service", "kind"]],
+  ];
+  for (const [name, text, groupings] of cases)
+    for (const by of groupings) {
+      const { trace, model, routes } = (await viewOf(text, by)).replay.second;
+      assert.ok(model, `${name} by ${by} was checked`);
+      const off = Math.abs(model.p95 - trace.p95) / trace.p95;
+      assert.ok(off <= 0.15, `${name} by ${by}: p95 ${model.p95.toFixed(1)} ms against ${trace.p95.toFixed(1)} ms (${Math.round(off * 100)}% off)`);
+      assert.ok(Math.abs(model.p50 - trace.p50) / trace.p50 <= 0.25, `${name} by ${by}: p50 ${model.p50} against ${trace.p50}`);
+      assert.ok(routes >= 1);
+    }
+  // Failures where the trace's broke, about as often: 2 in 100 in the shop.
+  const { trace, model } = (await viewOf(jaeger(SHOP))).replay.second;
+  assert.equal(trace.failed, 0.02);
+  assert.ok(Math.abs(model!.failed - trace.failed) < 0.01, `failed ${model!.failed}`);
+  // The notes say how close it comes, and that it is checked slowed down.
+  const v = await viewOf(jaeger(SHOP));
+  assert.ok(v.notes.some((n) => /^Replayed the way the trace's requests went \(checked \d+ times slower.*\), 95 in 100 were answered within \d+ ms, against \d+ ms in the trace \(\d+% off\)/.test(n)), v.notes.join("\n"));
+});
+
+test("the second's books balance: every request accounted for and nothing leaks, with a part crashed and back", async () => {
+  for (const text of [jaeger(SHOP), big()]) {
+    const { spec } = (await viewOf(text)).replay.second;
+    const quiet = { ...spec, windowMs: 1e9, nodes: spec.nodes.map((n) => (n.client ? { ...n, client: { ...n.client, rate: (t: number) => (t < 6000 ? (n.client!.rate as number) : 0) } } : n)) };
+    const sim = new Sim(quiet);
+    const busiest = spec.nodes.filter((n) => n.kind === "server").sort((a, b) => Object.keys(b.paths ?? {}).length - Object.keys(a.paths ?? {}).length)[1]?.id ?? "";
+    for (let t = 0; t < 30_000; t += 100) {
+      sim.step(100);
+      if (t === 2000) sim.setUp(busiest, false);
+      if (t === 2600) sim.setUp(busiest, true);
+      if (t % 1000 === 0) assert.deepEqual(leakedHolds(sim), [], `at ${t}`);
+    }
+    const a = accounted(sim);
+    assert.equal(a.sent, a.done + a.live, JSON.stringify(a));
+    assert.equal(a.live, 0, "every request ended once traffic stopped");
+  }
+});
+
+test("one click regroups a 200-service trace: by service, prefix or kind, each at most 14 stations, each merge a note", async () => {
+  const { session } = readSession(big(), "platform");
+  const seen = new Map<string, string[]>();
+  for (const by of ["service", "prefix", "kind"] as const) {
+    const preview = session!.preview(by);
+    const v = (await session!.view(by)) as TraceView;
+    const stations = compile(v.doc).spec!.nodes.length;
+    assert.ok(stations <= 14, `${by}: ${stations} stations`);
+    assert.ok(preview.parts.length <= 13 && preview.parts.length >= 2, `${by}: ${preview.parts.length} parts`);
+    assert.ok(preview.notes.length >= 1, `${by} says what it merged`);
+    // Each grouped part says how many of the file's it stands for, and the notes agree.
+    assert.ok(preview.parts.some((p) => (p.merged ?? 0) > 1));
+    assert.ok(v.replay.samples.length >= 2 && v.replay.second.model);
+    seen.set(by, v.doc.parts.map((p) => p.name));
+  }
+  assert.ok(seen.get("kind")!.includes("Services") && seen.get("kind")!.includes("Databases"), seen.get("kind")!.join(", "));
+  assert.notDeepEqual(seen.get("kind"), seen.get("service"));
+  assert.deepEqual(session!.preview("kind").notes, ["Grouped by kind: behind the way in, each kind of part is one part: Services (200) and Databases (8)."]);
+  // By prefix, every team's services are one part, whatever the stage needed.
+  const prefix = session!.preview("prefix").parts;
+  for (const team of ["payments", "orders", "search", "accounts"]) assert.ok(prefix.some((p) => p.name === team || p.name === "Other services"), team);
+  // The same grouping is worked out once.
+  assert.equal(await session!.view("kind"), await session!.view("kind"));
+});
+
+test("a shared trace system carries the reduced system only: no spans, samples or operation names", async () => {
+  const v = await viewOf(jaeger(SHOP));
+  const back = await decodeDoc(await encodeDoc(v.doc));
+  assert.deepEqual(back, v.doc);
+  const text = JSON.stringify(back);
+  for (const word of ["POST /", "GET /", "INSERT", "spans", "samples", "paths", "routes"]) assert.ok(!text.includes(word), `the link carries “${word}”`);
 });

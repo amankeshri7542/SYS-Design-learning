@@ -1,4 +1,4 @@
-// Synthetic trace files for the replay tests (unit and browser): one shop's requests, written as Jaeger, Zipkin and
+// Synthetic trace files for the trace tests (unit and browser): one shop's requests, written as Jaeger, Zipkin and
 // OpenTelemetry JSON, with personal data planted where real programs put it; and a platform of 200 services. No real
 // data: every name, ID and address here is made up.
 

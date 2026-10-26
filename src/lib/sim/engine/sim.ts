@@ -1,5 +1,5 @@
 import { hashStr, mulberry32, zipfCdf } from "../rng";
-import type { Call, Fx, FxKind, LinkSpec, NodeSpec, Op, Result, SceneSpec, ScriptEvent } from "../types";
+import type { Call, Fx, FxKind, LinkSpec, NodeSpec, Op, Result, SceneSpec, ScriptEvent, Step } from "../types";
 import { TICK, Win, type Conn, type Done, type Frame, type Gather, type NodeRt, type Note, type Req, type Spawn } from "./model";
 import { needsOf, type ModuleName } from "./needs";
 import { SAMPLE_KEYS, sameTargets } from "./ring";
@@ -94,7 +94,8 @@ export interface Sim {
   dispatch(n: NodeRt): void;
   finish(n: NodeRt): void;
   complete(n: NodeRt, r: Req): void;
-  call(n: NodeRt, r: Req, calls: Call[]): void;
+  stepsOf(n: NodeRt, r: Req): Step[];
+  call(n: NodeRt, r: Req, calls: Step[]): void;
   back(n: NodeRt, r: Req): void;
 
   // connections.ts
@@ -132,6 +133,7 @@ export interface Sim {
   toPrimary(n: NodeRt, r: Req): void;
 
   // gather.ts, elections.ts, bookings.ts
+  wayOf(routes: Record<string, number>, id: number): string;
   scatter(n: NodeRt, r: Req, targets: (string | string[])[], need: number, op: Req["op"], free?: boolean): void;
   check(n: NodeRt, g: Gather): void;
   lead(n: NodeRt): void;
@@ -689,6 +691,7 @@ export class Sim {
       op,
       key,
       tag,
+      route: "",
       client,
       first: this.t,
       born: this.t,
