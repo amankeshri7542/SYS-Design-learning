@@ -111,7 +111,25 @@ export interface Frame {
   sides: Map<string, Side>;
   /** Labels that could not find a free side (0 when everything fits). */
   hits: number;
+  /** Stations show their secondary labels; a scene too dense for them at full text size shows names only. */
+  subs: boolean;
+  /** Labels take the nearest clear side, packed in among their neighbours (dense scenes; see `Style`). */
+  packed: boolean;
 }
+
+/**
+ * How a frame lays out a scene its authored layout can't fit. `spread` pushes stations apart, along the flow and across
+ * it, without making them bigger. `packed` lets each label take the nearest clear side instead of keeping clear of the
+ * room a neighbour or a rail might want: beside its station in a tall layout's row, below it in a wide one's stack.
+ * Without `subs`, stations show names only.
+ */
+export interface Style {
+  spread: { along: number; across: number };
+  packed: boolean;
+  subs: boolean;
+}
+
+const AUTHORED: Style = { spread: { along: 1, across: 1 }, packed: false, subs: true };
 
 /** Steps along the flow that sit within this distance share a row in the tall layout. */
 const SAME_ROW = 6;
@@ -119,26 +137,33 @@ const SAME_ROW = 6;
 /**
  * Map layout coordinates (along, across) to a viewBox. Wide screens use them directly. Phones get the same graph
  * turned on its side, one row per step along the flow, with rows and lanes spaced so labels (at `k` px per unit) fit.
- * `spread` pushes stations further apart without making them bigger, for scenes whose labels need more room.
+ * `style` spreads stations further apart without making them bigger, for scenes whose labels need more room, and may
+ * pack labels beside a row's stations or leave out their secondary lines.
  */
-function baseFrame(scene: Scene, mode: Mode, zoom: number, k = 1, sides: Map<string, Side> = new Map(), spread = 1): Frame {
+function baseFrame(scene: Scene, mode: Mode, zoom: number, k = 1, sides: Map<string, Side> = new Map(), style = AUTHORED): Frame {
+  const { spread, packed, subs } = style;
   const spec = scene.spec;
   const vs = spec.nodes.map((n) => n.at[1]);
   const vmin = Math.min(...vs);
   const vmax = Math.max(...vs);
   const vmid = (vmin + vmax) / 2;
+  // The tall layout turns the scene on its side: along the flow is down the screen.
+  const sx = mode === "tall" ? spread.across : spread.along;
+  const sy = mode === "tall" ? spread.along : spread.across;
   const out = (W: number, H: number, scale: number, pos: (at: [number, number]) => Pt): Frame => ({
     mode,
-    W: W * spread,
-    H: H * spread,
+    W: W * sx,
+    H: H * sy,
     scale,
     k,
     spare: 0,
     sides: new Map(),
     hits: 0,
+    subs,
+    packed,
     pos: (at) => {
       const p = pos(at);
-      return { x: p.x * spread, y: p.y * spread };
+      return { x: p.x * sx, y: p.y * sy };
     },
   });
   if (mode !== "tall") {
@@ -161,16 +186,19 @@ function baseFrame(scene: Scene, mode: Mode, zoom: number, k = 1, sides: Map<str
   const groups = new Map<number, NodeSpec[]>();
   for (const n of spec.nodes) groups.set(rowOf(n), [...(groups.get(rowOf(n)) ?? []), n]);
   const rows = [...groups.keys()].sort((a, b) => a - b);
-  const ext = new Map(spec.nodes.map((n) => [nodeKey(n), labelExtent(n, spec, mode, k)]));
-  // Lanes spread far enough that neighbours in a row, and the labels below them, never touch.
+  const ext = new Map(spec.nodes.map((n) => [nodeKey(n), labelExtent(n, spec, mode, k, subs)]));
+  // Lanes spread far enough that neighbours in a row, and the labels below (or, packed, beside) them, never touch.
   let kx = 4.6;
   for (const g of groups.values()) {
     const row = [...g].sort((a, b) => a.at[1] - b.at[1]);
     for (let i = 1; i < row.length; i++) {
       if (!scene.together(nodeKey(row[i]), nodeKey(row[i - 1]))) continue;
       const w = (n: NodeSpec) => Math.max(SIZES[glyphOf(n)].w, ext.get(nodeKey(n))!.w);
+      const room = packed
+        ? (SIZES[glyphOf(row[i - 1])].w + SIZES[glyphOf(row[i])].w) / 2 + TEXT.side / k + ext.get(nodeKey(row[i - 1]))!.w
+        : (w(row[i]) + w(row[i - 1])) / 2;
       const dv = row[i].at[1] - row[i - 1].at[1];
-      if (dv > 0) kx = Math.max(kx, ((w(row[i]) + w(row[i - 1])) / 2 + 12 / k) / dv);
+      if (dv > 0) kx = Math.max(kx, (room + 12 / k) / dv);
     }
   }
   let gap = Infinity;
@@ -179,8 +207,8 @@ function baseFrame(scene: Scene, mode: Mode, zoom: number, k = 1, sides: Map<str
     for (let i = 1; i < across.length; i++) gap = Math.min(gap, (across[i] - across[i - 1]) * kx);
   }
   const scale = Number.isFinite(gap) ? Math.min(1, Math.max(0.7, (gap - 12) / 96)) : 1;
-  // Rows: a single node's label goes beside it; a row of several puts labels below, so it needs that room too.
-  const side = (n: NodeSpec) => sides.get(nodeKey(n)) ?? (groups.get(rowOf(n))!.length > 1 ? "below" : "right");
+  // Rows: a single node's label goes beside it; a row of several puts labels below (unless packed), so it needs room.
+  const side = (n: NodeSpec) => sides.get(nodeKey(n)) ?? (groups.get(rowOf(n))!.length > 1 && !packed ? "below" : "right");
   const half = (n: NodeSpec) => (SIZES[glyphOf(n)].h * scale) / 2;
   // Room above a node for its waiting line (rows of four, stacked upward).
   const line = (n: NodeSpec) => (n.slots && n.kind !== "client" ? 1.5 * (2 * 6.4 * Math.max(0.9, scale) + 2) : 0);
@@ -215,7 +243,7 @@ interface Fit {
   /** Rendered CSS px per viewBox unit. */
   k: number;
   zoom?: number;
-  spread?: number;
+  style?: Style;
   /** The box the frame must fit; spare width in it may hold side labels without shrinking anything. */
   box?: Size;
 }
@@ -227,15 +255,15 @@ interface Fit {
  */
 export function frameFor(scene: Scene, mode: Mode, fit?: Fit): Frame {
   if (!fit) return baseFrame(scene, mode, 1);
-  const { k, zoom = 1, box, spread = 1 } = fit;
+  const { k, zoom = 1, box, style = AUTHORED } = fit;
   const spareOf = (f: Frame) => (box ? Math.max(0, (box.w / k - f.W) / 2) : 0);
-  let base = baseFrame(scene, mode, zoom, k, undefined, spread);
+  let base = baseFrame(scene, mode, zoom, k, undefined, style);
   base.spare = spareOf(base);
   let { placed, hits } = placeAll(scene, base);
   if (mode === "tall") {
     // Rows were spaced on a guess (single nodes label beside, rows of several below); respace with the real sides.
     const sides = new Map([...placed].map(([key, p]) => [key, p.side]));
-    base = baseFrame(scene, mode, zoom, k, sides, spread);
+    base = baseFrame(scene, mode, zoom, k, sides, style);
     base.spare = spareOf(base);
     base.sides = sides;
     ({ placed, hits } = placeAll(scene, base));
@@ -278,23 +306,70 @@ const SPREADS = [1, 1.12, 1.25, 1.4, 1.6, 1.85, 2.1];
 /**
  * Fit a frame to a box: estimate k from the plain frame, add label room, re-measure k with the bigger frame, and
  * repeat until k settles. If some label finds no free side, spread the stations apart and try again; the first
- * spread where everything fits wins (or the one with the fewest collisions).
+ * spread where everything fits wins.
+ *
+ * A frame whose k doesn't settle is drawn smaller than its labels were placed for, so its labels are counted again at
+ * the size it is drawn, and spreading stops there. With `adapt` (a scene not shaped by hand for every screen: My System's), a scene no spread fits
+ * gets more ways to fit (`Style`): stretched into the room the box has to spare one way, labels packed, and last, names
+ * only. The clean frame with the biggest stations wins, though names only must make them twice the size. If nothing
+ * fits, the authored spread with the fewest collisions.
  */
-export function fitFrame(scene: Scene, mode: Mode, box: Size, zoom = 1): Frame {
-  const kOf = (f: Frame) => Math.min(box.w / f.W, box.h / f.H);
-  let best: Frame | null = null;
-  for (const spread of SPREADS) {
-    let frame = frameFor(scene, mode, { k: kOf(baseFrame(scene, mode, zoom, 1, undefined, spread)), zoom, box, spread });
+export function fitFrame(scene: Scene, mode: Mode, box: Size, zoom = 1, adapt = false): Frame {
+  const kOf = (f: Pick<Frame, "W" | "H">) => Math.min(box.w / f.W, box.h / f.H);
+  /**
+   * A style's frame once k settles, and whether it did. If not, its labels are counted again at the size it's drawn;
+   * with `edge` (CSS px), also those that come within that distance of the frame's edge, eating its gutter.
+   */
+  const fit = (style: Style, edge = 0): [Frame, boolean] => {
+    let frame = frameFor(scene, mode, { k: kOf(baseFrame(scene, mode, zoom, 1, undefined, style)), zoom, box, style });
     for (let i = 0; i < 4; i++) {
       const k = kOf(frame);
       if (Math.abs(k - frame.k) / k < 0.01) break;
-      frame = frameFor(scene, mode, { k, zoom, box, spread });
+      frame = frameFor(scene, mode, { k, zoom, box, style });
     }
-    frame = { ...frame, k: kOf(frame) };
+    const drawn = { ...frame, k: kOf(frame) };
+    if (drawn.k >= frame.k * 0.99) return [drawn, true];
+    const { placed, hits } = placeAll(scene, drawn);
+    const e = edge / drawn.k;
+    const off = edge ? [...placed.values()].filter(({ label: r }) => r.x < e || r.y < e || r.x + r.w > drawn.W - e || r.y + r.h > drawn.H - e) : [];
+    return [{ ...drawn, hits: hits + off.length }, false];
+  };
+  // A frame slow to settle may still be drawn if its labels keep half the gutter: room for a word wider than estimated.
+  // (Lessons' frames are shaped by hand and checked in the browser: only collisions count for them.)
+  const edge = adapt ? TEXT.gutter / 2 : 0;
+  let best: Frame | null = null;
+  for (const s of SPREADS) {
+    const [frame, settled] = fit({ ...AUTHORED, spread: { along: s, across: s } }, edge);
     if (!best || frame.hits < best.hits) best = frame;
-    if (frame.hits === 0) break;
+    // Spreading only shrinks the stations: labels that need more room than the box has won't fit the next one either.
+    if (frame.hits === 0 || !settled) break;
   }
-  return best!;
+  if (!adapt || best!.hits === 0) return best!;
+  // The box's spare room one way: stretch the scene that way (along the flow is down the screen in a tall frame).
+  const fill = (f: Frame, style: Style): Style => {
+    const spareW = box.w / f.W / (box.h / f.H);
+    const axis = (spareW > 1) === (mode === "tall") ? "across" : "along";
+    return { ...style, spread: { ...style.spread, [axis]: style.spread[axis] * Math.max(spareW, 1 / spareW) } };
+  };
+  const worth = (f: Frame) => f.k * f.scale * (f.subs ? 2 : 1);
+  let clean: Frame | null = null;
+  for (const subs of [true, false]) {
+    for (const packed of [false, true]) {
+      for (const s of SPREADS) {
+        let style: Style = { spread: { along: s, across: s }, packed, subs };
+        // Label room only shrinks the plain frame's stations (a tall one's may grow to full size): skip what can't win.
+        const plain = baseFrame(scene, mode, zoom, 1, undefined, style);
+        if (clean && worth({ ...plain, k: kOf(plain), scale: mode === "tall" ? 1 : plain.scale }) <= worth(clean)) break;
+        let [frame, settled] = fit(style, edge);
+        for (let i = 0; i < 2 && frame.hits; i++) [frame, settled] = fit((style = fill(frame, style)), edge);
+        if (frame.hits && !settled) break;
+        if (frame.hits) continue;
+        if (!clean || worth(frame) > worth(clean)) clean = frame;
+        break;
+      }
+    }
+  }
+  return clean ?? best!;
 }
 
 export interface Placed {
@@ -311,8 +386,8 @@ export interface Placed {
 }
 
 /** Width and height of a node's label block in viewBox units (`k` = rendered px per unit). */
-export function labelExtent(n: NodeSpec, spec: SceneSpec, mode: Mode, k: number): Size {
-  const sub = Math.max(0, ...subsFor(n, spec, mode).map((s) => s.length));
+export function labelExtent(n: NodeSpec, spec: SceneSpec, mode: Mode, k: number, subs = true): Size {
+  const sub = subs ? Math.max(0, ...subsFor(n, spec, mode).map((s) => s.length)) : 0;
   const w = Math.max(n.label.length * EM.label * TEXT.label, sub * EM.mono * TEXT.sub);
   const h = TEXT.label * TEXT.line + (sub ? TEXT.sub * TEXT.line : 0);
   return { w: w / k, h: h / k };
@@ -404,7 +479,7 @@ export function placeAll(scene: Scene, frame: Frame, within?: Rect): { placed: M
       const b = badgeBox(chars, k, s);
       solid.push({ x: p.x + dir * (w / 2 - b.inset) - b.w / 2, y: p.y - h / 2 + b.dy - b.h / 2, w: b.w, h: b.h });
     }
-    return { n, key, x: p.x, y: p.y, w, h, solid, ext: labelExtent(n, spec, frame.mode, k) };
+    return { n, key, x: p.x, y: p.y, w, h, solid, ext: labelExtent(n, spec, frame.mode, k, frame.subs) };
   });
   const linked = new Set(scene.steps.flatMap((st) => edgesOf(st).flatMap((e) => [`${e.a}~${e.b}`, `${e.b}~${e.a}`])));
   const rectFor = (a: (typeof boxes)[number], sd: Side): Rect => {
@@ -415,11 +490,24 @@ export function placeAll(scene: Scene, frame: Frame, within?: Rect): { placed: M
   };
   const prefer = (a: (typeof boxes)[number]): Side[] => {
     if (frame.mode !== "tall") {
-      // A neighbour straight below, or a link running down through the label: beside is better than below.
+      // A neighbour straight below, or a link running down through the label: beside is better than below. Packed, only
+      // the link does; `clear` keeps a label below off the neighbour.
       const stacked = boxes.some(
-        (b) => b !== a && Math.abs(a.x - b.x) <= 4 && scene.together(a.key, b.key) && (Math.abs(a.y - b.y) - a.h / 2 - b.h / 2 < a.ext.h + gap * 3 || linked.has(`${a.n.id}~${b.n.id}`)),
+        (b) =>
+          b !== a &&
+          Math.abs(a.x - b.x) <= 4 &&
+          scene.together(a.key, b.key) &&
+          (frame.packed
+            ? b.y > a.y && linked.has(`${a.n.id}~${b.n.id}`)
+            : Math.abs(a.y - b.y) - a.h / 2 - b.h / 2 < a.ext.h + gap * 3 || linked.has(`${a.n.id}~${b.n.id}`)),
       );
       return stacked ? ["right", "left", "below"] : ["below", "right", "left"];
+    }
+    if (frame.packed) {
+      // Packed: beside whenever the frame has room that way; `clear` keeps it off its neighbours in the row.
+      const need = a.ext.w + side;
+      if (frame.W + frame.spare - (a.x + a.w / 2) >= need) return ["right", "left", "below"];
+      return a.x - a.w / 2 + frame.spare >= need ? ["left", "right", "below"] : ["below", "right", "left"];
     }
     // Phones: traffic flows down through anything below a node, so labels go beside it when there's room.
     const need = Math.max(a.ext.w, 78 / k) + side + gap;

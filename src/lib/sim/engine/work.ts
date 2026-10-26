@@ -1,4 +1,4 @@
-import type { Call, Result } from "../types";
+import type { Result, Step } from "../types";
 import { Win, type NodeRt, type Req } from "./model";
 import { Sim } from "./sim";
 
@@ -190,6 +190,7 @@ const work: Partial<Sim> & ThisType<Sim> = {
     c.stack = [{ id: n.spec.id, calls: [] }];
     c.at = n.spec.id;
     c.logicalId = r.logicalId;
+    c.route = r.route;
     c.poison = r.poison;
     c.news = r.news;
     // A copy is as big as the message it copies.
@@ -247,7 +248,10 @@ const work: Partial<Sim> & ThisType<Sim> = {
   },
 
   service(n: NodeRt, r: Req) {
-    const base = n.spec.serviceBy?.[r.op === "write" ? "write" : "read"] ?? n.spec.serviceMs ?? 0;
+    const way = n.spec.paths?.[r.route]?.ms;
+    // A traced route's work is one of the times measured there.
+    if (Array.isArray(way)) return (way[Math.floor(n.rng() * way.length)] ?? 0) * r.cost;
+    const base = way ?? n.spec.serviceBy?.[r.op === "write" ? "write" : "read"] ?? n.spec.serviceMs ?? 0;
     const ms = base * r.cost * (0.6 + 0.8 * n.rng());
     const tail = n.spec.tail;
     return tail && n.rng() < tail.share ? ms * tail.mult : ms;
@@ -407,7 +411,7 @@ const work: Partial<Sim> & ThisType<Sim> = {
       r.news = n.latest;
       r.polled = true;
     }
-    const calls = (n.spec.calls?.[r.op === "write" ? "write" : "read"] ?? n.spec.to ?? []).slice();
+    const calls = this.stepsOf(n, r).slice();
     // A poison job fails wherever it is finally handled: a worker, or the last server on its way (a dead website).
     if (r.poison && (n.spec.sink || !calls.length)) return this.fail(n, r);
     if (!calls.length) {
@@ -439,11 +443,18 @@ const work: Partial<Sim> & ThisType<Sim> = {
     this.call(n, r, calls);
   },
 
-  call(n: NodeRt, r: Req, calls: Call[]) {
+  /** The calls a server makes for this request, in order: its route's here, or the usual for its operation. */
+  stepsOf(n: NodeRt, r: Req): Step[] {
+    return n.spec.paths?.[r.route]?.calls ?? n.spec.calls?.[r.op === "write" ? "write" : "read"] ?? n.spec.to ?? [];
+  },
+
+  call(n: NodeRt, r: Req, calls: Step[]) {
     const [next, ...rest] = calls;
     r.result = null;
     r.stack[r.stack.length - 1].calls = rest;
     r.calledAt = this.t;
+    // Calls made at the same time: sent out in parts and gathered back, then on to the next step.
+    if (typeof next === "object" && !Array.isArray(next)) return this.scatter(n, r, next.all, next.all.length, r.op, !n.spec.blocking);
     if (n.spec.blocking) n.held.push(r);
     if (n.spec.connect) this.dial(n, r, this.resolve(n, next));
     else this.send(r, this.resolve(n, next));
@@ -461,8 +472,9 @@ const work: Partial<Sim> & ThisType<Sim> = {
       r.phase = "gone";
       return;
     }
-    // A part of a request sent out to several targets comes back to be gathered; a vote comes back to its candidate.
-    if (r.parentId) return this.gathered(n, r);
+    // A part of a request sent out to several targets comes back to be gathered, once it is home (it may come back
+    // through a cache or a server of its own); a vote comes back to its candidate.
+    if (r.parentId && r.stack.length === 1) return this.gathered(n, r);
     if (r.op === "vote") return this.raftReply(n, r);
     // A push goes back along its connection's path to its user.
     if (r.op === "push") {
@@ -541,7 +553,7 @@ const work: Partial<Sim> & ThisType<Sim> = {
         }
         // A later step failed after earlier ones were done, and nothing undoes them: the work is left half-done.
         if (r.result === "error" && !r.detached) {
-          const steps = (n.spec.calls?.[r.op === "write" ? "write" : "read"] ?? n.spec.to ?? []).length;
+          const steps = this.stepsOf(n, r).length;
           if (steps > 1 && steps - frame.calls.length - 1 > 0) this.inconsistent.add(this.t);
         }
         break;

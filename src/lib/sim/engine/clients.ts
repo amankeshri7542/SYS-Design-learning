@@ -88,6 +88,8 @@ const clients: Partial<Sim> & ThisType<Sim> = {
     r.cost = cost;
     // One identity for the logical request, the same in every world: a retry keeps it.
     r.logicalId = extra.logicalId ?? (hashStr(n.spec.id) ^ Math.imul(++n.spawned, 0x9e3779b1)) >>> 0;
+    // Its way through a traced system, by a hash of the logical request: a retry, and every world, goes the same way.
+    if (c.routes) r.route = this.wayOf(c.routes, r.logicalId);
     r.absent = !!extra.absent;
     r.poison = !!extra.poison;
     r.page = extra.page ?? 0;

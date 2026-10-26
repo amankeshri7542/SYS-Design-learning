@@ -1,12 +1,22 @@
+import { mix } from "../rng";
 import type { Op } from "../types";
 import type { Gather, NodeRt, Req } from "./model";
 import { Sim, attach } from "./sim";
 
 /**
  * Fan-out and gather: one primitive, a request sent out in parts and gathered back (`scatter`), serves fan-out to
- * shards (with hedging), quorum reads and writes, and a cluster leader's commits.
+ * shards (with hedging), quorum reads and writes, a cluster leader's commits, and a traced route's calls made at the
+ * same time. The route each request takes is picked here too: routes come only with traces, whose calls gather.
  */
 const gather: Partial<Sim> & ThisType<Sim> = {
+  /** The route a logical request takes: by its hash, in proportion to the routes' shares. */
+  wayOf(routes: Record<string, number>, id: number) {
+    const ways = Object.entries(routes);
+    let u = (mix(id ^ 0x5bd1e995) / 2 ** 32) * ways.reduce((s, [, w]) => s + Math.max(0, w), 0);
+    for (const [name, w] of ways) if ((u -= Math.max(0, w)) < 0) return name;
+    return ways[ways.length - 1]?.[0] ?? "";
+  },
+
   /**
    * Send `r` out in parts, one to each target (a pool picks a member), and hold it until `need` parts have answered
    * well, or so many have failed that they can't. `free`: it waits without holding a worker (a database's commit).
@@ -40,6 +50,7 @@ const gather: Partial<Sim> & ThisType<Sim> = {
     c.seq = r.seq;
     c.first = r.first;
     c.logicalId = (r.logicalId ^ Math.imul(i + 1 + 31 * s.kids.length, 0x9e3779b1)) >>> 0;
+    c.route = r.route;
     c.stack = [{ id: n.spec.id, calls: [] }];
     c.at = n.spec.id;
     s.kids.push(c);
@@ -84,6 +95,9 @@ const gather: Partial<Sim> & ThisType<Sim> = {
     if (ok && n.spec.quorum && r.op === "write") this.truth.set(r.key, Math.max(this.truth.get(r.key) ?? 0, r.seq));
     // A cluster leader's write is committed once a majority has it: only then is it applied, and counted.
     if (ok && n.spec.cluster && r.op === "write") this.commit(n, r);
+    // A route's calls made at the same time are all in: on to its next step.
+    const rest = r.stack[r.stack.length - 1]?.calls;
+    if (ok && n.spec.paths && rest?.length) return this.call(n, r, rest);
     this.respond(r, ok ? "ok" : "error");
   },
 

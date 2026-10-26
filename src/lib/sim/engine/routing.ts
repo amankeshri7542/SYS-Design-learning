@@ -12,11 +12,12 @@ const routing: Partial<Sim> & ThisType<Sim> = {
   },
 
   /**
-   * The targets a balancer may send this request to: those for its tag, on, ready, healthy and not rolled back. At layer
-   * 4 it can't see the tag.
+   * The targets a balancer may send this request to: those for its route or its tag, on, ready, healthy and not rolled
+   * back. At layer 4 it can't see the tag.
    */
   candidates(n: NodeRt, r?: Req) {
-    const pool = (r && n.spec.layer !== 4 && n.spec.byTag?.[r.tag]) || n.spec.to;
+    // A balancer's route is the target it sends that route to (never calls made together).
+    const pool = (r && (n.spec.paths?.[r.route]?.calls as Call[] | undefined)) || (r && n.spec.layer !== 4 && n.spec.byTag?.[r.tag]) || n.spec.to;
     return this.flat(pool).filter((id) => {
       const s = this.nodes.get(id);
       if (!s || !s.on || !s.ready) return false;

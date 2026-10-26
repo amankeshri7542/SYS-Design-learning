@@ -1,4 +1,4 @@
-import type { Call, NodeSpec, Op, Result } from "../types";
+import type { NodeSpec, Op, Result, Step } from "../types";
 
 /** Fixed simulation step in simulated milliseconds. */
 export const TICK = 2;
@@ -8,7 +8,7 @@ export type Phase = "travel" | "wait" | "work" | "parked" | "lost" | "gone";
 
 export interface Frame {
   id: string;
-  calls: Call[];
+  calls: Step[];
   /** Load balancer: which target this request was sent to. */
   via?: string;
   /** The connection this node sent the request on (its id among the node's `conns`); it is freed when the answer is back. */
@@ -41,6 +41,8 @@ export interface Req {
   op: Op;
   key: number;
   tag: string;
+  /** The way it goes (`ClientSpec.routes`), or "" for the usual. Its copies and retries keep it. */
+  route: string;
   client: string;
   /** When the logical request (first attempt) started. */
   first: number;

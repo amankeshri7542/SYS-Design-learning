@@ -1,42 +1,41 @@
 "use client";
 
 import { useState } from "react";
-import { KINDS, article, type SystemDoc } from "@/lib/system/doc";
+import type { SystemDoc } from "@/lib/system/doc";
 import { FORMATS, detect } from "@/lib/system/import/detect";
 
 /** The most text read: a big compose file is a few hundred KB; anything near this is not a system description. */
 const MOST = 1_000_000;
+/** A trace file is read up to this (by the trace reader, `trace-open.tsx`): a few thousand requests' spans. */
+export const MOST_TRACE = 20_000_000;
 
 const EXAMPLE = "Users -> Load balancer -> API x3 -> Redis -> Postgres\nAPI -> Stripe\nAPI -> Jobs [queue] -> Mailer -> SendGrid";
 
 /**
- * Describe a system you have: a few lines of arrows, a docker-compose file, a CSV of calls, or a System Lab file. It
- * is read here, in the browser, and opens running; what couldn't be read is listed by line. The readers and the
- * engine that sizes it load when it is opened.
+ * Describe a system you have: a few lines of arrows, a docker-compose file, a CSV of calls, a System Lab file, or a
+ * trace (Jaeger, Zipkin or OpenTelemetry JSON). It is read here, in the browser, and opens running; what couldn't be
+ * read is listed by line. The readers and the engine that sizes it load when it is opened. A trace file's text is
+ * never shown: only what is left once personal data is taken out.
  */
-export function SystemImport({ onOpen }: { onOpen: (doc: SystemDoc, notes: string[]) => void }) {
+export function SystemImport({ onOpen, onTrace }: { onOpen: (doc: SystemDoc, notes: string[]) => void; onTrace: (text: string, name: string) => void }) {
   const [text, setText] = useState("");
   const [errors, setErrors] = useState<{ line?: number; text: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const format = text.trim() ? detect(text) : null;
   const open = async (source = text, name?: string) => {
     if (busy) return;
+    // A trace is replayed: handed to the trace reader, and not kept in the box.
+    if (detect(source) === "trace") {
+      setText("");
+      return onTrace(source, name ?? "My system");
+    }
     if (source.length > MOST) return setErrors([{ text: `That's ${Math.round(source.length / 1000)} KB of text; System Lab reads up to ${MOST / 1000} KB. Paste the part that names your services.` }]);
     setBusy(true);
     try {
-      const { readSystem } = await import("@/lib/system/import/read");
-      const r = readSystem(source, undefined, name ?? "My system");
+      // Read, then sized on a headless run so it opens healthy.
+      const r = await (await import("@/lib/system/import/open")).openSystem(source, name);
       setErrors(r.errors);
-      if (!r.doc || r.errors.length) return;
-      // Sized on a headless run, so it opens healthy.
-      const { sized } = await import("@/lib/system/import/size");
-      const s = await sized(r.doc);
-      // What was taken from a name, unless the name already says it ("Load balancer").
-      const guessed = r.guesses.filter((g) => g.kind !== "service" && g.kind !== "users" && !g.name.toLowerCase().includes(KINDS[g.kind].name.toLowerCase()));
-      const named = guessed.length
-        ? [`Took ${guessed.slice(0, 6).map((g) => `${g.name} for ${article(KINDS[g.kind].name)}`).join(", ")}${guessed.length > 6 ? " and more" : ""}, from what they're called. Change any under “What it is”.`]
-        : [];
-      onOpen(s.doc, [...named, ...r.notes, ...s.notes]);
+      if (r.doc && !r.errors.length) onOpen(r.doc, r.notes);
     } catch {
       // The readers are fetched the first time: offline, or a page left open across a new version.
       setErrors([{ text: "System Lab couldn't load what reads it. Check your connection, then try again." }]);
@@ -48,7 +47,8 @@ export function SystemImport({ onOpen }: { onOpen: (doc: SystemDoc, notes: strin
     <div className="my-import">
       <label className="my-import-label" htmlFor="my-import-text">
         Arrows, one chain a line, with copies (<code>x3</code>), kinds (<code>[queue]</code>) and rates (<code>(120/s)</code>) if you like. Or paste a
-        docker-compose file, a CSV of calls (<code>from,to,rps,latency_ms</code>) or a System Lab file.
+        docker-compose file, a CSV of calls (<code>from,to,rps,latency_ms</code>) or a System Lab file, or open a trace: Jaeger, Zipkin or
+        OpenTelemetry JSON.
       </label>
       <textarea
         id="my-import-text"
@@ -75,14 +75,19 @@ export function SystemImport({ onOpen }: { onOpen: (doc: SystemDoc, notes: strin
           Open a file
           <input
             type="file"
-            accept=".json,.yml,.yaml,.csv,.txt"
+            accept=".json,.jsonl,.yml,.yaml,.csv,.txt"
             onChange={async (e) => {
               const file = e.target.files?.[0];
               if (!file) return;
               e.target.value = "";
-              if (file.size > MOST) return setErrors([{ text: `${file.name} is ${Math.round(file.size / 1000)} KB; System Lab reads files up to ${MOST / 1000} KB.` }]);
+              const big = `${file.name} is ${Math.round(file.size / 1000)} KB; System Lab reads files up to ${MOST / 1000} KB`;
+              if (file.size > MOST_TRACE) return setErrors([{ text: `${big}, and traces up to ${MOST_TRACE / 1e6} MB.` }]);
               const body = await file.text();
-              setText(body);
+              // A trace's text isn't shown: what it holds is read, scrubbed, and let go.
+              if (detect(body) !== "trace") {
+                if (file.size > MOST) return setErrors([{ text: `${big}.` }]);
+                setText(body);
+              }
               open(body, file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ") || "My system");
             }}
           />
